@@ -19,7 +19,6 @@ app/
 ├── ena_test.py            # Main experiment script (10 independent runs)
 ├── aggregate_metrics.py   # Aggregates results across exp_01/ – exp_10/
 ├── plot_variance.py       # Generates reliability and stability plots
-├── exp_01/ … exp_10/      # Raw outputs from each experiment run
 ├── latex/                 # Full LaTeX source for the paper
 └── requirements.txt       # Python dependencies
 hub/
