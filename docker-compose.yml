@@ -1,0 +1,10 @@
+services:
+  eca_experiment:
+    build:
+      context: ./
+      dockerfile: hub/python/Dockerfile
+    volumes:
+      - ./app:/home/app
+    command: ["tail", "-f", "/dev/null"]
+    container_name: eca-experiment
+    working_dir: /home/app

@@ -1,0 +1,21 @@
+\section{Experimental Setup}
+
+To evaluate the ENA's non-stationary domain adaptation, we executed an intensive multi-phase analysis using a modernized variant of the classic \texttt{CartPole-v1} environment parameterized entirely through modified kinematics.
+
+\subsection{Environmental Domains}
+Rather than shifting observation states, our domain randomization modifies the fundamental gravitational kinematics acting upon the pole mass. We simulated the physical traits of celestial environments:
+\begin{itemize}
+    \item \textbf{Training Sequence:} Earth ($g = 9.8 \text{ m/s}^2$), Mars ($g = 3.7 \text{ m/s}^2$), and Jupiter ($g = 24.8 \text{ m/s}^2$).
+    \item \textbf{Testing Sequence:} We evaluate the frozen multi-policy archive progressively through the familiar training bodies (Earth, Mars, Jupiter) to test structural retention, immediately followed by a hidden fourth testing world: Neptune ($g = 11.15 \text{ m/s}^2$), strictly withheld from all prior evolutionary searches.
+\end{itemize}
+
+\subsection{Evaluation Parameters}
+We quantified the evolutionary behavior over 10 randomized and independent experiments. Each instance constrained training to an upper bound of 250 episodes per environment phase. Following training, the evolutionary update matrices (\textit{Plasticity}) and gradients were frozen while executing the agents over the testing regime to measure test-time domain generalization dictated entirely by the online meta-learning specialist archive selector acting over the frozen behaviors.
+
+\subsection{Test Configurations}
+Three distinct computational profiles were assessed to determine optimal Trust/Plasticity behavior:
+\begin{itemize}
+    \item \textbf{ENA-01:} Employed the percentile-based Fuzzy-logic heuristic for calculating Trust decay and Plasticity metrics across all phases.
+    \item \textbf{ENA-02:} Functional Baseline. Employed the purely deterministic Quadratic Ratio formula across all phases, acting as a standard mathematical archive-selector comparison against the fuzzy heuristic.
+    \item \textbf{ENA-03:} Utilized the trained Hall of Fame archive established by the Fuzzy-logic search mechanisms (identical to ENA-01 during training), but aggressively overrode Trust calculations during the testing phase utilizing the continuous Quadratic decay heuristic.
+\end{itemize}

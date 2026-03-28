@@ -1,0 +1,8 @@
+black
+gymnasium
+matplotlib
+numpy
+pandas
+pylint
+seaborn
+tensorflow

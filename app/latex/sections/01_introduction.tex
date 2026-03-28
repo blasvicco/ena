@@ -1,0 +1,17 @@
+\section{Introduction}
+
+The widespread success of deep reinforcement learning (DRL) often hinges entirely on the presumption that the training environment distributions identically match the testing distributions. When operating in non-stationary environments—such as a robotic leg wearing down over time or shifting physics domains due to unpredictable conditions—canonical gradient-based methods such as Deep Q-Networks (DQN) notoriously suffer from \textit{catastrophic forgetting} \cite{mccloskey1989catastrophic}. When the parameters of an underlying transition function shift, the traditional DRL agent is forced to relearn its task from scratch, entirely unlearning the localized optimal policies of the previous state.
+
+Biological organisms mitigate non-stationary environmental shifts through specialized plasticity, maintaining robust diverse memories or ``instincts" to rapidly switch behaviors when stimuli dramatically shift. Drawing inspiration from such mechanisms and from the burgeoning field of Quality-Diversity (QD) in Evolutionary Reinforcement Learning (ERL), we introduce the Evolutionary Neuroplastic Agent (ENA).
+
+The ENA does not attempt to train a single generalized "master" neural network. Instead, it evolves a highly diverse \textit{population} of independent, lightweight neural network specialists. During run-time interacting with the environment, the ENA architecture mathematically abstracts its decision making through two critical metrics: \textit{Trust} (the evaluated confidence of the actively controlling specialist given the recent step rewards) and \textit{Plasticity} (the degree of exploration effort devoted across the "Hall of Fame" archive of other specialists). If the environment drifts into an unexplored physics regime, the ENA detects the performance drop, lowers trust in the failing specialist, scales its plasticity metric, and autonomously substitutes behavioral execution with another archived specialist whose genetic blueprint may better suit the new configuration. This substitution acts as an online meta-learning controller, selecting precisely which specialist will execute its frozen, pre-computed behaviors.
+
+As a preliminary exploratory analysis, our work presents the following core contributions:
+\begin{itemize}
+    \item We detail the internal architecture of the ENA, emphasizing its continuous Trust decay system, Plasticity exploration search, and dynamic Hall of Fame entry gating strategy which utilizes z-score competitive protections to ensure genetic uniqueness within the archive.
+    \item We rigorously evaluate the ENA using two isolated mathematical schemas for deriving Trust/Plasticity limits: a strict Quadratic Ratio bound, and a normalized Fuzzy-logic heuristic model.
+    \item We demonstrate the ENA's performance across 10 independent experiments within a customized 1D kinematic CartPole toy domain featuring multi-gravity non-stationary constraints.
+    \item We analyze the agent's variance limits connected directly to standard randomization population initializations, defining the statistical boundaries required for subsequent scaling.
+\end{itemize}
+
+This paper is structured systematically: Section II provides background on evolutionary reinforcement efforts including ERL and MAP-Elites. Section III defines the explicit methodology of ENA. Section IV breaks down our CartPole environment parameterizations. Section V and VI outline and discuss the experimental discoveries. 
