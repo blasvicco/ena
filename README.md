@@ -2,7 +2,7 @@
 
 > A preliminary study into evolutionary, non-gradient adaptation across non-stationary physical environments.
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1n3wp9BR7GoUn0Ym-DSwGNGdwIwhafQqY?usp=drive_link)
+[![Open In Colab](https://colab.research.google.com/drive/1i8LY95hCwqbk4fcmAK12YT0lxH5TDzrW?usp=sharing)
 
 ---
 
