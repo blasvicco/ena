@@ -32,7 +32,7 @@ from visualization import vprint, ProgressReporter
 
 # Constants
 NUM_EXPERIMENTS = 30
-MAX_WORKERS = os.cpu_count()
+MAX_WORKERS = os.cpu_count() - 2
 GPUS = tf.config.list_physical_devices("GPU")
 TESTING_EPISODES = [200, 200, 200, 200, 200]
 TRAINING_EPISODES_BASELINE = [1500, 1500, 1500]
