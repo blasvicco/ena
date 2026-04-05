@@ -1,0 +1,26 @@
+Experiment 10 Log
+==============================
+
+  --- Training Performance vs Time ---
+  ENA-01 Fuzzy-Fuzzy: 7456.79 seconds
+  ENA-02 Quadratic-Quadratic: 5843.19 seconds
+  DQN-TF: 1837.00 seconds
+  PPO-TF: 3773.34 seconds
+
+Training:
+
+--- ACADEMIC PERFORMANCE & RELIABILITY SUMMARY ---
+                     Agent Mars-Light Avg Jupiter-Heavy Avg Earth-Standard Avg Reliability (%) Stability Gap (↓) Efficiency (Score/s)
+        ENA-01 Fuzzy-Fuzzy         451.70            357.38             462.36           80.0%            443.85                85.25
+ENA-02 Quadratic-Quadratic         469.18            429.41             480.72           89.0%            271.90               118.03
+                    DQN-TF         201.84            211.84             331.44           20.9%            412.30               608.43
+                    PPO-TF         342.81            115.11             493.56           56.3%            461.05               378.24
+
+  --- Experiment 10 Test Results ---
+
+--- ACADEMIC PERFORMANCE & RELIABILITY SUMMARY ---
+                     Agent Mars-Light Avg Neptune Avg Jupiter-Heavy Avg Brown-dwarf Avg Earth-Standard Avg Reliability (%) Stability Gap (↓) Efficiency (Score/s)
+        ENA-01 Fuzzy-Fuzzy         491.16      498.60            139.34           99.22             500.00           59.1%             14.00               875.82
+ENA-02 Quadratic-Quadratic         491.84      498.98            328.68          392.18             497.34           82.7%              2.75               879.85
+                    DQN-TF         500.00      500.00            397.60          500.00             500.00           91.7%              0.00               874.56
+                    PPO-TF         500.00      500.00             21.06          163.43             500.00           60.4%              0.00               430.97
