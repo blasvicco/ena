@@ -17,6 +17,8 @@ import gymnasium as gym
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+from keras import Model, Input, initializers, Sequential
+from keras.layers import Dense
 
 # App imports
 from agents import DQNAgent, ENAgent, PPOAgent
@@ -29,14 +31,52 @@ from metrics import (
 from visualization import vprint, ProgressReporter
 
 # Constants
-NUM_EXPERIMENTS = 30
-MAX_WORKERS = os.cpu_count() - 2
+NUM_EXPERIMENTS = 1
+MAX_WORKERS = os.cpu_count()
 GPUS = tf.config.list_physical_devices("GPU")
 TESTING_EPISODES = [200, 200, 200, 200, 200]
 TRAINING_EPISODES_BASELINE = [1500, 1500, 1500]
 TRAINING_EPISODES_ENA = [500, 500, 500]
 
+
 # Helper methods
+def dqn_brain(action_dim, state_dim, hidden=(64, 64)):
+	"""Build a Q-network Brain."""
+	inputs = Input(shape=(state_dim,))
+	_x_ = inputs
+	for units in hidden:
+		_x_ = Dense(units, activation="relu")(_x_)
+	outputs = Dense(action_dim)(_x_)
+	return Model(inputs, outputs)
+
+
+def ena_brain(action_dim, state_dim):
+	"""Build a ENA-NN."""
+	initializer = initializers.Orthogonal(gain=1.0)
+	return Sequential(
+		[
+			Input(shape=(state_dim,)),
+			Dense(4, activation="relu", kernel_initializer=initializer),
+			Dense(2, activation="relu", kernel_initializer=initializer),
+			Dense(
+				action_dim,
+				activation="linear",
+				kernel_initializer=initializer,
+			),
+		]
+	)
+
+
+def ppo_brain(action_dim, state_dim, hidden=(64, 64), output_activation=None):
+	"""Shared factory for actor and critic networks."""
+	inputs = Input(shape=(state_dim,))
+	_x_ = inputs
+	for units in hidden:
+		_x_ = Dense(units, activation="tanh")(_x_)
+	outputs = Dense(action_dim, activation=output_activation)(_x_)
+	return Model(inputs, outputs)
+
+
 # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
 def agent_testing(agents, experiment_id, output_dir, output_file, queue, worlds):
 	"""Test agents on worlds"""
@@ -190,8 +230,8 @@ def play(agent, environments, episodes_per_env):
 				# 2. Collect data for training (DQN uses this per-step, ENA uses this later)
 				if agent.learn:
 					agent.train(
-						env,
-						{
+						env=env,
+						step_data={
 							"action": action,
 							"done": is_done,
 							"next_state": next_state,
@@ -266,13 +306,13 @@ def run_experiment(experiment_id, output_dir, queue=None):
 		# 2. Initialize Agents — fresh instances per experiment for independence
 		ena_agent_01 = ENAgent(
 			action_size=2,
-			gladiator_amounts=15,
+			brain=ena_brain,
 			make_env=make_env,
+			gladiator_amounts=15,
 			max_threads=max_agent_threads,
 			mutation_rate=0.05,
 			plasticity_algorithm="fuzzylogic",
 			pop_size=50,
-			state_shape=(4,),
 			trust_algorithm="fuzzylogic",
 		)
 		ena_agent_01.set_name("ENA-01 Fuzzy-Fuzzy")
@@ -280,23 +320,23 @@ def run_experiment(experiment_id, output_dir, queue=None):
 
 		ena_agent_02 = ENAgent(
 			action_size=2,
-			gladiator_amounts=15,
+			brain=ena_brain,
 			make_env=make_env,
+			gladiator_amounts=15,
 			max_threads=max_agent_threads,
 			mutation_rate=0.05,
 			plasticity_algorithm="quadratic",
 			pop_size=50,
-			state_shape=(4,),
 			trust_algorithm="quadratic",
 		)
 		ena_agent_02.set_name("ENA-02 Quadratic-Quadratic")
 		ena_agent_02.set_episodes(TRAINING_EPISODES_ENA)
 
-		dqn_agent = DQNAgent(make_env=make_env)
+		dqn_agent = DQNAgent(brain=dqn_brain, make_env=make_env)
 		dqn_agent.set_name("DQN-TF")
 		dqn_agent.set_episodes(TRAINING_EPISODES_BASELINE)
 
-		ppo_agent = PPOAgent(make_env=make_env)
+		ppo_agent = PPOAgent(brain=ppo_brain, make_env=make_env)
 		ppo_agent.set_name("PPO-TF")
 		ppo_agent.set_episodes(TRAINING_EPISODES_BASELINE)
 
@@ -351,19 +391,22 @@ def run_experiment_worker(experiment_id, reporting_queue):
 
 	crash_file = None
 	try:
+		# pylint: disable=consider-using-with
 		crash_file = open(crash_log_path, "w", encoding="utf-8")  # keep open
 		faulthandler.enable(file=crash_file)
-	except Exception:
+	except Exception:  # pylint: disable=broad-except
 		pass
 
 	try:
 		run_experiment(experiment_id, output_dir, reporting_queue)
-	except Exception:
-		reporting_queue.put({
-			"exp_id": experiment_id,
-			"status": f"[bold red]Error: {traceback.format_exc()}[/bold red]",
-			"done": True,
-		})
+	except Exception:  # pylint: disable=broad-except
+		reporting_queue.put(
+			{
+				"exp_id": experiment_id,
+				"status": f"[bold red]Error: {traceback.format_exc()}[/bold red]",
+				"done": True,
+			}
+		)
 	finally:
 		if crash_file:
 			crash_file.close()
@@ -394,7 +437,9 @@ if __name__ == "__main__":
 		vprint(f"[bold green]{'='*60}[/bold green]\n")
 
 		# 3. Launch each experiment in isolated processes
-		with concurrent.futures.ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
+		with concurrent.futures.ProcessPoolExecutor(
+			max_workers=MAX_WORKERS
+		) as executor:
 			futures = {}
 			for exp_id in range(NUM_EXPERIMENTS):
 				exp_dir = os.path.join("outputs", f"exp_{exp_id + 1}")
@@ -403,11 +448,13 @@ if __name__ == "__main__":
 					and os.path.getsize(os.path.join(exp_dir, "outputs.txt")) > 0
 				)
 				if analyzed:
-					REPORTING_QUEUE.put({
-						"exp_id": exp_id,
-						"status": "[yellow]Skipping (already exists)[/yellow]",
-						"done": True,
-					})
+					REPORTING_QUEUE.put(
+						{
+							"exp_id": exp_id,
+							"status": "[yellow]Skipping (already exists)[/yellow]",
+							"done": True,
+						}
+					)
 					continue
 
 				future = executor.submit(run_experiment_worker, exp_id, REPORTING_QUEUE)
@@ -418,7 +465,9 @@ if __name__ == "__main__":
 				try:
 					future.result()
 				except Exception as exc:  # pylint: disable=broad-except
-					vprint(f"[bold red]Experiment {exp_id + 1} crashed: {exc}[/bold red]")
+					vprint(
+						f"[bold red]Experiment {exp_id + 1} crashed: {exc}[/bold red]"
+					)
 
 		# 4. Cleanup — still inside Manager context so queue is alive
 		REPORTING_QUEUE.put(None)

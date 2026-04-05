@@ -7,22 +7,10 @@
 # Libs imports
 import numpy as np
 import tensorflow as tf
-from keras import Model, Input, optimizers
-from keras.layers import Dense
+from keras import optimizers
 
 # App imports
 from .baseline import ABaseline
-
-
-def _build_network(input_dim, output_dim, hidden=(64, 64), output_activation=None):
-	"""Shared factory for actor and critic networks."""
-	inputs = Input(shape=(input_dim,))
-	_x_ = inputs
-	for units in hidden:
-		_x_ = Dense(units, activation="tanh")(_x_)
-	outputs = Dense(output_dim, activation=output_activation)(_x_)
-	return Model(inputs, outputs)
-
 
 # pylint: disable=too-many-instance-attributes
 class PPOAgent(ABaseline):
@@ -34,6 +22,7 @@ class PPOAgent(ABaseline):
 	# pylint: disable=too-many-arguments,too-many-positional-arguments
 	def __init__(
 		self,
+		brain,
 		make_env,
 		batch_size=64,
 		clip_ratio=0.2,
@@ -46,7 +35,7 @@ class PPOAgent(ABaseline):
 		value_coef=0.5,
 	):
 		"""Initialize PPOAgent."""
-		super().__init__()
+		super().__init__(brain, make_env)
 		self.learn = True
 		self.best_individual_idx = "PPO"
 
@@ -61,14 +50,14 @@ class PPOAgent(ABaseline):
 		self.value_coef = value_coef
 
 		# Infer dims from a temporary env
-		tmp_env = make_env()
+		tmp_env = self.make_env()
 		state_dim = int(tmp_env.observation_space.shape[0])
 		action_dim = int(tmp_env.action_space.n)
 		tmp_env.close()
 
 		# Networks
-		self.actor = _build_network(state_dim, action_dim)
-		self.critic = _build_network(state_dim, 1)
+		self.actor = self.brain(action_dim, state_dim)
+		self.critic = self.brain(1, state_dim)
 		self.optimizer = optimizers.Adam(learning_rate=learning_rate)
 
 		# Last action values
@@ -108,8 +97,9 @@ class PPOAgent(ABaseline):
 		next_state, reward, terminated, truncated, _ = env.step(action)
 		return next_state, reward, terminated, truncated, action
 
-	def train(self, env, step_data):
+	def train(self, **kwargs):
 		"""Buffer the transition; run PPO update when buffer is full."""
+		step_data = kwargs["step_data"]
 		self._buf_states.append(step_data["state"])
 		self._buf_actions.append(step_data["action"])
 		self._buf_rewards.append(step_data["reward"])

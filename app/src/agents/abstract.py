@@ -6,11 +6,16 @@ from abc import abstractmethod
 
 class AAgent:
 	"""Abstract base class for all agents."""
+
 	name = ""
 	episodes = []
+	brain = None
+	make_env = None
 
-	def __init__(self):
+	def __init__(self, brain, make_env):
 		"""Initialize AAgent"""
+		self.brain = brain
+		self.make_env = make_env
 
 	def get_name(self):
 		"""Get the agent name"""

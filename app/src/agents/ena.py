@@ -8,8 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 # Libs imports
 import numpy as np
 from numpy.linalg import norm
-from keras import initializers, Sequential, Input
-from keras.layers import Dense
+from keras import initializers
 import tensorflow as tf
 
 # App imports
@@ -23,11 +22,11 @@ class ENAgent(AAgent):
 	def __init__(
 		self,
 		action_size,
-		state_shape,
+		brain,
+		make_env,
 		exploration_rate=0.20,
 		history_size=100,
 		gladiator_amounts=5,
-		make_env=None,
 		max_eval_steps=500,
 		max_threads=1,
 		plasticity_algorithm="zero",
@@ -35,19 +34,22 @@ class ENAgent(AAgent):
 		mutation_rate=0.01,
 		trust_algorithm="zero",
 	):
-		super().__init__()
+		super().__init__(brain, make_env)
 		self.action_size = action_size
 		self.exploration_rate = exploration_rate
 		self.last_episode_score = 0
 		self.learn = True
-		self.make_env = make_env
 		self.max_eval_steps = max_eval_steps
 		self.mutation_rate = mutation_rate
 		self.plasticity_algorithm = plasticity_algorithm
 		self.plasticity_history = []
 		self.pop_size = pop_size
-		self.state_shape = state_shape
 		self.trust_algorithm = trust_algorithm
+
+		tmp_env = self.make_env()
+		self.state_dim = int(tmp_env.observation_space.shape[0])
+		self.action_dim = int(tmp_env.action_space.n)
+		tmp_env.close()
 
 		# AGNOSTIC STATISTICS
 		self.reward_history = deque(maxlen=history_size)
@@ -136,8 +138,9 @@ class ENAgent(AAgent):
 		self.best_individual_idx = 0
 
 	# pylint: disable=too-many-locals
-	def train(self, env, step_data):
+	def train(self, **kwargs):
 		"""Handles the evolutionary search."""
+		env, step_data = kwargs["env"], kwargs["step_data"]
 		# Only evolve at the end of an episode
 		if not step_data["done"]:
 			return
@@ -224,19 +227,7 @@ class ENAgent(AAgent):
 	def __build_individual(self, model=None):
 		"""Build the NN model or reset an existing one in-place."""
 		if model is None:
-			initializer = initializers.Orthogonal(gain=1.0)
-			model = Sequential(
-				[
-					Input(shape=self.state_shape),
-					Dense(4, activation="relu", kernel_initializer=initializer),
-					Dense(2, activation="relu", kernel_initializer=initializer),
-					Dense(
-						self.action_size,
-						activation="linear",
-						kernel_initializer=initializer,
-					),
-				]
-			)
+			model = self.brain(self.action_dim, self.state_dim)
 		else:
 			# Resets existing model weights to a fresh state to avoid leakage
 			initializer = initializers.Orthogonal(gain=1.0)

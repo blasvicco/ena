@@ -11,22 +11,10 @@ import random
 # Libs imports
 import numpy as np
 import tensorflow as tf
-from keras import Model, Input, optimizers
-from keras.layers import Dense
+from keras import optimizers
 
 # App imports
 from .baseline import ABaseline
-
-
-def _build_q_network(state_dim, action_dim, hidden=(64, 64)):
-	"""Build a Q-network mapping states to per-action Q-values."""
-	inputs = Input(shape=(state_dim,))
-	_x_ = inputs
-	for units in hidden:
-		_x_ = Dense(units, activation="relu")(_x_)
-	outputs = Dense(action_dim)(_x_)
-	return Model(inputs, outputs)
-
 
 # pylint: disable=too-many-instance-attributes
 class DQNAgent(ABaseline):
@@ -40,6 +28,7 @@ class DQNAgent(ABaseline):
 	# pylint: disable=too-many-arguments,too-many-positional-arguments
 	def __init__(
 		self,
+		brain,
 		make_env,
 		batch_size=64,
 		buffer_size=50_000,
@@ -53,7 +42,7 @@ class DQNAgent(ABaseline):
 		train_freq=4,
 	):
 		"""Initialize DQNAgent."""
-		super().__init__()
+		super().__init__(brain, make_env)
 		self.learn = True
 		self.best_individual_idx = "DQN"
 
@@ -68,14 +57,14 @@ class DQNAgent(ABaseline):
 		self.train_freq = train_freq
 
 		# Infer dims from a temporary env
-		tmp_env = make_env()
+		tmp_env = self.make_env()
 		state_dim = int(tmp_env.observation_space.shape[0])
 		self.action_dim = int(tmp_env.action_space.n)
 		tmp_env.close()
 
 		# Networks
-		self.q_net = _build_q_network(state_dim, self.action_dim)
-		self.target_net = _build_q_network(state_dim, self.action_dim)
+		self.q_net = self.brain(state_dim, self.action_dim)
+		self.target_net = self.brain(state_dim, self.action_dim)
 		self._sync_target()
 
 		self.optimizer = optimizers.Adam(learning_rate=learning_rate)
@@ -112,8 +101,9 @@ class DQNAgent(ABaseline):
 		next_state, reward, terminated, truncated, _ = env.step(action)
 		return next_state, reward, terminated, truncated, action
 
-	def train(self, _, step_data):
+	def train(self, **kwargs):
 		"""Store transition and run a gradient step on schedule."""
+		step_data = kwargs["step_data"]
 		self.replay_buffer.append(
 			(
 				step_data["state"],

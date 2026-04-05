@@ -10,8 +10,7 @@ from .abstract import AAgent
 class ABaseline(AAgent):
 	"""Baseline Agent Abstract Class"""
 
-	def __init__(self):
-		"""Initialize ABaseline"""
+	learn = True
 
 	def set_learning(self, mode):
 		"""Switches between training and evaluation modes."""
@@ -22,5 +21,5 @@ class ABaseline(AAgent):
 		"""Action inference and rollout data collection."""
 
 	@abstractmethod
-	def train(self, env, step_data):
+	def train(self, **kwargs):
 		"""Manual training loop."""
