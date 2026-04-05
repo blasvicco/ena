@@ -1,8 +1,11 @@
-black
+black-with-tabs
 gymnasium
 matplotlib
 numpy
 pandas
+psutil
 pylint
 seaborn
+shimmy
 tensorflow
+rich

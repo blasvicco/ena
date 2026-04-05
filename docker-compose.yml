@@ -1,10 +1,10 @@
 services:
-  eca_experiment:
+  ena_experiment:
     build:
       context: ./
       dockerfile: hub/python/Dockerfile
     volumes:
       - ./app:/home/app
     command: ["tail", "-f", "/dev/null"]
-    container_name: eca-experiment
+    container_name: ena-experiment
     working_dir: /home/app
