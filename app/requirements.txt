@@ -1,5 +1,6 @@
 black-with-tabs
 gymnasium
+gymnasium[mujoco]
 matplotlib
 numpy
 pandas

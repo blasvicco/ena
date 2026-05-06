@@ -41,22 +41,23 @@ class ProgressReporter:
 			# Main task for all experiments
 			main_task = progress.add_task(
 				"[bold blue]Total Experiments Progress",
-				total=self.total_experiments,
+				total=self.total_experiments * 100,
 			)
 
 			completed_count = 0
 			exp_tasks = {}
+			exp_progress = {}
 			finished_ids = set()
 
 			while (
 				completed_count < self.total_experiments
 				and not self.stop_event.is_set()
 			):
-				mem = psutil.virtual_memory()
-				mem_str = f"Mem: {mem.used / (1024**3):.1f}GB ({mem.percent}%)"
+				memory_info = psutil.virtual_memory()
+				memory_string = f"Mem: {memory_info.used / (1024**3):.1f}GB ({memory_info.percent}%)"
 				progress.update(
 					main_task,
-					description=f"[bold blue]Total Experiments Progress[/bold blue] | [magenta]{mem_str}[/magenta]",
+					description=f"[bold blue]Total Experiments Progress[/bold blue] | [magenta]{memory_string}[/magenta]",
 				)
 
 				try:
@@ -65,39 +66,48 @@ class ProgressReporter:
 					if data is None:
 						break  # Sentinel
 
-					_exp_id = data.get("exp_id")
+					experiment_id = data.get("exp_id")
 					status = data.get("status")
 					progress_inc = data.get("progress", 0)
 					done = data.get("done", False)
 
-					if _exp_id is not None:
-						if _exp_id not in exp_tasks:
-							exp_tasks[_exp_id] = progress.add_task(
-								f"Experiment {_exp_id + 1}: Starting...", total=100
+					if experiment_id is not None:
+						if experiment_id not in exp_tasks:
+							exp_tasks[experiment_id] = progress.add_task(
+								f"Experiment {experiment_id + 1}: Starting...", total=100
 							)
 
 						description = None
 						if status:
-							description = f"Experiment {_exp_id + 1}: {status}"
+							description = f"Experiment {experiment_id + 1}: {status}"
 						elif done:
-							description = f"[green]Experiment {_exp_id + 1}: Done[/green]"
+							description = f"[green]Experiment {experiment_id + 1}: Done[/green]"
 
 						if description:
 							progress.update(
-								exp_tasks[_exp_id],
+								exp_tasks[experiment_id],
 								description=description,
 							)
 
 						if progress_inc > 0:
-							progress.advance(exp_tasks[_exp_id], progress_inc)
+							progress.advance(exp_tasks[experiment_id], progress_inc)
+							progress.advance(main_task, progress_inc)
+							exp_progress[experiment_id] = exp_progress.get(experiment_id, 0) + progress_inc
 
-						if done and _exp_id not in finished_ids:
+						if done and experiment_id not in finished_ids:
+							current_p = exp_progress.get(experiment_id, 0)
+							remaining = 100 - current_p
+
+							if remaining > 0:
+								progress.advance(main_task, remaining)
+								exp_progress[experiment_id] = 100
+
 							progress.update(
-								exp_tasks[_exp_id],
+								exp_tasks[experiment_id],
 								completed=100,
 							)
-							progress.advance(main_task)
-							finished_ids.add(_exp_id)
+
+							finished_ids.add(experiment_id)
 							completed_count += 1
 				except:  # pylint: disable=bare-except
 					continue

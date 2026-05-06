@@ -32,9 +32,9 @@ class DQNAgent(ABaseline):
 		make_env,
 		batch_size=64,
 		buffer_size=50_000,
-		epsilon_start=1.0,
-		epsilon_end=0.01,
 		epsilon_decay_steps=10_000,
+		epsilon_end=0.01,
+		epsilon_start=1.0,
 		gamma=0.99,
 		learning_rate=3e-4,
 		learning_starts=1_000,
@@ -44,7 +44,6 @@ class DQNAgent(ABaseline):
 		"""Initialize DQNAgent."""
 		super().__init__(brain, make_env)
 		self.learn = True
-		self.best_individual_idx = "DQN"
 
 		# Hyperparameters
 		self.batch_size = batch_size
@@ -63,8 +62,8 @@ class DQNAgent(ABaseline):
 		tmp_env.close()
 
 		# Networks
-		self.q_net = self.brain(state_dim, self.action_dim)
-		self.target_net = self.brain(state_dim, self.action_dim)
+		self.q_net = self.brain(self.action_dim, state_dim)
+		self.target_net = self.brain(self.action_dim, state_dim)
 		self._sync_target()
 
 		self.optimizer = optimizers.Adam(learning_rate=learning_rate)
