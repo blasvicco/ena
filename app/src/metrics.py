@@ -55,7 +55,7 @@ def calculate_paper_metrics(
 
 		results = {
 			"Agent": name,
-			**{k: f"{v:.2f}" for k, v in env_results.items()},
+			**{key: f"{value:.2f}" for key, value in env_results.items()},
 			"Reliability (%)": f"{reliability:.1f}%",
 			"Stability Gap (↓)": f"{stability_gap:.2f}",
 		}
@@ -83,7 +83,11 @@ def plot_academic_comparison(
 	and dynamic environment switch markers.
 	"""
 	figure, axes = plt.subplots(
-		len(histories), 1, figsize=(15, 14), sharex=True, squeeze=False
+		len(histories),
+		1,
+		figsize=(15, 14),
+		sharex=True,
+		squeeze=False,
 	)
 	axes = axes.flatten()
 	window = 50
@@ -128,7 +132,11 @@ def plot_academic_comparison(
 		for switch_index in switches:
 			if switch_index > 0:
 				axes[index].axvline(
-					x=switch_index, alpha=0.5, color="red", linestyle="--", linewidth=2
+					x=switch_index,
+					alpha=0.5,
+					color="red",
+					linestyle="--",
+					linewidth=2,
 				)
 				if index == 0:
 					y_pos = ylim[0] + (ylim[1] - ylim[0]) * 0.1
@@ -141,28 +149,59 @@ def plot_academic_comparison(
 						fontweight="bold",
 					)
 
-		# 2. Agent's Internal Detection Points—small orange dots on the score line
+		# 2. Agent's Internal Detection Points—orange dots for NEW envs, black Xs for env SWITCHES
 		if "detected_env_id" in dataframe.columns:
-			detections = dataframe[
-				dataframe["detected_env_id"].ne(dataframe["detected_env_id"].shift())
-			].index.tolist()
-			detect_x = [ep for ep in detections if ep > 0]
-			detect_y = [mean_score.iloc[ep] for ep in detect_x]
-			if detect_x:
+			new_env_x, new_env_y = [], []
+			switch_env_x, switch_env_y = [], []
+			seen_env_ids = set()
+
+			for ep in range(len(dataframe)):
+				env_id = dataframe["detected_env_id"].iloc[ep]
+				if pd.isna(env_id) or env_id == -1:
+					continue
+
+				if ep == 0:
+					seen_env_ids.add(env_id)
+					continue
+
+				prev_env_id = dataframe["detected_env_id"].iloc[ep - 1]
+				if env_id != prev_env_id:
+					if env_id not in seen_env_ids:
+						new_env_x.append(ep)
+						new_env_y.append(mean_score.iloc[ep])
+						seen_env_ids.add(env_id)
+					else:
+						switch_env_x.append(ep)
+						switch_env_y.append(mean_score.iloc[ep])
+
+			if new_env_x:
 				axes[index].plot(
-					detect_x,
-					detect_y,
+					new_env_x,
+					new_env_y,
 					"o",
 					color="orange",
 					markersize=8,
 					zorder=5,
-					label="Env Detected",
+					label="New Env Detected",
+				)
+			if switch_env_x:
+				axes[index].plot(
+					switch_env_x,
+					switch_env_y,
+					"x",
+					color="black",
+					markersize=8,
+					zorder=5,
+					label="Env Switch (Known)",
 				)
 
 		axes[index].set_ylabel("Score", fontsize=12)
 		axes[index].set_ylim(ylim[0], ylim[1])
 		axes[index].set_title(
-			f"Agent: {names[index]}", fontsize=14, fontweight="bold", loc="left"
+			f"Agent: {names[index]}",
+			fontsize=14,
+			fontweight="bold",
+			loc="left",
 		)
 		axes[index].grid(True, alpha=0.2)
 		axes[index].legend(loc="upper left")
@@ -188,7 +227,10 @@ def plot_plasticity_analysis(agent, history_df, save_path=None):
 	axis1.set_xlabel("Total Episodes")
 	axis1.set_ylabel("Score", color=color_score)
 	axis1.plot(
-		history_df["episode"], history_df["score"], alpha=0.15, color=color_score
+		history_df["episode"],
+		history_df["score"],
+		alpha=0.15,
+		color=color_score,
 	)
 	axis1.plot(
 		history_df["episode"],

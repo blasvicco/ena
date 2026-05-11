@@ -42,5 +42,5 @@ class AAgent:
 		"""Train the agent."""
 
 	@abstractmethod
-	def set_learning(self, mode):
+	def set_learning(self, mode, output_dir=None):
 		"""Switches between training and evaluation modes."""

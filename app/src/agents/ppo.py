@@ -118,7 +118,7 @@ class PPOAgent(ABaseline):
 		total_steps = sum(episodes) * 1000
 		self._max_updates = max(1, total_steps // self.n_steps)
 
-	def set_learning(self, mode):
+	def set_learning(self, mode, output_dir=None):
 		"""Switch between train and eval mode."""
 		self.learn = mode
 

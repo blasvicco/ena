@@ -108,7 +108,7 @@ def agent_testing(agents, experiment_id, output_dir, output_file, queue, worlds)
 		episodes = agent.get_episodes()
 		agent_ids.append(agent_name)
 		post_update(experiment_id, queue, status=f"Testing {agent_name}", progress=8)
-		agent.set_learning(False)
+		agent.set_learning(False, output_dir=output_dir)
 		start_time = time.time()
 		history_testing[agent_name] = play(agent, test_worlds, episodes)
 		execution_times[agent_name] = time.time() - start_time
@@ -332,18 +332,17 @@ def run_experiment(experiment_id, output_dir, queue=None):
 		# 2. Initialize Agents — fresh instances per experiment for independence
 		ena_agent_01 = ENAgent(
 			brain=ena_brain,
+			controller_episode_rate=0.15,
 			make_env=make_env,
-			gladiator_amounts=15,
+			max_per_niche=5,
+			max_gladiator_ratio=0.5,
 			max_threads=max_agent_threads,
 			mutation_rate=0.05,
 			physics=["gravity", "masspole", "length"],
 			plasticity_algorithm="fuzzylogic",
 			pop_size=100,
+			recognizer_threshold=0.8,
 			trust_algorithm="fuzzylogic",
-			env_window_size=int(min(TRAINING_EPISODES_ENA) * 0.05),
-			env_short_window_size=10,
-			env_cooldown_window=int(min(TRAINING_EPISODES_ENA) * 0.05),
-			env_detection_threshold=-75.0,
 		)
 		ena_agent_01.set_name("ENA-01 Fuzzy-Fuzzy")
 		ena_agent_01.set_episodes(TRAINING_EPISODES_ENA)

@@ -76,8 +76,8 @@ class DQNAgent(ABaseline):
 	# ABaseline interface
 	# ------------------------------------------------------------------
 
-	def set_learning(self, mode):
-		"""Switch between train and eval mode."""
+	def set_learning(self, mode, output_dir=None):
+		"""Switches between training and evaluation modes."""
 		self.learn = mode
 
 	def act(self, env, state):

@@ -50,8 +50,8 @@ def ena_brain(action_dim, state_dim):
 	return Sequential(
 		[
 			Input(shape=(state_dim,)),
-			Dense(64, activation="relu", kernel_initializer=init_hidden),
-			Dense(64, activation="relu", kernel_initializer=init_hidden),
+			Dense(8, activation="relu", kernel_initializer=init_hidden),
+			Dense(8, activation="relu", kernel_initializer=init_hidden),
 			Dense(
 				action_dim,
 				activation="tanh",
@@ -117,7 +117,7 @@ def agent_testing(agents, experiment_id, output_dir, output_file, queue, worlds)
 		episodes = agent.get_episodes()
 		agent_ids.append(agent_name)
 		post_update(experiment_id, queue, status=f"Testing {agent_name}", progress=8)
-		agent.set_learning(False)
+		agent.set_learning(False, output_dir=output_dir)
 		start_time = time.time()
 		history_testing[agent_name] = play(agent, test_worlds, episodes)
 		execution_times[agent_name] = time.time() - start_time
@@ -335,7 +335,8 @@ def run_experiment(experiment_id, output_dir, queue=None):
 			brain=ena_brain,
 			make_env=make_env,
 			env_max_steps=1000.0,
-			gladiator_amounts=50,
+			max_per_niche=10,
+			max_gladiator_ratio=0.5,
 			max_eval_steps=250,
 			max_threads=max_agent_threads,
 			exploration_rate=0.2,
@@ -343,11 +344,10 @@ def run_experiment(experiment_id, output_dir, queue=None):
 			physics=["gravity", "friction"],
 			plasticity_algorithm="fuzzylogic",
 			pop_size=200,
+			recognizer_threshold=0.90,
 			trust_algorithm="fuzzylogic",
 			mutation_noise=0.3,
-			env_window_size=int(sum(TRAINING_EPISODES_ENA) * 0.05),
-			env_cooldown_window=int(sum(TRAINING_EPISODES_ENA) * 0.05),
-			env_detection_threshold=-300.0,
+			controller_max_niches=32,
 		)
 		ena_agent_01.set_name("ENA-01 Fuzzy-Fuzzy")
 		ena_agent_01.set_episodes(TRAINING_EPISODES_ENA)
@@ -477,7 +477,7 @@ if __name__ == "__main__":
 		) as executor:
 			futures = {}
 			for exp_id in range(NUM_EXPERIMENTS):
-				exp_dir = os.path.join("outputs_cheetah", f"exp_{exp_id + 1}")
+				exp_dir = os.path.join("cheetah_outputs", f"exp_{exp_id + 1}")
 				analyzed = (
 					os.path.exists(os.path.join(exp_dir, "outputs.txt"))
 					and os.path.getsize(os.path.join(exp_dir, "outputs.txt")) > 0

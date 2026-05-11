@@ -12,13 +12,15 @@ class _IdentityNormalizer:
 		self.mean = np.zeros(shape, dtype=np.float64)
 		self.var = np.ones(shape, dtype=np.float64)
 
-	def update(self, batch):
-		"""No-op — discrete environments don't need normalization."""
-
 	def normalize(self, _x_):
 		"""Pass through unchanged."""
 		return _x_
 
+	def reset(self):
+		"""No-op — discrete environments don't need normalization."""
+
+	def update(self, batch):
+		"""No-op — discrete environments don't need normalization."""
 
 class _RunningNormalizer:
 	"""Welford's online algorithm for running mean/variance normalization."""
@@ -28,6 +30,9 @@ class _RunningNormalizer:
 
 	def __init__(self, shape, clip=10.0, max_count=None):
 		"""Initialize _RunningNormalizer."""
+		self.count = None
+		self.mean = None
+		self.var = None
 		self.shape = shape
 		self.clip = clip
 		self.max_count = max_count
@@ -61,25 +66,15 @@ class _RunningNormalizer:
 
 		new_mean = self.mean + delta * alpha
 		# Exponential moving average
-		new_var = (1.0 - alpha) * self.var + alpha * batch_var + alpha * (1.0 - alpha) * np.square(delta)
+		new_var = (
+			(1.0 - alpha) * self.var
+			+ alpha * batch_var
+			+ alpha * (1.0 - alpha) * np.square(delta)
+		)
 
 		self.mean = new_mean
 		self.var = new_var
 		self.count = total_count
-
-	def get_state(self):
-		"""Returns the current state of the normalizer."""
-		return {
-			"mean": np.copy(self.mean),
-			"var": np.copy(self.var),
-			"count": self.count,
-		}
-
-	def set_state(self, state):
-		"""Sets the state of the normalizer."""
-		self.mean = np.copy(state["mean"])
-		self.var = np.copy(state["var"])
-		self.count = state["count"]
 
 	def normalize(self, _x_):
 		"""Normalize to zero mean, unit variance, clipped."""
