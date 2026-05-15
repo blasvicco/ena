@@ -124,16 +124,19 @@ class HallOfFame:
 		winner,
 		current_trust,
 		population,
-		plasticity_history,
+		memory,
 		recognizer,
 		obs_normalizer,
 	):
 		"""Attempt to induct winner into the Hall of Fame."""
 		self.__memory_decay()
 
-		current_z_score = self.__performance_gate(current_trust, population, plasticity_history)
+		current_z_score = self.__performance_gate(current_trust, population, memory.plasticity_history)
 		if current_z_score is None:
 			return
+
+		# Late Identity Binding: Determine the niche ID for this successful individual
+		recognizer.match_niche(memory, winner, self)
 
 		if self.__continual_improvement(
 			winner,

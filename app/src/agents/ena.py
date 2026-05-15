@@ -15,7 +15,7 @@ from .abstract import AAgent
 from .hall_of_fame import HallOfFame
 from .recognizer import EnvironmentRecognizer
 from .selection_controller import SelectionController
-from .normalizers import _RunningNormalizer
+from .memory import AgentMemory
 
 
 # pylint: disable=too-many-instance-attributes
@@ -41,12 +41,11 @@ class ENAgent(AAgent):
 		physics=["gravity", "masspole", "length"],
 		plasticity_algorithm="zero",
 		pop_size=30,
-		recognizer_threshold=0.6,
+		recognizer_threshold=0.7,
 		trust_algorithm="zero",
 	):
 		super().__init__(brain, make_env)
 		self.exploration_rate = exploration_rate
-		self.last_episode_score = 0
 		self.learn = True
 		self.env_max_steps = float(env_max_steps)
 		self.max_eval_steps = max_eval_steps
@@ -54,12 +53,13 @@ class ENAgent(AAgent):
 		self.mutation_noise = mutation_noise
 		self.physics = physics
 		self.plasticity_algorithm = plasticity_algorithm
-		self.plasticity_history = []
 		self.pop_size = pop_size
 		self.trust_algorithm = trust_algorithm
 
 		tmp_env = self.make_env()
 		self.state_dim = int(tmp_env.observation_space.shape[0])
+
+		self.memory = AgentMemory(history_size, self.state_dim, max_eval_steps)
 
 		# UNSUPERVISED ENVIRONMENT RECOGNITION
 		self._recognizer = EnvironmentRecognizer(
@@ -68,7 +68,7 @@ class ENAgent(AAgent):
 		)
 
 		# SELECTION CONTROLLER (Contextual Bandit)
-		context_dim = 2 * self.state_dim
+		context_dim = 4 * self.state_dim
 		self._selection_controller = SelectionController(
 			buffer_size=32,
 			context_dim=context_dim,
@@ -83,16 +83,7 @@ class ENAgent(AAgent):
 			if self.is_continuous
 			else int(tmp_env.action_space.n)
 		)
-		self._obs_normalizer = _RunningNormalizer(
-			self.state_dim,
-			max_count=self.max_eval_steps * 10,
-		)
 		tmp_env.close()
-
-		# AGNOSTIC STATISTICS
-		self.reward_history = deque(maxlen=history_size)
-		self.max_seen = -np.inf
-		self.min_seen = np.inf
 
 		# Hall of Fame
 		self.hall_of_fame = HallOfFame(
@@ -101,7 +92,6 @@ class ENAgent(AAgent):
 
 		# Initialize population
 		self.best_individual_idx = 0
-		self.current_episode_reward = 0
 		self._episode_started = False
 		self.population = [self.__build_individual() for _ in range(self.pop_size)]
 
@@ -114,7 +104,7 @@ class ENAgent(AAgent):
 		# 1. Selection at episode start
 		if not self._episode_started:
 			# Compute context once (used by the controller for episode routing)
-			context = self._recognizer.compute_context_vector()
+			context = self._recognizer.compute_physical_vector(self.memory)
 
 			niche_id = None
 			drives = False
@@ -122,6 +112,7 @@ class ENAgent(AAgent):
 			if self.learn:
 				# Training: let the controller optionally take over
 				niche_id, drives = self._selection_controller.start_episode(
+					self.memory,
 					context,
 					explore=True,
 				)
@@ -137,9 +128,9 @@ class ENAgent(AAgent):
 		# 2. Execution
 		chosen = self.population[self.best_individual_idx]
 
-		self._obs_normalizer.update(state[np.newaxis, :])
-		self._recognizer.update_state(state)
-		norm_state = self._obs_normalizer.normalize(state)
+		self.memory.obs_normalizer.update(state[np.newaxis, :])
+		self._recognizer.update_state(state, self.memory)
+		norm_state = self.memory.obs_normalizer.normalize(state)
 		state_tensor = tf.convert_to_tensor(norm_state.reshape(1, -1), dtype=tf.float32)
 		action_output = chosen["fast_call"](state_tensor, training=False)
 		action_numpy = action_output.numpy()[0]
@@ -153,29 +144,42 @@ class ENAgent(AAgent):
 		next_state, reward, terminated, truncated, _ = env.step(action)
 		done = terminated or truncated
 
+		# Track transition dynamics (physics signature)
+		self.memory.update_transition(state, next_state)
+
 		# 3. Internal State Management
-		self.current_episode_reward += reward
+		self.memory.current_episode_reward += reward
 
 		# 4. Episode over
 		if done:
-			self.last_episode_score = self.current_episode_reward
+			self.memory.last_episode_score = self.memory.current_episode_reward
 
 			if self.learn:
 				# Let the controller process the episode outcome (no-op if it wasn't active)
 				self._selection_controller.complete_episode(
-					self.last_episode_score,
+					self.memory,
+					self.memory.last_episode_score,
 					normalize_fn=self.__normalize_reward,
 				)
 			else:
 				# Test mode: update stats only — NO trust updates, NO UCB1
-				self.reward_history.append(self.last_episode_score)
-				self.max_seen = max(self.max_seen, self.last_episode_score)
-				self.min_seen = min(self.min_seen, self.last_episode_score)
+				self.memory.reward_history.append(self.memory.last_episode_score)
+				self.memory.max_seen = max(self.memory.max_seen, self.memory.last_episode_score)
+				self.memory.min_seen = min(self.memory.min_seen, self.memory.last_episode_score)
 
-			self.current_episode_reward = 0
+			self.memory.current_episode_reward = 0
 			self._episode_started = False
 
 		return next_state, reward, terminated, truncated, action
+
+	@property
+	def plasticity_history(self):
+		return self.memory.plasticity_history
+
+	@property
+	def current_env_id(self) -> int:
+		"""Current recognized niche ID (stable across recurring environments)."""
+		return self._recognizer.current_niche_id
 
 	def load_gladiators(self, restore_trust=True):
 		"""Re-introduces Gladiators into the active population with Niche Distribution."""
@@ -183,28 +187,23 @@ class ENAgent(AAgent):
 			self.hall_of_fame.inject_gladiators(
 				self.population,
 				self.pop_size,
-				self._obs_normalizer,
+				self.memory.obs_normalizer,
 				restore_trust=restore_trust,
 			)
-
-	@property
-	def current_env_id(self) -> int:
-		"""Current recognized niche ID (stable across recurring environments)."""
-		return self._recognizer.current_niche_id
 
 	def set_learning(self, mode, output_dir=None):
 		"""Reset trust and age for all population members to 0 (except gladiators)."""
 		self.best_individual_idx = 0
-		self.max_seen = -np.inf
-		self.min_seen = np.inf
-		self.reward_history.clear()
+		self.memory.max_seen = -np.inf
+		self.memory.min_seen = np.inf
+		self.memory.reward_history.clear()
 		for individual in self.population:
 			if not individual.get("is_gladiator", False):
 				individual["trust"] = 0.0
 				individual["age"] = 0
 
 		self.learn = mode
-		self._selection_controller.set_mode(self.learn)
+		self._selection_controller.set_mode(self.memory, self.learn)
 
 		# Save niche details when entering test mode if output_dir is provided
 		if not mode and output_dir is not None:
@@ -218,26 +217,27 @@ class ENAgent(AAgent):
 			return
 
 		# 1. Update Global Statistics
-		self.reward_history.append(self.last_episode_score)
-		self.max_seen = max(self.max_seen, self.last_episode_score)
-		self.min_seen = min(self.min_seen, self.last_episode_score)
+		self.memory.reward_history.append(self.memory.last_episode_score)
+		self.memory.max_seen = max(self.memory.max_seen, self.memory.last_episode_score)
+		self.memory.min_seen = min(self.memory.min_seen, self.memory.last_episode_score)
 
 		# 2. Calculate Failure Signal once
-		failure_signal = self.__get_trust_decay(self.last_episode_score)
+		failure_signal = self.__get_trust_decay(self.memory.last_episode_score)
 
 		# 3. Update the current Specialist's Trust
 		chosen = self.population[self.best_individual_idx]
 		chosen["age"] += 1
-		norm_score = self.__normalize_reward(self.last_episode_score)
+		norm_score = self.__normalize_reward(self.memory.last_episode_score)
 		chosen["trust"] = (1 - failure_signal) * chosen["trust"] + (
 			failure_signal * norm_score
 		)
 		# 4. Compute plasticity for this episode
-		plasticity = self.__get_plasticity(self.last_episode_score)
-		self.plasticity_history.append(plasticity)
+		plasticity = self.__get_plasticity(self.memory.last_episode_score)
+		self.memory.plasticity_history.append(plasticity)
 
-		# 5. Recognize environment (stable niche ID via context similarity)
-		self._recognizer.recognize()
+		# 5. Monitor for environment shifts
+		if self._recognizer.detect_change(self.memory):
+			self.memory.reset_recognizer_statistics()
 
 		# 6. Update Hall of Fame and origin tags
 		chosen["env_name"] = env.unwrapped.name
@@ -245,9 +245,9 @@ class ENAgent(AAgent):
 			chosen,
 			chosen["trust"],
 			self.population,
-			self.plasticity_history,
+			self.memory,
 			self._recognizer,
-			self._obs_normalizer,
+			self.memory.obs_normalizer,
 		)
 
 		# 7. Only reset trust (challenge the specialist) when failing
@@ -343,8 +343,8 @@ class ENAgent(AAgent):
 			"fast_call": fast_call,
 			"trust": self.__get_dynamic_ref_trust(),
 			"is_gladiator": False,
-			"last_mu": np.copy(self._obs_normalizer.mean),
-			"last_var": np.copy(self._obs_normalizer.var),
+			"last_mu": np.copy(self.memory.obs_normalizer.mean),
+			"last_var": np.copy(self.memory.obs_normalizer.var),
 		}
 
 	def __crossover(self, parent_1, parent_2, target):
@@ -367,8 +367,8 @@ class ENAgent(AAgent):
 		target["trust"] = self.__get_dynamic_ref_trust()
 		target["is_gladiator"] = False
 		# Because parents were projected to current normalizer, the child inherits it
-		target["last_mu"] = np.copy(self._obs_normalizer.mean)
-		target["last_var"] = np.copy(self._obs_normalizer.var)
+		target["last_mu"] = np.copy(self.memory.obs_normalizer.mean)
+		target["last_var"] = np.copy(self.memory.obs_normalizer.var)
 
 	def __evaluate_individual_performance(self, individual, env, seed=None):
 		"""Evaluate an individual for a single episode and return the score."""
@@ -378,7 +378,7 @@ class ENAgent(AAgent):
 		done, score, steps = False, 0, 0
 
 		while not done and steps < self.max_eval_steps:
-			norm_state = self._obs_normalizer.normalize(state)
+			norm_state = self.memory.obs_normalizer.normalize(state)
 			state_tensor = tf.convert_to_tensor(
 				norm_state.reshape(1, -1), dtype=tf.float32
 			)
@@ -465,11 +465,17 @@ class ENAgent(AAgent):
 	# pylint: disable=unused-private-member
 	def __fuzzylogic(self, reward):
 		"""Fuzzy logic membership: high reward."""
-		if len(self.reward_history) < 10:
+		if len(self.memory.reward_history) < 10:
 			return 1.0
 
-		low_limit = np.percentile(self.reward_history, 20)
-		high_limit = np.percentile(self.reward_history, 90)
+		low_limit = np.percentile(self.memory.reward_history, 10)
+		high_limit = np.percentile(self.memory.reward_history, 90)
+
+		# Adaptive margin: 5% of peak performance, minimum 2.0 points
+		margin = max(2.0, high_limit * 0.05)
+		if (high_limit - low_limit) < margin:
+			low_limit = max(0.0, high_limit - margin)
+
 		if reward >= high_limit:
 			return 0.1
 		if reward <= low_limit:
@@ -480,12 +486,12 @@ class ENAgent(AAgent):
 
 	def __get_dynamic_ref_trust(self):
 		"""Uses the moving average of performance as reference trust."""
-		if len(self.reward_history) < 5:
+		if len(self.memory.reward_history) < 5:
 			# Returning 0.0 creates an artificial ceiling in negative-reward environments.
 			# We return -1.0 so that evaluated mutants (even those with negative scores)
 			# have a higher trust than a fully "reset" unevaluated slot.
 			return -1.0
-		return self.__normalize_reward(float(np.mean(self.reward_history)))
+		return self.__normalize_reward(float(np.mean(self.memory.reward_history)))
 
 	def __get_plasticity(self, reward):
 		"""Modular dispatch to chosen plasticity algorithm."""
@@ -513,7 +519,7 @@ class ENAgent(AAgent):
 		target["is_gladiator"] = False
 
 		# Adaptive mutation noise — linked to current plasticity
-		plasticity = self.plasticity_history[-1] if self.plasticity_history else 1.0
+		plasticity = self.memory.plasticity_history[-1] if self.memory.plasticity_history else 1.0
 		noise_mag = 0.01 + ((self.mutation_noise - 0.01) * plasticity)
 
 		# USP: Inherit the parent's alignment state. The child's weights are still
@@ -532,11 +538,11 @@ class ENAgent(AAgent):
 
 	def __normalize_reward(self, reward: float) -> float:
 		"""Percentile-based reward normalization. Removed [0, 1] clip to preserve selection pressure."""
-		if len(self.reward_history) < 10:
+		if len(self.memory.reward_history) < 10:
 			# Warmup: scale against env_max_steps so trust values are distinct
 			return float(np.clip(reward / self.env_max_steps, -2.0, 5.0))
-		low = float(np.percentile(self.reward_history, 5))
-		high = float(np.percentile(self.reward_history, 95))
+		low = float(np.percentile(self.memory.reward_history, 5))
+		high = float(np.percentile(self.memory.reward_history, 95))
 
 		# Linear scaling relative to historical percentiles, but ALLOW values > 1.0
 		# to reward individuals that break the current records.
@@ -545,13 +551,13 @@ class ENAgent(AAgent):
 
 	def __project_individual_weights(self, individual):
 		"""Universal Snapshot Projection: aligns first layer weights to current normalizer."""
-		if self._obs_normalizer.count < self.max_eval_steps * 2:
+		if self.memory.obs_normalizer.count < self.max_eval_steps * 2:
 			return
 
 		mean_old = individual["last_mu"]
 		variance_old = individual["last_var"]
-		mean_new = self._obs_normalizer.mean
-		variance_new = self._obs_normalizer.var
+		mean_new = self.memory.obs_normalizer.mean
+		variance_new = self.memory.obs_normalizer.var
 
 		if np.allclose(mean_old, mean_new) and np.allclose(variance_old, variance_new):
 			return
@@ -579,11 +585,11 @@ class ENAgent(AAgent):
 	# pylint: disable=unused-private-member
 	def __quadratic(self, reward):
 		"""Aggressive plasticity algorithm using global benchmarks."""
-		if len(self.reward_history) < 10:
+		if len(self.memory.reward_history) < 10:
 			return 1.0
 
-		denominator = (self.max_seen - self.min_seen) + 1e-8
-		normalized_error = (self.max_seen - reward) / denominator
+		denominator = (self.memory.max_seen - self.memory.min_seen) + 1e-8
+		normalized_error = (self.memory.max_seen - reward) / denominator
 		return max(0.1, min(1.0, normalized_error**2))
 
 	def __reset_trust(self, factor=1.0):
@@ -630,10 +636,10 @@ class ENAgent(AAgent):
 
 	def __select_individual_test(self):
 		"""Test‑time specialist selection with recognizer → controller → closest gladiator / mutant fallback."""
-		context = self._recognizer.compute_context_vector()
+		context = self._recognizer.compute_physical_vector(self.memory)
 
 		# 1) Try recognizer first (robust physics signatures)
-		rec_niche_id, rec_sim = self._recognizer.match()
+		rec_niche_id, rec_sim = self._recognizer.match(self.memory)
 		gladiator_idx = self.__best_gladiator_in_niche(rec_niche_id)
 		if gladiator_idx is not None:
 			self.best_individual_idx = gladiator_idx
@@ -654,7 +660,7 @@ class ENAgent(AAgent):
 		if gladiators and random.random() < 0.75:
 			best_sim = -float("inf")
 			best_idx = random.choice(gladiators)  # Default to random gladiator if search fails
-			for nid, prototype in self._recognizer._prototypes.items():
+			for nid, prototype in self._recognizer._physical_prototypes.items():
 				sim = self._recognizer._cosine_similarity(context, prototype)
 				if sim > best_sim:
 					idx = self.__best_gladiator_in_niche(nid)

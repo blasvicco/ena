@@ -45,10 +45,8 @@ class SelectionController:
 		self._model = self._build_model(context_dim, self._current_niches, hidden_sizes)
 		self._optimizer = optimizers.Adam(learning_rate=learning_rate)
 
-		# Experience buffer for REINFORCE
-		self._contexts = []
-		self._actions = []
-		self._rewards = []
+		self._model = self._build_model(context_dim, self._current_niches, hidden_sizes)
+		self._optimizer = optimizers.Adam(learning_rate=learning_rate)
 
 	# ---------------------------------------------------------------
 	# Public API
@@ -66,7 +64,7 @@ class SelectionController:
 		confidence = float(probs[niche_id])
 		return niche_id, confidence
 
-	def record(self, context_vector, niche_id, reward):
+	def record(self, memory, context_vector, niche_id, reward):
 		"""Store a (context, niche, reward) experience for training."""
 		# Dynamically expands the output layer if niche_id is beyond current capacity.
 		if self._frozen:
@@ -77,14 +75,14 @@ class SelectionController:
 			self._expand_to_niches(niche_id + 1)
 
 		# Now niche_id is valid
-		self._contexts.append(context_vector.copy())
-		self._actions.append(niche_id)
-		self._rewards.append(reward)
+		memory.contexts.append(context_vector.copy())
+		memory.actions.append(niche_id)
+		memory.rewards.append(reward)
 
-		if len(self._contexts) >= self._buffer_size:
-			self.update()
+		if len(memory.contexts) >= self._buffer_size:
+			self.update(memory)
 
-	def start_episode(self, context, explore=True):
+	def start_episode(self, memory, context, explore=True):
 		"""Called at the beginning of an episode."""
 		# If training and the episode‑rate coin says 'controller', returns (niche_id, True).
 		# Otherwise returns (None, False).
@@ -99,26 +97,26 @@ class SelectionController:
 			self._active_niche = niche_id
 		return self._active_niche, self._active
 
-	def complete_episode(self, reward, normalize_fn=None):
+	def complete_episode(self, memory, reward, normalize_fn=None):
 		"""Call at end of episode with the episode score."""
 		if not self._active:
 			return
 		norm_reward = normalize_fn(reward) if normalize_fn else reward
-		self.record(self._active_context, self._active_niche, norm_reward)
+		self.record(memory, self._active_context, self._active_niche, norm_reward)
 		self._active = False
 		self._active_context = None
 		self._active_niche = None
 
 	# pylint: disable=too-many-locals
-	def update(self):
+	def update(self, memory):
 		"""REINFORCE policy-gradient update from buffered experiences."""
-		if self._frozen or len(self._contexts) < 2:
+		if self._frozen or len(memory.contexts) < 2:
 			return
 
 		# Convert to numpy arrays
-		contexts_np = np.array(self._contexts, dtype=np.float32)
-		actions_np = np.array(self._actions, dtype=np.int32)
-		rewards_np = np.array(self._rewards, dtype=np.float32)
+		contexts_np = np.array(memory.contexts, dtype=np.float32)
+		actions_np = np.array(memory.actions, dtype=np.int32)
+		rewards_np = np.array(memory.rewards, dtype=np.float32)
 
 		# Shuffle to break sequential ordering
 		perm = np.random.permutation(len(actions_np))
@@ -145,17 +143,15 @@ class SelectionController:
 		grads = tape.gradient(loss, self._model.trainable_variables)
 		self._optimizer.apply_gradients(zip(grads, self._model.trainable_variables))
 
-		self._contexts.clear()
-		self._actions.clear()
-		self._rewards.clear()
+		memory.clear_selection_buffers()
 
-	def set_mode(self, mode):
+	def set_mode(self, memory, mode):
 		"""Switch between train (unfrozen) and test (frozen) mode."""
 		if mode:
 			self._frozen = False
 		else:
-			if self._contexts:
-				self.update()
+			if memory and memory.contexts:
+				self.update(memory)
 			self._frozen = True
 
 	@staticmethod
