@@ -341,7 +341,8 @@ def run_experiment(experiment_id, output_dir, queue=None):
 			physics=["gravity", "masspole", "length"],
 			plasticity_algorithm="fuzzylogic",
 			pop_size=100,
-			recognizer_threshold=0.8,
+			recognizer_threshold=0.90,
+			selection_driver="heuristic",
 			trust_algorithm="fuzzylogic",
 		)
 		ena_agent_01.set_name("ENA-01 Fuzzy-Fuzzy")
@@ -480,7 +481,7 @@ if __name__ == "__main__":
 		) as executor:
 			futures = {}
 			for exp_id in range(NUM_EXPERIMENTS):
-				exp_dir = os.path.join("outputs", f"exp_{exp_id + 1}")
+				exp_dir = os.path.join("cartpole_outputs", f"exp_{exp_id + 1}")
 				analyzed = (
 					os.path.exists(os.path.join(exp_dir, "outputs.txt"))
 					and os.path.getsize(os.path.join(exp_dir, "outputs.txt")) > 0

@@ -345,6 +345,7 @@ def run_experiment(experiment_id, output_dir, queue=None):
 			plasticity_algorithm="fuzzylogic",
 			pop_size=200,
 			recognizer_threshold=0.90,
+			selection_driver="heuristic",
 			trust_algorithm="fuzzylogic",
 			mutation_noise=0.3,
 			controller_max_niches=32,

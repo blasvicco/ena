@@ -29,6 +29,7 @@ class ENAgent(AAgent):
 		make_env,
 		controller_episode_rate=0.03,
 		controller_max_niches=32,
+		selection_driver="heuristic",
 		env_max_steps=1000.0,
 		exploration_rate=0.20,
 		max_per_niche=5,
@@ -41,7 +42,10 @@ class ENAgent(AAgent):
 		physics=["gravity", "masspole", "length"],
 		plasticity_algorithm="zero",
 		pop_size=30,
-		recognizer_threshold=0.7,
+		recognizer_threshold=0.90,
+		recognizer_ema_alpha=0.10,
+		genetic_threshold=0.80,
+		genetic_bonus=0.50,
 		trust_algorithm="zero",
 	):
 		super().__init__(brain, make_env)
@@ -59,20 +63,25 @@ class ENAgent(AAgent):
 		tmp_env = self.make_env()
 		self.state_dim = int(tmp_env.observation_space.shape[0])
 
-		self.memory = AgentMemory(history_size, self.state_dim, max_eval_steps)
+		self.memory = AgentMemory(history_size, self.state_dim, max_eval_steps, ema_alpha=recognizer_ema_alpha)
 
 		# UNSUPERVISED ENVIRONMENT RECOGNITION
 		self._recognizer = EnvironmentRecognizer(
 			self.state_dim,
 			similarity_threshold=recognizer_threshold,
+			ema_alpha=recognizer_ema_alpha,
+			genetic_threshold=genetic_threshold,
+			genetic_bonus=genetic_bonus,
 		)
 
-		# SELECTION CONTROLLER (Contextual Bandit)
-		context_dim = 4 * self.state_dim
+		# SELECTION CONTROLLER (pluggable driver)
+		context_dim = len(self._recognizer.compute_full_vector(self.memory))
 		self._selection_controller = SelectionController(
+			selection_driver,
 			buffer_size=32,
 			context_dim=context_dim,
 			controller_episode_rate=controller_episode_rate,
+			exploration_rate=controller_episode_rate,
 			max_niches=controller_max_niches,
 		)
 
@@ -101,36 +110,41 @@ class ENAgent(AAgent):
 	# pylint: disable=too-many-locals
 	def act(self, env, state):
 		"""Act as the ENAgent"""
-		# 1. Selection at episode start
+		# 1. Selection (Every step)
 		if not self._episode_started:
-			# Compute context once (used by the controller for episode routing)
-			context = self._recognizer.compute_physical_vector(self.memory)
-
-			niche_id = None
-			drives = False
-
-			if self.learn:
-				# Training: let the controller optionally take over
-				niche_id, drives = self._selection_controller.start_episode(
-					self.memory,
-					context,
-					explore=True,
-				)
-
-			if drives and niche_id is not None:
-				self.__select_individual_for_niche(niche_id)
-			else:
-				self.__select_individual()
-
+			self._selection_controller.reset_episode()
+			self.memory.steps_this_episode = 0
 			self._episode_started = True
+
+		# The NN evaluates the live context every step.
+		if self.learn and self.memory.steps_this_episode == 0:
+			new_idx = self._selection_controller.select_individual(
+				self.population, self._recognizer, self.memory, learn=True
+			)
+			self.best_individual_idx = new_idx
 			self.__project_individual_weights(self.population[self.best_individual_idx])
+		elif not self.learn and self.memory.steps_this_episode == 0:
+			new_idx = self._selection_controller.select_individual(
+				self.population, self._recognizer, self.memory, learn=False
+			)
+			self.best_individual_idx = new_idx
+			self.__project_individual_weights(self.population[self.best_individual_idx])
+
+		self.memory.steps_this_episode += 1
 
 		# 2. Execution
 		chosen = self.population[self.best_individual_idx]
 
 		self.memory.obs_normalizer.update(state[np.newaxis, :])
 		self._recognizer.update_state(state, self.memory)
-		norm_state = self.memory.obs_normalizer.normalize(state)
+		
+		if chosen.get("is_gladiator", False):
+			mu = chosen["last_mu"]
+			std = np.sqrt(chosen["last_var"] + 1e-8)
+			norm_state = (state - mu) / std
+		else:
+			norm_state = self.memory.obs_normalizer.normalize(state)
+			
 		state_tensor = tf.convert_to_tensor(norm_state.reshape(1, -1), dtype=tf.float32)
 		action_output = chosen["fast_call"](state_tensor, training=False)
 		action_numpy = action_output.numpy()[0]
@@ -149,25 +163,70 @@ class ENAgent(AAgent):
 
 		# 3. Internal State Management
 		self.memory.current_episode_reward += reward
+		self.memory.step_rewards.append(reward)
+
+		# Train/Test Alignment: Periodically record mid-episode contexts during train mode
+		# so the NN learns to recognize the environment across its entire evolution.
+		if self.learn and self._selection_controller._active and (self.memory.steps_this_episode == 1 or self.memory.steps_this_episode % 50 == 0):
+			self._selection_controller.record(
+				self.memory,
+				self._recognizer.compute_full_vector(self.memory),
+				self._selection_controller._active_niche,
+				0.0 # Reward is patched later
+			)
 
 		# 4. Episode over
 		if done:
 			self.memory.last_episode_score = self.memory.current_episode_reward
+			force_reset = False
 
-			if self.learn:
-				# Let the controller process the episode outcome (no-op if it wasn't active)
-				self._selection_controller.complete_episode(
+			if self.learn and self._selection_controller._active:
+				# Backfill the final episode reward to all recorded mid-episode contexts
+				# We know the controller was active, so all records for this episode belong to it
+				norm_reward = self.__normalize_reward(self.memory.last_episode_score)
+				# Update the rewards for the last N contexts recorded this episode
+				num_recorded = (self.memory.steps_this_episode // 50) + 1
+				for i in range(1, num_recorded + 1):
+					if len(self.memory.rewards) >= i:
+						self.memory.rewards[-i] = norm_reward
+
+				# Also explicitly record the final context
+				self._selection_controller.record(
 					self.memory,
-					self.memory.last_episode_score,
-					normalize_fn=self.__normalize_reward,
+					self._recognizer.compute_full_vector(self.memory),
+					self._selection_controller._active_niche,
+					norm_reward
 				)
-			else:
+
+				# Trigger controller update after all rewards are safely backfilled
+				if len(self.memory.contexts) >= self._selection_controller._buffer_size:
+					self._selection_controller.update(self.memory)
+			elif not self.learn:
 				# Test mode: update stats only — NO trust updates, NO UCB1
 				self.memory.reward_history.append(self.memory.last_episode_score)
 				self.memory.max_seen = max(self.memory.max_seen, self.memory.last_episode_score)
 				self.memory.min_seen = min(self.memory.min_seen, self.memory.last_episode_score)
 
+				# Let the driver process the episode result
+				force_reset = self._selection_controller.record_episode_result(
+					self.memory.last_episode_score, self.memory
+				)
+
+			# Monitor for environment shifts (runs in both train and test mode)
+			if self._recognizer.detect_change(self.memory):
+				self.memory.reset_recognizer_statistics()
+				self.memory.obs_normalizer.reset()
+				if not self.learn:
+					self._selection_controller.trigger_evaluation(self.population)
+
+			# Test-only: force evaluation reset on extreme performance drops
+			if not self.learn and force_reset:
+				self.memory.reward_history.clear()
+				self._selection_controller.trigger_evaluation(self.population)
+
+			# Reset internal step counters
 			self.memory.current_episode_reward = 0
+			self.memory.steps_this_episode = 0
 			self._episode_started = False
 
 		return next_state, reward, terminated, truncated, action
@@ -205,6 +264,10 @@ class ENAgent(AAgent):
 		self.learn = mode
 		self._selection_controller.set_mode(self.memory, self.learn)
 
+		# Trigger initial evaluation when entering test mode
+		if not mode:
+			self._selection_controller.trigger_evaluation(self.population)
+
 		# Save niche details when entering test mode if output_dir is provided
 		if not mode and output_dir is not None:
 			self.hall_of_fame.save_niche_details(output_dir, self.get_name())
@@ -234,10 +297,6 @@ class ENAgent(AAgent):
 		# 4. Compute plasticity for this episode
 		plasticity = self.__get_plasticity(self.memory.last_episode_score)
 		self.memory.plasticity_history.append(plasticity)
-
-		# 5. Monitor for environment shifts
-		if self._recognizer.detect_change(self.memory):
-			self.memory.reset_recognizer_statistics()
 
 		# 6. Update Hall of Fame and origin tags
 		chosen["env_name"] = env.unwrapped.name
@@ -291,10 +350,6 @@ class ENAgent(AAgent):
 
 		# 8. Breed and Mutate
 		self.__evolve_population()
-
-		# 9. Final selection for the next training episode
-		self.__select_individual()
-
 	# ---------------------------------------------------------------
 	# Private methods
 	# ---------------------------------------------------------------
@@ -551,6 +606,8 @@ class ENAgent(AAgent):
 
 	def __project_individual_weights(self, individual):
 		"""Universal Snapshot Projection: aligns first layer weights to current normalizer."""
+		if individual.get("is_gladiator", False):
+			return
 		if self.memory.obs_normalizer.count < self.max_eval_steps * 2:
 			return
 
@@ -598,80 +655,6 @@ class ENAgent(AAgent):
 			individual["trust"] = (individual["trust"] * (1.0 - factor)) + (
 				self.__get_dynamic_ref_trust() * factor
 			)
-
-	def __select_individual(self):
-		"""Selects the best individual from the population."""
-		if self.learn:
-			# Train mode: pure trust argmax
-			trust_scores = [individual["trust"] for individual in self.population]
-			self.best_individual_idx = int(np.argmax(trust_scores))
-			return
-		# Test mode: use the trained SelectionController
-		self.__select_individual_test()
-
-	def __select_individual_for_niche(self, niche_id):
-		"""Select the best gladiator from a specific recognised niche."""
-		# All gladiators that belong to the requested niche
-		gladiator_slots = [
-			index
-			for index, individual in enumerate(self.population)
-			if individual.get("internal_env_id") == niche_id
-			and individual.get("is_gladiator", False)
-		]
-		if gladiator_slots:
-			# Pick the one with the highest stored (training) trust
-			self.best_individual_idx = max(
-				gladiator_slots, key=lambda index: self.population[index]["trust"]
-			)
-		else:
-			# Niche has no gladiator yet → fallback to a random non‑gladiator
-			non_gladiator_slots = [
-				index
-				for index, individual in enumerate(self.population)
-				if not individual.get("is_gladiator", False)
-			]
-			self.best_individual_idx = (
-				random.choice(non_gladiator_slots) if non_gladiator_slots else 0
-			)
-
-	def __select_individual_test(self):
-		"""Test‑time specialist selection with recognizer → controller → closest gladiator / mutant fallback."""
-		context = self._recognizer.compute_physical_vector(self.memory)
-
-		# 1) Try recognizer first (robust physics signatures)
-		rec_niche_id, rec_sim = self._recognizer.match(self.memory)
-		gladiator_idx = self.__best_gladiator_in_niche(rec_niche_id)
-		if gladiator_idx is not None:
-			self.best_individual_idx = gladiator_idx
-			return
-
-		# 2) Only if recognizer fails, use the controller with a higher confidence bar
-		niche_id, confidence = self._selection_controller.select_niche(context, explore=False)
-		gladiator_idx = self.__best_gladiator_in_niche(niche_id)
-		if gladiator_idx is not None and confidence > 0.8:   # much stricter
-			self.best_individual_idx = gladiator_idx
-			return
-
-		# 3) Fallback: mostly try the closest gladiator (zero-shot transfer), sometimes try a random mutant
-		non_gladiators = [i for i, g in enumerate(self.population) if not g.get("is_gladiator")]
-		gladiators = [i for i, g in enumerate(self.population) if g.get("is_gladiator")]
-
-		# 75% chance to use the closest gladiator for zero-shot transfer, if any exist
-		if gladiators and random.random() < 0.75:
-			best_sim = -float("inf")
-			best_idx = random.choice(gladiators)  # Default to random gladiator if search fails
-			for nid, prototype in self._recognizer._physical_prototypes.items():
-				sim = self._recognizer._cosine_similarity(context, prototype)
-				if sim > best_sim:
-					idx = self.__best_gladiator_in_niche(nid)
-					if idx is not None:
-						best_sim = sim
-						best_idx = idx
-			self.best_individual_idx = best_idx
-			return
-
-		# 4) Absolute fallback to a random mutant (25% chance or if no gladiators exist)
-		self.best_individual_idx = random.choice(non_gladiators) if non_gladiators else 0
 
 	# pylint: disable=unused-private-member
 	def __zero(self, _):

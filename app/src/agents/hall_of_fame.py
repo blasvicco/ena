@@ -136,7 +136,7 @@ class HallOfFame:
 			return
 
 		# Late Identity Binding: Determine the niche ID for this successful individual
-		recognizer.match_niche(memory, winner, self)
+		recognizer.match_niche(memory, winner, self, population=population)
 
 		if self.__continual_improvement(
 			winner,
@@ -205,9 +205,11 @@ class HallOfFame:
 				existing["trust"] = current_trust
 				existing["induction_z_score"] = current_z_score
 				existing["env_name"] = winner.get("env_name", "Unknown")
-				existing["last_mu"] = np.copy(winner.get("last_mu", obs_normalizer.mean))
-				existing["last_var"] = np.copy(winner.get("last_var", obs_normalizer.var))
+				existing["last_mu"] = np.copy(obs_normalizer.mean)
+				existing["last_var"] = np.copy(obs_normalizer.var)
 				winner["internal_env_id"] = current_env_id
+				winner["last_mu"] = np.copy(obs_normalizer.mean)
+				winner["last_var"] = np.copy(obs_normalizer.var)
 			return True
 
 		# Cross-niche: winner is already a gladiator from a different niche.
@@ -227,8 +229,8 @@ class HallOfFame:
 				"env_name": winner.get("env_name", "Unknown"),
 				"internal_env_id": current_env_id,
 				"is_gladiator": True,
-				"last_mu": np.copy(winner.get("last_mu", obs_normalizer.mean)),
-				"last_var": np.copy(winner.get("last_var", obs_normalizer.var)),
+				"last_mu": np.copy(obs_normalizer.mean),
+				"last_var": np.copy(obs_normalizer.var),
 			}
 			clone["model"].set_weights(winner["model"].get_weights())
 			self._records[clone_id] = clone
@@ -301,9 +303,8 @@ class HallOfFame:
 		backup["induction_z_score"] = z_score
 		backup["env_name"] = individual.get("env_name", "Unknown")
 		backup["internal_env_id"] = recognizer.current_niche_id
-		backup["is_gladiator"] = True
-		backup["last_mu"] = np.copy(individual.get("last_mu", obs_normalizer.mean))
-		backup["last_var"] = np.copy(individual.get("last_var", obs_normalizer.var))
+		backup["last_mu"] = np.copy(obs_normalizer.mean)
+		backup["last_var"] = np.copy(obs_normalizer.var)
 		self._records[individual["individual_id"]] = backup
 
 		# Mark the live population member as a gladiator immediately.
@@ -311,6 +312,8 @@ class HallOfFame:
 		individual["is_gladiator"] = True
 		individual["internal_env_id"] = recognizer.current_niche_id
 		individual["env_name"] = backup["env_name"]
+		individual["last_mu"] = np.copy(obs_normalizer.mean)
+		individual["last_var"] = np.copy(obs_normalizer.var)
 
 	def __slot_induction(self, winner, current_trust, current_z_score, recognizer, obs_normalizer):
 		"""STEP 5: OPEN SLOT INDUCTION — induct if winner's niche is below budget."""
