@@ -6,6 +6,7 @@ numpy
 pandas
 psutil
 pylint
+pytest
 seaborn
 shimmy
 tensorflow

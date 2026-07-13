@@ -6,6 +6,33 @@ import pandas as pd
 import seaborn as sns
 
 
+def _qualitative_colors(count: int) -> list:
+	"""Return count visually distinct colors, scaling past any fixed palette size."""
+	cmap = plt.get_cmap("tab20" if count > 10 else "tab10")
+	return [cmap(i / max(count, 1)) for i in range(count)]
+
+
+def _classify_niche_events(niche_id_series: pd.Series) -> list:
+	"""Classify each niche-id change as 'new' (never seen) or 'switch' (to a known id).
+
+	A niche id of -1 or NaN means "no niche resolved this episode" and is skipped.
+	Only value *changes* are emitted — repeated confirmations of the same niche
+	produce no event.
+	"""
+	seen, events = set(), []
+	prev = None
+	for episode, niche_id in niche_id_series.items():
+		if pd.isna(niche_id) or niche_id == -1:
+			continue
+		if prev is None:
+			seen.add(niche_id)
+		elif niche_id != prev:
+			events.append((episode, niche_id, "new" if niche_id not in seen else "switch"))
+			seen.add(niche_id)
+		prev = niche_id
+	return events
+
+
 # pylint: disable=too-many-locals
 def calculate_paper_metrics(
 	histories,
@@ -149,50 +176,49 @@ def plot_academic_comparison(
 						fontweight="bold",
 					)
 
-		# 2. Agent's Internal Detection Points—orange dots for NEW envs, black Xs for env SWITCHES
-		if "detected_env_id" in dataframe.columns:
-			new_env_x, new_env_y = [], []
-			switch_env_x, switch_env_y = [], []
-			seen_env_ids = set()
-
-			for ep in range(len(dataframe)):
-				env_id = dataframe["detected_env_id"].iloc[ep]
-				if pd.isna(env_id) or env_id == -1:
-					continue
-
-				if ep == 0:
-					seen_env_ids.add(env_id)
-					continue
-
-				prev_env_id = dataframe["detected_env_id"].iloc[ep - 1]
-				if env_id != prev_env_id:
-					if env_id not in seen_env_ids:
-						new_env_x.append(ep)
-						new_env_y.append(mean_score.iloc[ep])
-						seen_env_ids.add(env_id)
-					else:
-						switch_env_x.append(ep)
-						switch_env_y.append(mean_score.iloc[ep])
-
-			if new_env_x:
+		# 2. Real-time shift detection (detect_change() firing) — independent of which
+		# niche the agent resolves to, and meaningful in both train and test charts.
+		if "env_shift_detected" in dataframe.columns:
+			shift_positions = [
+				pos
+				for pos, fired in enumerate(dataframe["env_shift_detected"])
+				if bool(fired)
+			]
+			if shift_positions:
+				y_pos = ylim[0] + (ylim[1] - ylim[0]) * 0.03
 				axes[index].plot(
-					new_env_x,
-					new_env_y,
-					"o",
-					color="orange",
-					markersize=8,
-					zorder=5,
-					label="New Env Detected",
+					shift_positions,
+					[y_pos] * len(shift_positions),
+					"^",
+					color="purple",
+					markersize=6,
+					zorder=4,
+					label="Shift Detected",
 				)
-			if switch_env_x:
+
+		# 3. Niche identity: "new" (never-seen niche) vs. "switch" (reclassified to a
+		# different, already-known niche) — colored by niche id so recurring fragments
+		# of the same true environment are visually traceable across the run.
+		if "detected_env_id" in dataframe.columns:
+			events = _classify_niche_events(dataframe["detected_env_id"])
+			niche_ids = sorted({niche_id for _, niche_id, _ in events})
+			color_by_niche = dict(zip(niche_ids, _qualitative_colors(len(niche_ids))))
+
+			new_labeled, switch_labeled = False, False
+			for pos, niche_id, kind in events:
+				label = None
+				if kind == "new" and not new_labeled:
+					label, new_labeled = "New Niche", True
+				elif kind == "switch" and not switch_labeled:
+					label, switch_labeled = "Niche Switch", True
 				axes[index].plot(
-					switch_env_x,
-					switch_env_y,
-					"x",
-					color="black",
+					pos,
+					mean_score.iloc[pos],
+					"o" if kind == "new" else "x",
+					color=color_by_niche[niche_id],
 					markersize=8,
 					zorder=5,
-					label="Env Switch (Known)",
+					label=label,
 				)
 
 		axes[index].set_ylabel("Score", fontsize=12)
@@ -278,9 +304,10 @@ def plot_specialist_transitions(df_history, pop_size=30, save_path=None):
 	# 1. Increase height to (14, 8) to give more vertical room for IDs
 	figure, axis1 = plt.subplots(figsize=(14, 8))
 
-	# Color background by environment
+	# Color background by environment — a colormap sized to the actual number of
+	# environments in this run, so it never wraps regardless of how many appear.
 	unique_envs = df_history["env_id"].unique()
-	colors = ["gray", "orange", "blue", "red"]  # Earth, Mars, Neptune, Jupiter
+	colors = _qualitative_colors(len(unique_envs))
 
 	for index, env_id in enumerate(unique_envs):
 		mask = df_history["env_id"] == env_id
@@ -295,7 +322,7 @@ def plot_specialist_transitions(df_history, pop_size=30, save_path=None):
 			start,
 			end,
 			alpha=0.07,
-			color=colors[index % len(colors)],
+			color=colors[index],
 		)
 
 		# 2. Position text dynamically at the very top of the limit
@@ -332,6 +359,27 @@ def plot_specialist_transitions(df_history, pop_size=30, save_path=None):
 		x="episode",
 		y="specialist_id",
 	)
+
+	# 3b. Outline gladiator points by their actual recognized niche id (not just their
+	# ground-truth env name) — makes niche fragmentation (many niche ids per one true
+	# environment) visible directly on this chart, without touching the main legend.
+	if "internal_env_id" in df_history.columns:
+		gladiator_rows = df_history[
+			df_history["is_gladiator"] & (df_history["internal_env_id"] != -1)
+		]
+		niche_ids = sorted(gladiator_rows["internal_env_id"].unique())
+		if niche_ids:
+			color_by_niche = dict(zip(niche_ids, _qualitative_colors(len(niche_ids))))
+			axis1.scatter(
+				gladiator_rows["episode"],
+				gladiator_rows["specialist_id"],
+				s=110,
+				facecolors="none",
+				edgecolors=[color_by_niche[nid] for nid in gladiator_rows["internal_env_id"]],
+				linewidths=1.5,
+				zorder=3,
+			)
+
 	axis1.legend(loc="center left", bbox_to_anchor=(1, 0.5))
 
 	axis1.set_ylabel("Active Specialist ID", fontweight="bold")
@@ -350,6 +398,135 @@ def plot_specialist_transitions(df_history, pop_size=30, save_path=None):
 		pad=20,
 		fontsize=14,
 	)
+	plt.tight_layout()
+	if save_path:
+		figure.savefig(save_path, dpi=300)
+		plt.close()
+	else:
+		plt.show()
+
+
+def _build_transition_matrix(niche_id_series: pd.Series) -> dict:
+	"""Count niche-to-niche transitions: {(from_id, to_id): count} over consecutive changes.
+
+	Both "new niche" and "switch to known niche" changes count as transitions here —
+	unlike `_classify_niche_events`, this is about the shape of the transition graph,
+	not about labeling a chart marker.
+	"""
+	counts = {}
+	prev = None
+	for _, niche_id in niche_id_series.items():
+		if pd.isna(niche_id) or niche_id == -1:
+			continue
+		if prev is not None and niche_id != prev:
+			key = (prev, niche_id)
+			counts[key] = counts.get(key, 0) + 1
+		prev = niche_id
+	return counts
+
+
+def _niche_env_labels(df_history: pd.DataFrame) -> dict:
+	"""Best-effort niche id -> ground-truth env name, from whichever rows resolved it."""
+	if "detected_env_id" not in df_history.columns or "gladiator_env" not in df_history.columns:
+		return {}
+	labeled = df_history[
+		(df_history["detected_env_id"] != -1) & df_history["gladiator_env"].notna()
+	]
+	if labeled.empty:
+		return {}
+	return (
+		labeled.groupby("detected_env_id")["gladiator_env"]
+		.agg(lambda envs: envs.value_counts().idxmax())
+		.to_dict()
+	)
+
+
+def plot_niche_transition_sequence(df_history, save_path=None):
+	"""Plot the actual chain of niche reclassifications over the whole run.
+
+	Makes convergence (settles onto one niche and stays) vs. persistent thrashing
+	between fragmented niches visually obvious, background-shaded by the ground-truth
+	environment so within-env vs. cross-env transitions are easy to tell apart.
+	"""
+	figure, axis1 = plt.subplots(figsize=(14, 6))
+
+	unique_envs = df_history["env_id"].unique()
+	env_colors = _qualitative_colors(len(unique_envs))
+	for index, env_id in enumerate(unique_envs):
+		mask = df_history["env_id"] == env_id
+		if not mask.any():
+			continue
+		start, end = df_history[mask]["episode"].min(), df_history[mask]["episode"].max()
+		axis1.axvspan(start, end, alpha=0.07, color=env_colors[index])
+		axis1.text(
+			(start + end) / 2,
+			axis1.get_ylim()[1],
+			f"{env_id}",
+			alpha=0.6,
+			fontsize=11,
+			fontweight="bold",
+			ha="center",
+		)
+
+	resolved = df_history[
+		df_history["detected_env_id"].notna() & (df_history["detected_env_id"] != -1)
+	]
+	axis1.plot(
+		resolved["episode"],
+		resolved["detected_env_id"],
+		"-o",
+		color="tab:blue",
+		markersize=4,
+		linewidth=1,
+		alpha=0.8,
+	)
+
+	axis1.set_xlabel("Episode", fontweight="bold")
+	axis1.set_ylabel("Resolved Niche ID", fontweight="bold")
+	axis1.grid(True, axis="y", alpha=0.2, linestyle="--")
+	plt.title("Niche Transition Sequence", pad=20, fontsize=14)
+	plt.tight_layout()
+	if save_path:
+		figure.savefig(save_path, dpi=300)
+		plt.close()
+	else:
+		plt.show()
+
+
+def plot_niche_transition_matrix(df_history, save_path=None):
+	"""Plot a niche x niche transition-count heatmap.
+
+	Scales to any niche count (unlike overlapping scatter points), and directly shows
+	whether reclassifications cluster within one true environment's fragments (expected
+	if niches are merely fragmented) or cross into a different true environment
+	(a more serious bug — real cross-environment confusion, not just fragmentation).
+	"""
+	counts = _build_transition_matrix(df_history["detected_env_id"])
+	niche_ids = sorted({nid for pair in counts for nid in pair})
+
+	figure, axis1 = plt.subplots(figsize=(8, 7))
+	if not niche_ids:
+		axis1.text(0.5, 0.5, "No niche transitions recorded", ha="center", va="center")
+	else:
+		labels = _niche_env_labels(df_history)
+		matrix = [[counts.get((row, col), 0) for col in niche_ids] for row in niche_ids]
+		tick_labels = [f"{nid} ({labels.get(nid, 'Unknown')})" for nid in niche_ids]
+
+		sns.heatmap(
+			matrix,
+			ax=axis1,
+			annot=True,
+			fmt="d",
+			cmap="viridis",
+			xticklabels=tick_labels,
+			yticklabels=tick_labels,
+			cbar_kws={"label": "Transition count"},
+		)
+		axis1.set_xlabel("To niche", fontweight="bold")
+		axis1.set_ylabel("From niche", fontweight="bold")
+		plt.setp(axis1.get_xticklabels(), rotation=45, ha="right")
+
+	plt.title("Niche Transition Matrix", pad=20, fontsize=14)
 	plt.tight_layout()
 	if save_path:
 		figure.savefig(save_path, dpi=300)
