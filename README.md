@@ -12,49 +12,105 @@ Traditional Reinforcement Learning (RL) agents often struggle to adapt rapidly i
 
 ---
 
+## What This Project Is
+
+ENA is evaluated head-to-head against standard deep RL baselines — **DQN**, **PPO**, and **SAC** — across two non-stationary domains:
+
+- **CartPole** — 1D pole-balancing under sequentially shifting gravity (Earth → Mars → Jupiter), tested against a hidden Neptune phase.
+- **HalfCheetah** — continuous-control locomotion under shifting physics (gravity, friction, wind), extending the evaluation beyond a single toy benchmark into higher-dimensional continuous action spaces.
+
+Each domain runner trains every agent (ENA plus the three baselines) under the same shifting-environment protocol and reports comparable metrics: **Reliability** (%), per-environment average score, **Stability Gap** (performance drop at an environment switch), and **Efficiency** (score per wall-clock second).
+
+---
+
 ## Repository Structure
 
 ```
 app/
-├── ena_test.py            # Main experiment script (10 independent runs)
-├── aggregate_metrics.py   # Aggregates results across exp_01/ – exp_10/
-├── plot_variance.py       # Generates reliability and stability plots
-├── latex/                 # Full LaTeX source for the paper
-└── requirements.txt       # Python dependencies
+├── src/
+│   ├── agents/
+│   │   ├── tools/
+│   │   │   ├── abstract.py             # AAgent — shared agent contract (act/train/set_learning)
+│   │   │   ├── baseline.py             # ABaseline — shared contract for single-model RL baselines
+│   │   │   └── normalizers.py          # Running/identity observation normalizers
+│   │   ├── ena/
+│   │   │   ├── ena.py                  # ENAgent — the Evolutionary Neuroplastic Agent
+│   │   │   ├── hall_of_fame.py         # Archive of elite frozen specialists ("Gladiators")
+│   │   │   ├── memory.py               # AgentMemory — reward/plasticity history & running stats
+│   │   │   ├── recognizer.py           # EnvironmentRecognizer — detects & identifies env shifts
+│   │   │   └── selection_controller.py # Specialist-selection strategies (heuristic + neural)
+│   │   ├── dqn.py                      # DQNAgent — Deep Q-Network baseline
+│   │   ├── ppo.py                      # PPOAgent — PPO-clip baseline (discrete + continuous)
+│   │   └── sac.py                      # SACAgent — Soft Actor-Critic baseline (continuous)
+│   ├── cartpole.py                     # CartPole experiment runner
+│   ├── half_cheetah.py                 # HalfCheetah experiment runner
+│   └── tools/
+│       ├── metrics.py                  # Reliability / Stability Gap / Efficiency computation + plots
+│       ├── visualization.py            # Live multi-experiment progress reporting
+│       ├── aggregate_metrics.py        # Aggregates metrics across repeated experiment runs
+│       └── plot_variance.py            # Publication-quality variance plots across runs
+├── latex/                          # Full LaTeX source for the paper
+├── requirements.txt                # Python dependencies
+└── .pylintrc                       # Lint configuration (see STANDARDS.md)
 hub/
-└── python/Dockerfile      # Docker environment for helper scripts
+└── python/Dockerfile               # Docker environment for running experiments
+docker-compose.yml                  # Container orchestration for local development
 ```
+
+See [STANDARDS.md](STANDARDS.md) for coding conventions and a closer look at how these pieces fit together.
 
 ---
 
 ## How to Run
 
-### Option A — Google Colab (recommended)
+### Option A — Google Colab
 
-Click the badge at the top of this page. No local setup required. The full experiment was originally executed on Colab using free GPU resources.
+Click the badge at the top of this page. No local setup required.
 
-### Option B — Local
+### Option B — Docker (recommended for local development)
+
+**1. Build and start the container**
+```bash
+docker compose up -d
+```
+
+**2. Open a shell inside it**
+```bash
+docker compose exec ena_experiment bash
+```
+
+The `app/` directory is bind-mounted to `/home/app` inside the container, so edits on the host are immediately reflected.
+
+**3. Run an experiment**
+```bash
+python src/cartpole.py
+# or
+python src/half_cheetah.py
+```
+
+### Option C — Local Python
 
 **1. Install dependencies**
 ```bash
 pip install -r app/requirements.txt
 ```
 
-**2. Run the 10 independent experiments**
+**2. Run an experiment**
 ```bash
-python app/ena_test.py
+python app/src/cartpole.py
+# or
+python app/src/half_cheetah.py
 ```
-Each of the 10 runs creates its own fresh agent instances with independent random population seeds. Save the console output from each run into separate folders named `exp_01/outputs.txt`, `exp_02/outputs.txt`, and so on.
 
-**3. Aggregate results across all 10 experiments**
+**3. Aggregate results across repeated runs**
 ```bash
-python app/aggregate_metrics.py
+python app/src/tools/aggregate_metrics.py
 ```
-Reads all `exp_##/outputs.txt` files and computes mean, standard deviation, min, and max for every reported metric.
+Reads per-experiment output folders and computes mean, standard deviation, min, and max for every reported metric.
 
 **4. Generate variance plots**
 ```bash
-python app/plot_variance.py
+python app/src/tools/plot_variance.py
 ```
 Produces `reliability_box.png` and `stability_bar.png` — the figures used in the paper.
 
@@ -62,42 +118,20 @@ Produces `reliability_box.png` and `stability_bar.png` — the figures used in t
 
 ## Scripts
 
-### `ena_test.py`
+### `src/cartpole.py`
+Runs the ENA agent (and, where enabled, the DQN/PPO baselines) on CartPole under shifting gravity (Earth, Mars, Jupiter), then tests against training worlds plus held-out Neptune/Brown-dwarf phases. Writes per-experiment results, plots, and logs to an output directory.
 
-Main experiment script. Runs 10 independent training + testing cycles across all three ENA configurations (ENA-01, ENA-02, ENA-03). Each cycle initializes fresh agents with independent random population seeds, ensuring full statistical independence between runs.
+### `src/half_cheetah.py`
+Runs the same comparative protocol on MuJoCo HalfCheetah, varying gravity/friction/wind instead of pole physics, with SAC/PPO baselines for continuous-control comparison.
 
-**Dependencies:** `gymnasium`, `matplotlib`, `numpy`, `pandas`, `seaborn`, `tensorflow`
+### `src/tools/metrics.py`
+Computes the paper's core metrics (Reliability, Stability Gap, Efficiency) from raw episode histories and renders the academic comparison, plasticity, and specialist-transition figures.
 
----
+### `src/tools/aggregate_metrics.py`
+Aggregates metrics across all repeated experiment runs into a single summary report.
 
-### `aggregate_metrics.py`
-
-Reads per-experiment result files and computes aggregate statistics. Expects results stored in folders named `exp_01/` through `exp_10/`, each containing an `outputs.txt` file in the following format:
-
-```
-Outputs
-Training:
---- ACADEMIC PERFORMANCE & RELIABILITY SUMMARY ---
-       Agent  Env_0 Avg  Env_1 Avg  Env_2 Avg Reliability (%)  Stability Gap (↓)  Efficiency (Score/s)
-ena_agent_01     311.73     468.60     353.81           63.5%             -124.2                 40.10
-ena_agent_02     478.69     468.44     355.88           81.2%               26.3                 67.44
-
-Test
---- ACADEMIC PERFORMANCE & RELIABILITY SUMMARY ---
-       Agent  Env_0 Avg  Env_1 Avg  Env_2 Avg  Env_3 Avg Reliability (%)  Stability Gap (↓)
-ena_agent_01     493.45      500.0     463.30      500.0           97.2%                0.0
-ena_agent_02     490.19      500.0     500.00      500.0           99.2%                0.0
-ena_agent_03     493.30      500.0     483.56      500.0           98.4%                0.0
-```
-
----
-
-### `plot_variance.py`
-
-Generates two publication-quality figures directly from the raw `exp_##/outputs.txt` files:
-
-- **`reliability_box.png`** — box plot of test-phase reliability distribution across 10 runs per configuration
-- **`stability_bar.png`** — bar chart of stability gap (mean ± std) per configuration
+### `src/tools/plot_variance.py`
+Produces the reliability and stability-gap variance figures used in the paper, directly from raw experiment output.
 
 ---
 
@@ -114,4 +148,4 @@ All figures referenced in the paper are pre-rendered and stored in `app/latex/im
 
 ## Future Work
 
-Future work will expand the analysis beyond the preliminary 1D kinematic CartPole benchmark by scaling generation counts and population pools sequentially into deeper continuous domains. By mathematically eroding the initialization bottleneck, we plan to directly benchmark ENA's overarching rapid-learning mechanisms continuously against established baseline DRL frameworks (such as PPO or Deep Q-Networks) to validate absolute operational supremacy.
+Future work centers on strengthening the evidentiary basis of the ENA results: running the full DQN/PPO/SAC baseline comparison across both CartPole and HalfCheetah, scaling generation counts and population pools into deeper continuous domains, and tightening statistical rigor around the initialization-sensitivity findings. The long-term aim is to validate ENA's rapid-adaptation mechanisms against established baseline DRL frameworks under a broader, more demanding evaluation protocol.

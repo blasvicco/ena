@@ -11,7 +11,7 @@ from keras import initializers
 import tensorflow as tf
 
 # App imports
-from .abstract import AAgent
+from ..tools.abstract import AAgent
 from .hall_of_fame import HallOfFame
 from .recognizer import EnvironmentRecognizer
 from .selection_controller import SelectionController
@@ -49,7 +49,6 @@ class ENAgent(AAgent):
 		trust_algorithm="zero",
 	):
 		super().__init__(brain, make_env)
-		self.exploration_rate = exploration_rate
 		self.learn = True
 		self.env_max_steps = float(env_max_steps)
 		self.max_eval_steps = max_eval_steps
@@ -81,7 +80,7 @@ class ENAgent(AAgent):
 			buffer_size=32,
 			context_dim=context_dim,
 			controller_episode_rate=controller_episode_rate,
-			exploration_rate=controller_episode_rate,
+			exploration_rate=exploration_rate,
 			max_niches=controller_max_niches,
 		)
 

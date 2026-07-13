@@ -2,7 +2,7 @@
 
 import numpy as np
 from collections import deque
-from .normalizers import _RunningNormalizer
+from ..tools.normalizers import _RunningNormalizer
 
 class AgentMemory:
 	"""Centralized memory storage for all historical variables and statistics."""
@@ -43,7 +43,7 @@ class AgentMemory:
 		if len(self.reward_history) < 20:
 			return 0.0
 		history_list = list(self.reward_history)
-		baseline = float(np.mean(history_list[-20:-5]))
+		baseline = float(np.mean(history_list[-50:-5]))
 		short_term = float(np.mean(history_list[-5:]))
 		return short_term - baseline
 

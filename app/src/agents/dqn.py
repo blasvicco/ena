@@ -14,7 +14,7 @@ import tensorflow as tf
 from keras import optimizers
 
 # App imports
-from .baseline import ABaseline
+from .tools.baseline import ABaseline
 
 # pylint: disable=too-many-instance-attributes
 class DQNAgent(ABaseline):

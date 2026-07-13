@@ -21,13 +21,13 @@ from keras.layers import Dense
 
 # App imports
 from agents import ENAgent, PPOAgent, SACAgent
-from metrics import (
+from tools.metrics import (
 	calculate_paper_metrics,
 	plot_academic_comparison,
 	plot_plasticity_analysis,
 	plot_specialist_transitions,
 )
-from visualization import vprint, ProgressReporter
+from tools.visualization import vprint, ProgressReporter
 
 # Constants
 NUM_EXPERIMENTS = 1
@@ -345,6 +345,7 @@ def run_experiment(experiment_id, output_dir, queue=None):
 			plasticity_algorithm="fuzzylogic",
 			pop_size=200,
 			recognizer_threshold=0.90,
+			recognizer_ema_alpha=0.05,
 			selection_driver="heuristic",
 			trust_algorithm="fuzzylogic",
 			mutation_noise=0.3,

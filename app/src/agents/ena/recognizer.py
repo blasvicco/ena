@@ -30,11 +30,6 @@ class EnvironmentRecognizer:
 		return self._current_niche_id
 
 	@property
-	def num_niches(self) -> int:
-		"""Number of learned prototypes."""
-		return len(self._physical_prototypes)
-
-	@property
 	def known_niche_ids(self) -> set:
 		"""Set of niche IDs that have physical prototypes."""
 		return set(self._physical_prototypes.keys())
@@ -62,9 +57,8 @@ class EnvironmentRecognizer:
 		# We scale them so they contribute to angular shift without blowing up norms
 		perf_deriv = np.array([memory.performance_derivative / 100.0], dtype=np.float32)
 		plasticity = np.array([memory.recent_plasticity], dtype=np.float32)
-		live_reward = np.array([memory.live_reward_rate / 100.0], dtype=np.float32)
 
-		return np.concatenate([physical, perf_deriv, plasticity, live_reward])
+		return np.concatenate([physical, perf_deriv, plasticity])
 
 	def detect_change(self, memory):
 		"""
@@ -117,31 +111,20 @@ class EnvironmentRecognizer:
 		Late Identity Binding: Called only when a gladiator is being inducted.
 		Uses gladiator identity first, then physical fallback for mutants.
 		"""
-		# 1. Did we succeed using an existing gladiator?
+		# 1. Did we succeed using an existing gladiator? Trust its registered home — always.
 		if current_individual.get("is_gladiator"):
 			home_niche_id = current_individual.get("internal_env_id")
 			physical_vec = self.compute_physical_vector(memory)
-
+			self._current_niche_id = home_niche_id
 			if home_niche_id in self._physical_prototypes:
-				home_similarity = self._cosine_similarity(
-					physical_vec, self._physical_prototypes[home_niche_id]
-				)
-				if home_similarity >= self._similarity_threshold:
-					# Confirmed in home environment: update prototype and return
-					self._current_niche_id = home_niche_id
-					self._physical_prototypes[home_niche_id] = (
-						1 - self.ema_alpha
-					) * self._physical_prototypes[home_niche_id] + self.ema_alpha * physical_vec
-					self.merge_similar_niches(hall_of_fame, population)
-					return home_niche_id
-				# Physics diverged from home niche — fall through to physical matching
-				# This allows the HoF to fork a new niche for the current environment
+				# Update the prototype with the confirmed observation
+				self._physical_prototypes[home_niche_id] = (
+					1 - self.ema_alpha
+				) * self._physical_prototypes[home_niche_id] + self.ema_alpha * physical_vec
 			else:
 				# First induction: create the initial prototype
 				self._physical_prototypes[home_niche_id] = physical_vec.copy()
-				self._current_niche_id = home_niche_id
-				self.merge_similar_niches(hall_of_fame, population)
-				return home_niche_id
+			return home_niche_id
 
 		# 2. We succeeded using a mutant. Compare Physical Fingerprint against Prototypes
 		physical_vec = self.compute_physical_vector(memory)
@@ -162,9 +145,9 @@ class EnvironmentRecognizer:
 					for gladiator in gladiators
 				])
 				if max_gen_sim > self._genetic_threshold:
-					# Continuous quadratic scaling: bonus grows smoothly from 0 to _genetic_bonus
+					# Linear scaling: grows evenly from 0 to _genetic_bonus as gen_sim goes threshold→1
 					scaling = (max_gen_sim - self._genetic_threshold) / (1.0 - self._genetic_threshold + 1e-8)
-					similarity += (scaling ** 2) * self._genetic_bonus
+					similarity += scaling * self._genetic_bonus
 
 			if similarity > best_similarity:
 				best_similarity = similarity
@@ -177,7 +160,6 @@ class EnvironmentRecognizer:
 				1 - self.ema_alpha
 			) * self._physical_prototypes[best_niche_id] + self.ema_alpha * physical_vec
 			self._current_niche_id = best_niche_id
-			self.merge_similar_niches(hall_of_fame, population)
 			return best_niche_id
 
 		# 4. Provision a new niche
@@ -185,62 +167,8 @@ class EnvironmentRecognizer:
 		self._physical_prototypes[new_id] = physical_vec.copy()
 		self._next_niche_id += 1
 		self._current_niche_id = new_id
-		self.merge_similar_niches(hall_of_fame, population)
 
 		return self._current_niche_id
-
-	def merge_similar_niches(self, hall_of_fame, population, merge_threshold=0.90):
-		"""
-		Find pairs of physical prototypes with similarity >= merge_threshold
-		and merge the newer niche into the older one.
-		"""
-		niche_ids = sorted(list(self._physical_prototypes.keys()))
-		to_merge = {}  # src_niche -> dst_niche
-
-		for i in range(len(niche_ids)):
-			niche_a = niche_ids[i]
-			if niche_a in to_merge:
-				continue
-			for j in range(i + 1, len(niche_ids)):
-				niche_b = niche_ids[j]
-				if niche_b in to_merge:
-					continue
-
-				sim = self._cosine_similarity(
-					self._physical_prototypes[niche_a],
-					self._physical_prototypes[niche_b]
-				)
-				if sim >= merge_threshold:
-					# Merge niche_b (newer/larger ID) into niche_a (older/smaller ID)
-					to_merge[niche_b] = niche_a
-
-		if not to_merge:
-			return False
-
-		# Apply merges
-		for src, dst in to_merge.items():
-			# 1. Blend prototypes (simple average)
-			self._physical_prototypes[dst] = 0.5 * self._physical_prototypes[dst] + 0.5 * self._physical_prototypes[src]
-			if src in self._physical_prototypes:
-				del self._physical_prototypes[src]
-
-			# 2. Update Hall of Fame records
-			if hall_of_fame and hasattr(hall_of_fame, "_records"):
-				for record in hall_of_fame._records.values():
-					if record.get("internal_env_id") == src:
-						record["internal_env_id"] = dst
-
-			# 3. Update active population
-			if population:
-				for individual in population:
-					if individual.get("internal_env_id") == src:
-						individual["internal_env_id"] = dst
-
-			# Update current niche ID if it was the merged one
-			if self._current_niche_id == src:
-				self._current_niche_id = dst
-
-		return True
 
 	@staticmethod
 	def _cosine_similarity(vec_a, vec_b):

@@ -10,8 +10,8 @@ import tensorflow as tf
 from keras import optimizers
 
 # App imports
-from .baseline import ABaseline
-from .normalizers import _IdentityNormalizer, _RunningNormalizer
+from .tools.baseline import ABaseline
+from .tools.normalizers import _IdentityNormalizer, _RunningNormalizer
 
 # pylint: disable=too-many-instance-attributes
 class PPOAgent(ABaseline):
