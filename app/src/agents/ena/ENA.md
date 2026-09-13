@@ -2,7 +2,7 @@
 
 This document describes the current implementation of the ENA agent as it stands in this package (`app/src/agents/ena/`). It is a code-accurate snapshot, not the paper's algorithm description — see `app/latex/` for the formal presentation.
 
-Per [[project-ena-state]]: the `NeuralSelectionDriver` / "Late Identity Binding" path in this package is the author's most recent rewrite and is considered unstable/not finished (commit `63bf827`, "Failed shit!"). The `HeuristicSelectionDriver` path is the one exercised end-to-end by `cartpole.py` today (`selection_driver="heuristic"`).
+Per [[project-ena-state]]: the `NeuralSelectionDriver` / "Late Identity Binding" path in this package is the author's most recent rewrite and is considered unstable/not finished (commit `63bf827`, "Failed shit!"). The `HeuristicSelectionDriver` path is the one exercised end-to-end by `cartpole_challenge.py` today (`selection_driver="heuristic"`).
 
 ## 1. Big picture
 
@@ -24,14 +24,14 @@ Five files implement this:
 
 Key constructor parameters and what they configure:
 
-- `pop_size` — population size (e.g. `100` in `cartpole.py`'s active config).
+- `pop_size` — population size (e.g. `100` in `cartpole_challenge.py`'s active config).
 - `physics` — list of env attribute names (`gravity`, `masspole`, `length`) the trainer re-reads from `env.unwrapped` each episode to build evaluation environments (`train()`, §6).
 - `plasticity_algorithm` / `trust_algorithm` — string names dispatched via `getattr(self, f"_ENAgent__{name}")` to private methods `__zero`, `__full`, `__fuzzylogic`, `__quadratic` (§7). This is explicitly called out in `STANDARDS.md` as the **legacy** dispatch idiom — new variants should be Strategy classes instead, following `selection_controller.py`'s pattern.
 - `mutation_rate` / `mutation_noise` — per-weight probability and magnitude of Gaussian mutation noise (§8).
 - `max_per_niche` / `max_gladiator_ratio` — forwarded to `HallOfFame` (§5).
 - `selection_driver` — `"heuristic"` or `"neural"`, forwarded to `SelectionController` (§4).
-- `recognizer_threshold` / `recognizer_ema_alpha` / `genetic_threshold` / `genetic_bonus` — forwarded to `EnvironmentRecognizer` (§3).
-- `env_max_steps` / `max_eval_steps` — used to rescale truncated-episode evaluation scores to a full-episode equivalent (`__evaluate_individual_performance`).
+- `recognizer_strategy` — `"live"` (default), `"confirmation_window"`, or `"neutral_probe"`; selects the `EnvironmentRecognizer` strategy (§3). `recognizer_threshold` / `recognizer_ema_alpha` / `genetic_threshold` / `genetic_bonus` / `recognizer_confirmation_window` / `recognizer_probe_steps` are forwarded to whichever strategy is selected (the latter two are strategy-specific but harmless to pass regardless — every strategy's constructor accepts `**_kwargs`).
+- `env_max_steps` / `max_eval_steps` / `min_eval_steps` — `max_eval_steps` rescales truncated-episode evaluation scores to a full-episode equivalent (`__evaluate_individual_performance`); `min_eval_steps` is the floor of the plasticity-scaled evaluation depth used for candidate evaluation during `train()` (§6).
 - `max_threads` — size of the `ThreadPoolExecutor` used to evaluate population candidates in parallel during `train()`.
 
 On init: builds one throwaway env via `make_env()` to read `state_dim`/`action_dim`/`is_continuous`, constructs `AgentMemory`, `EnvironmentRecognizer`, `SelectionController` (context dimension derived from `recognizer.compute_full_vector`), `HallOfFame`, and the initial population — `pop_size` individuals built by `__build_individual()`.
@@ -50,21 +50,29 @@ env_name / internal_env_id (set once inducted as a gladiator)
 
 ## 3. `EnvironmentRecognizer` — detect & identify (`recognizer.py`)
 
-Two distinct jobs, both driven off running statistics kept in `AgentMemory`:
+`EnvironmentRecognizer` is a thin facade (same pattern as `SelectionController`, §4): constructed as `EnvironmentRecognizer(strategy, state_dim, **kwargs)`, it looks up `strategy` in a `strategies = {"live": LiveRolloutRecognizer, "confirmation_window": ConfirmationWindowRecognizer, "neutral_probe": NeutralProbeRecognizer}` dict and delegates every public call (`update_state`, `compute_physical_vector`, `compute_full_vector`, `detect_change`, `match`, `match_niche`, `current_niche_id`, `known_niche_ids`, `probe`, `reset`) to that instance; an unknown name raises `ValueError`. `cartpole_challenge.py`'s active config uses `recognizer_strategy="neutral_probe"`.
 
-**Vectors.** `compute_physical_vector` concatenates short-term-normalizer observation mean, log(1+variance), and the same for the state-transition delta (`next_state - state`) — a "physics signature" independent of policy behavior. `compute_full_vector` adds two more scalars: normalized performance derivative and recent plasticity, giving a vector sensitive to *distress* as well as physics.
+**Vectors.** `compute_physical_vector` concatenates an observation-statistics mean, log(1+variance), and the same for the state-transition delta (`next_state - state`) — a "physics signature" meant to be independent of policy behavior. *Where* those statistics come from is exactly the axis the three strategies below differ on. `compute_full_vector` adds two more scalars on top: normalized performance derivative and recent plasticity, giving a vector sensitive to *distress* as well as physics — used only for `SelectionController`'s context, never for shift detection (see `detect_change` below).
 
-**Detection — `detect_change(memory)`.** Tracks an EMA baseline of `compute_full_vector`. Each call computes cosine similarity between the live vector and the baseline; if similarity drops below `similarity_threshold` (default 0.90), a shift is declared, a `cooldown` (5 episodes) begins during which the baseline aggressively re-tracks the new regime, and `True` is returned. Otherwise the baseline is smoothly EMA-updated and `False` is returned. Called once per episode-end in `ENAgent.act` (both train and test).
+**`LiveRolloutRecognizer`** (the `"live"` strategy, and the base class the other two inherit from) — sources `compute_physical_vector` from `memory.short_term_normalizer`/`memory.transition_normalizer`, i.e. whichever policy is actively playing right now. Cheap, but not policy-independent: a strong generalist's own rollout can make the wrong niche look physically confirmed regardless of the true physics.
+
+**`ConfirmationWindowRecognizer(LiveRolloutRecognizer)`** — no override of the physical vector; exists only to name "live rollout + a non-default confirmation window (3, instead of the base class's immediate-fire default of 1)" as its own explicit strategy. The confirmation-window gating itself lives on the `LiveRolloutRecognizer` base class, parameterized by `confirmation_window`, so it composes with *any* strategy (including `neutral_probe`) rather than being mutually exclusive with it.
+
+**`NeutralProbeRecognizer(LiveRolloutRecognizer)`** — overrides `probe(make_env, physics_env, physics_keys)` (called once per episode, from `ENAgent.act`'s first step, §10) to spin up a short-lived throwaway env built with the same physics as the real one, take `probe_steps` (default 10) random actions (`action_space.sample()` — works uniformly for CartPole's discrete space and HalfCheetah's continuous `Box`), and feed the results into its *own* `_probe_obs_normalizer`/`_probe_transition_normalizer` — separate from `memory`'s. `compute_physical_vector` is overridden to build from these probe normalizers instead of the live rollout, decoupling the physics fingerprint from whichever policy is currently acting. The probe env is closed immediately after and never touches the scored episode's trajectory or step budget. Also overrides `reset()` to flush its own probe normalizers on a detected shift — these live on the strategy instance, not `AgentMemory`, so `memory.reset_recognizer_statistics()` alone never reached them; without this, every environment switch left the probe blending stale pre-switch physics into its readings for up to `probe_steps * 20` samples, right during the window niche identification needs a clean reading most.
+
+**Detection — `detect_change(memory)`** (defined on `LiveRolloutRecognizer`, inherited by both subclasses). Tracks an EMA baseline of `compute_physical_vector` (deliberately *not* `compute_full_vector` — the performance-derivative/plasticity terms are downstream of this method's own side effect via `clear_training_history()`, which forces `__fuzzylogic`'s warmup path to return plasticity `1.0` for several episodes, itself fed right back into the next comparison — using the full vector here previously created a self-sustaining feedback-loop oscillation of spurious firings even while training scores stayed at the maximum the whole time). Each call computes cosine similarity between the live physical vector and the baseline; if similarity drops below `similarity_threshold` (default 0.90) for `confirmation_window` consecutive readings (default 1, i.e. immediate), a shift is declared, a `cooldown` (5 episodes) begins during which the baseline aggressively re-tracks the new regime, and `True` is returned. Otherwise the baseline is smoothly EMA-updated and `False` is returned. Called once per episode-end in `ENAgent.act` (both train and test); the result is also exposed via `ENAgent.last_env_shift_detected`.
 
 **Identification — two paths:**
 - `match(memory)` (test-time, cheap): compares the current physical vector against all stored niche prototypes by cosine similarity; returns the best match if above threshold, else `-1` (unknown).
 - `match_niche(memory, individual, hall_of_fame, population)` — "**Late Identity Binding**," called only from `HallOfFame.update` when a winner is being considered for induction. If the individual is already a gladiator, its registered niche is trusted outright and its prototype is EMA-updated. Otherwise (a mutant/learner just won), physical cosine similarity to existing prototypes is computed, **boosted by a genetic-similarity bonus** to gladiators sharing that niche (weight-vector cosine similarity via `_calculate_genetic_similarity`, scaled once above `genetic_threshold`), and either assigns the winner to the best-matching niche or provisions a brand-new niche ID.
 
+`known_niche_ids` (the set of niche IDs with a stored physical prototype) is exposed through to `ENAgent.known_niche_ids` — lets a caller (e.g. `metrics.py`'s chart-event classifier) tell a niche merely appearing for the first time in some history slice apart from one that's genuinely new.
+
 ## 4. `SelectionController` — pluggable "who acts this episode" (`selection_controller.py`)
 
 `SelectionController` is a thin facade: constructed with a driver name (`"heuristic"` or `"neural"`), it instantiates and delegates every call to the corresponding driver instance. Both drivers implement the same informal interface: `reset_episode`, `select_individual`, `record_episode_result`, `trigger_evaluation`, `set_mode`, `record`, `update`, plus the `_active`/`_active_niche`/`_buffer_size` properties `ena.py`'s `act()` reads directly.
 
-### `HeuristicSelectionDriver` (active in `cartpole.py` today)
+### `HeuristicSelectionDriver` (active in `cartpole_challenge.py` today)
 
 - **Training** (`_select_train`): epsilon-greedy — with probability `exploration_rate` pick a random non-gladiator, otherwise pick `argmax(trust)` over the whole population.
 - **Testing** (`_select_test`): a three-state machine (`EVALUATING → LOCKED`, or `DESPERATE` as a fallback):
@@ -94,9 +102,11 @@ Called once per completed training episode from `ENAgent.train` via `hall_of_fam
 6. **Open slot induction** (`__slot_induction`) — if the niche has fewer than `max_per_niche` records, save the winner directly as a new record.
 7. **Eco-niche protection** (`__eco_niche_protection`) — last resort: if the niche is full, evict the weakest-trust record in that niche if the winner beats it.
 
+`__evict(individual_id, population)` (used by steps 5 and 7 above) removes the archive entry **and** clears the corresponding live population slot's `is_gladiator`/`internal_env_id`/`env_name` tags. Without the population-side clearing, an evicted record left a "zombie gladiator" behind: invisible in `niches_*.txt` but still competing in `SelectionController.trigger_evaluation()` and still protected from replacement in `__evolve_population()`.
+
 `__save` deep-copies the winner's model into a fresh `brain(...)` instance (so the archived weights are independent of the live, still-mutating individual) and immediately flags the *live* population dict as `is_gladiator=True` with its assigned `internal_env_id` — gladiators are then protected from replacement in `__evolve_population` (§8).
 
-`inject_gladiators(population, pop_size, obs_normalizer, restore_trust)` (called by `ENAgent.load_gladiators()`, e.g. before `cartpole.py`'s testing phase) round-robins one gladiator per known niche per round into the first `floor(pop_size * max_gladiator_ratio)` population slots, until the budget is filled or niches are exhausted.
+`inject_gladiators(population, pop_size, obs_normalizer, restore_trust)` (called by `ENAgent.load_gladiators()`, e.g. before `cartpole_challenge.py`'s testing phase) round-robins one gladiator per known niche per round into the first `floor(pop_size * max_gladiator_ratio)` population slots, until the budget is filled or niches are exhausted.
 
 `save_niche_details(output_dir, agent_name)` writes a `niches_<agent_name>.txt` summary (niche ID, env name, gladiator count) — this is one of the run-artifact files `CLAUDE.md` flags as generated, not source.
 
@@ -109,11 +119,11 @@ Invoked from the domain runner's `play()` loop whenever `agent.learn` is `True` 
 3. Update the acting individual's `trust` via an EMA blend: `trust = (1-failure_signal)*trust + failure_signal*normalized_score` — a bigger failure signal makes trust track the latest score more aggressively (fast punishment, slow reward).
 4. `plasticity = __get_plasticity(score)` (dispatches to `plasticity_algorithm`) — appended to `memory.plasticity_history`; this value gates both how many other individuals get evaluated this round and mutation magnitude.
 5. `hall_of_fame.update(...)` — see §5.
-6. If `failure_signal > 0.1`, `__reset_trust(factor=failure_signal)` blends **every** individual's trust toward the current dynamic reference trust, proportional to the failure signal — a poor result partially "resets confidence" across the whole population, not just the acting individual.
-7. **Parallel candidate evaluation**: `num_to_eval = max(2, int(pop_size * plasticity))` other individuals are sampled and evaluated for one episode each, in parallel via a `ThreadPoolExecutor(max_workers=max_threads)`, each against a freshly built env cloned from the live env's current physics params (`env_params` read via `physics` attribute list) and a shared `gen_seed` so all candidates face the same conditions this generation. Their trust scores are updated with the same EMA rule as step 3.
+6. If `failure_signal > 0.1`, `__reset_trust(factor=failure_signal)` blends every **non-gladiator** individual's trust toward the current dynamic reference trust, proportional to the failure signal — a poor result partially "resets confidence" across the population, but gladiators are excluded (they're already protected from replacement in `__evolve_population`, and an unrelated exploratory failure — e.g. the epsilon-greedy random non-gladiator pick in `_select_train` — shouldn't erode an established gladiator's trust either).
+7. **Parallel candidate evaluation**: `num_to_eval = max(2, int(pop_size * plasticity))` other individuals are sampled and evaluated in parallel via a `ThreadPoolExecutor(max_workers=max_threads)`, each against a freshly built env cloned from the live env's current physics params (`env_params` read via `physics` attribute list) and a shared `gen_seed` so all candidates face the same conditions this generation. Each evaluation is capped at `eval_step_cap = min_eval_steps + (max_eval_steps - min_eval_steps) * plasticity` steps, applied uniformly (gladiators included, no special-casing) — confident/converged generations (low plasticity) evaluate candidates cheaply, uncertain ones get the full depth for a reliable signal. Their trust scores are updated with the same EMA rule as step 3.
 8. `__evolve_population()` — see §8.
 
-More search effort (higher plasticity) → more candidates evaluated and larger mutation noise; a confidently-performing agent (low plasticity) evaluates as few as 2 others and mutates gently.
+More search effort (higher plasticity) → more candidates evaluated, evaluated more deeply, and larger mutation noise; a confidently-performing agent (low plasticity) evaluates as few as 2 others, down to `min_eval_steps` deep, and mutates gently.
 
 ## 7. Plasticity / trust-decay algorithm dispatch (`ena.py:514-661`)
 
@@ -121,7 +131,7 @@ Both `plasticity_algorithm` and `trust_algorithm` select one of these private me
 
 - `__zero(_)` → `0.0` (no decay / no plasticity).
 - `__full(_)` → `1.0` (always maximal).
-- `__fuzzylogic(reward)` — fuzzy membership against the 10th/90th percentile of `reward_history` (adaptive margin: 5% of the 90th percentile, floor 2.0): scores at/above the high band → `0.1`, at/below the low band → `1.0`, linear interpolation between.
+- `__fuzzylogic(reward)` — linear interpolation between the 90th percentile of `reward_history` (→ `0.1`, minimal search) and `memory.min_seen`, the worst score observed this run (→ `1.0`, maximal search); no hard floor below the low end, so plasticity stays strictly monotonic across the whole observed range. (A prior version clamped anything below the 10th percentile to a flat `1.0`; once the agent was consistently near-perfect — a very narrow percentile band — a merely mediocre score and a catastrophic one forced identical maximum-effort search.)
 - `__quadratic(reward)` — `((max_seen - reward) / (max_seen - min_seen))²`, clamped to `[0.1, 1.0]` — aggressive, benchmark-relative.
 
 `__get_plasticity` forces `"zero"` whenever `self.learn` is `False` (no search during evaluation). Unknown algorithm names fall back to `1.0` (plasticity) / `0.0` (trust decay) via the `AttributeError` catch — `STANDARDS.md` flags broad exception catching as against convention generally, but this specific narrow `AttributeError` catch is the sanctioned dispatch-fallback pattern it calls out as acceptable.
@@ -143,7 +153,7 @@ Because the observation normalizer's mean/variance keep drifting as more states 
 
 Called once per environment step by the domain runner's `play()` loop:
 
-1. On the first step of an episode, reset the selection controller's episode state and the step counter.
+1. On the first step of an episode, reset the selection controller's episode state and the step counter, and call `recognizer.probe(make_env, env, physics)` (a no-op unless the `neutral_probe` strategy is active, §3).
 2. On that first step only, ask the `SelectionController` to pick `best_individual_idx` (train vs. test path per `self.learn`), then project that individual's weights to the current normalizer (§9).
 3. Normalize the current `state` — gladiators use their own frozen `last_mu`/`last_var`; everyone else uses the live `obs_normalizer`. Run the chosen individual's `fast_call` (a `tf.function`-wrapped forward pass) to get an action (argmax for discrete, clipped raw output for continuous).
 4. Step the environment; update `memory.update_transition` (physics signature) and running reward bookkeeping.
@@ -151,7 +161,7 @@ Called once per environment step by the domain runner's `play()` loop:
 6. On episode end (`done`):
    - **Train + neural driver active**: backfill the placeholder rewards for this episode's recorded contexts with the normalized final score, record one final context, and trigger a REINFORCE `update()` once the buffer reaches `_buffer_size`.
    - **Test mode**: update `reward_history`/`max_seen`/`min_seen`, then let the heuristic driver's `record_episode_result` decide if a forced re-evaluation is needed.
-   - Always: run `recognizer.detect_change` — on a detected shift, reset the recognizer's short-term statistics and observation normalizer, and (test mode only) re-trigger the evaluation state machine.
+   - Always: run `recognizer.detect_change` — on a detected shift, reset the recognizer's memory-owned short-term statistics (`memory.reset_recognizer_statistics()`), the strategy's own state (`recognizer.reset()` — flushes `neutral_probe`'s separate probe normalizers, a no-op for the other two strategies) and the observation normalizer, and (test mode only) re-trigger the evaluation state machine.
    - Test mode only: if `record_episode_result` signaled `force_reset`, clear reward history and re-trigger evaluation too.
    - Reset per-episode counters.
 
@@ -169,6 +179,14 @@ Centralizes everything the other components read/write, decoupled from `ENAgent`
 
 ## 12. Known rough edges (as of this snapshot - do not touch)
 
-- `NeuralSelectionDriver`/"Late Identity Binding" is present and wired but not the default (`selection_driver="heuristic"` in the active `cartpole.py` config) and is flagged in project memory as unstable — treat it as in-progress, not validated.
+- `NeuralSelectionDriver`/"Late Identity Binding" is present and wired but not the default (`selection_driver="heuristic"` in the active `cartpole_challenge.py` config) and is flagged in project memory as unstable — treat it as in-progress, not validated.
 - Plasticity/trust-algorithm dispatch (`__get_plasticity`, `__get_trust_decay`) uses the legacy `getattr(self, f"_ENAgent__{name}")` string-dispatch idiom `STANDARDS.md` explicitly says not to extend — any new algorithm variant should instead become a Strategy class analogous to `HeuristicSelectionDriver`/`NeuralSelectionDriver`.
 - `physics` defaults to a **mutable list** default argument (`physics=["gravity", "masspole", "length"]` in `ENAgent.__init__`) — harmless today since it's never mutated in place, but worth flagging if future edits start appending to `self.physics`.
+- Test-time specialist selection can still lock onto one gladiator across true environments it isn't actually specialized for, even with `neutral_probe` active — the `EVALUATING` cycle's raw-score-with-confirmation winner logic (`SelectionController._select_test`/`record_episode_result`, §4) and how often `detect_change` re-opens that cycle at test time are both implicated; open, not yet root-caused to a single fix.
+- Gladiator/niche-count distribution across true environments has been observed uneven in practice — one true environment accumulating far more niches (and, since the archive budget is per-niche-ID via `max_per_niche`, far more total gladiators) than others despite every phase getting an identical training budget. Candidate mechanisms, none yet confirmed as the/a root cause: uneven niche fragmentation across environments (§3's niche-provisioning threshold), `HallOfFame.__continual_improvement`'s cross-niche fork path running before `__slot_induction` so a foreign-niche generalist can claim a fresh niche's slot ahead of an actual specialist, and `__performance_gate`'s Z-score being computed over the *whole* population rather than scoped to the current niche. §13's benchmark tool exists specifically to test these hypotheses fast, without a full experiment run.
+
+## 13. Fast iteration without a full experiment (`tools/benchmark_ena.py`)
+
+`cartpole_challenge.py`'s full experiment (`pop_size=100`, 1500 training + 1000 testing episodes) takes on the order of an hour — too slow for iterating on a single hypothesis about ENA's internal bookkeeping. `tools/benchmark_ena.py` runs the same `ENAgent`/`HallOfFame`/`EnvironmentRecognizer` control flow — via `cartpole_challenge.py`'s own `play()` loop, unmodified — against `tools/synthetic_cartpole_challenge.py`'s `SyntheticCartPoleEnv`: a from-scratch re-implementation of CartPole-v1's governing physics equations (identical constants, termination condition, and reward semantics to gymnasium's `CartPoleEnv`), which skips `gym.make()`'s registry lookup and wrapper-stack construction — the dominant per-episode cost given ENA constructs a fresh env per candidate evaluation (`train()`'s `thread_eval_task`) and per episode-start probe (`NeutralProbeRecognizer.probe`). A small run (`pop_size≈20`, ~100 episodes/phase) finishes in well under a minute and produces a real `niches_*.txt`-style summary, directly comparable in kind (not necessarily magnitude) to a full run's.
+
+Usage: `python tools/benchmark_ena.py --save before.json`, apply a candidate code change, then `python tools/benchmark_ena.py --compare before.json --save after.json` to print a before/after diff of niche/gladiator counts per true environment plus wall time. This is a fast first check that a change moved the mechanism in the intended direction — not a substitute for a full experiment run before calling a fix validated, since the population/episode scale-down makes promotion counts here noisier and not paper-reportable.

@@ -36,9 +36,9 @@ class SelectionController:
 		"""Returns population index of the selected individual."""
 		return self.instance.select_individual(population, recognizer, memory, learn)
 
-	def record_episode_result(self, score, memory):
+	def record_episode_result(self, score, memory, recognizer=None):
 		"""Called at episode end during testing. Returns True if env reset needed."""
-		return self.instance.record_episode_result(score, memory)
+		return self.instance.record_episode_result(score, memory, recognizer=recognizer)
 
 	def trigger_evaluation(self, population):
 		"""Build evaluation queue from population's gladiator niches."""
@@ -95,6 +95,7 @@ class HeuristicSelectionDriver:
 		self._state = self.LOCKED
 		self._eval_queue = []          # [(niche_id, gladiator_idx), ...]
 		self._eval_scores = {}         # {niche_id: score}
+		self._eval_confirmed = {}      # {niche_id: bool} — recognizer confirmed its own episode
 		self._current_eval_niche = None
 		self._current_eval_idx = None
 		self._locked_niche = None
@@ -119,11 +120,16 @@ class HeuristicSelectionDriver:
 			return self._select_train(population)
 		return self._select_test(population, recognizer, memory)
 
-	def record_episode_result(self, score, memory):
+	def record_episode_result(self, score, memory, recognizer=None):
 		"""Called at episode end during testing. Returns True if env reset needed."""
 		if self._state == self.EVALUATING:
 			if self._current_eval_niche is not None:
 				self._eval_scores[self._current_eval_niche] = score
+				if recognizer is not None:
+					matched_niche_id, _sim = recognizer.match(memory)
+					self._eval_confirmed[self._current_eval_niche] = (
+						matched_niche_id == self._current_eval_niche
+					)
 
 			if self._eval_queue:
 				self._eval_queue.pop(0)
@@ -133,7 +139,15 @@ class HeuristicSelectionDriver:
 
 			if not self._eval_queue:
 				if self._eval_scores:
-					best_niche = max(self._eval_scores, key=self._eval_scores.get)
+					confirmed = [
+						niche_id for niche_id in self._eval_scores
+						if self._eval_confirmed.get(niche_id)
+					]
+					# Prefer a niche whose own physics identity was independently confirmed by
+					# recognizer.match() during its evaluation episode — guards against a
+					# "generalist" gladiator winning on raw score alone under the wrong physics.
+					candidates = confirmed if confirmed else self._eval_scores
+					best_niche = max(candidates, key=self._eval_scores.get)
 					self._locked_niche = best_niche
 					self._locked_idx = None  # resolved lazily in _select_test
 					self._state = self.LOCKED
@@ -168,6 +182,7 @@ class HeuristicSelectionDriver:
 		np.random.shuffle(self._eval_queue)
 
 		self._eval_scores = {}
+		self._eval_confirmed = {}
 		self._current_eval_niche = None
 		self._current_eval_idx = None
 		self._locked_niche = None
@@ -205,15 +220,13 @@ class HeuristicSelectionDriver:
 	# ---------------------------------------------------------------
 
 	def _select_test(self, population, recognizer, memory):
-		"""Testing: state-machine selection."""
-		# 1) Try recognizer first (robust physics signatures)
-		rec_niche_id, rec_sim = recognizer.match(memory)
-		if rec_niche_id != -1:
-			gladiator_idx = self._best_gladiator_in_niche(population, rec_niche_id)
-			if gladiator_idx is not None:
-				return gladiator_idx
+		"""Testing: state-machine selection.
 
-		# 2) Fallback to state machine
+		The EVALUATING queue always runs to completion first — it's the only way we
+		gather a fresh score per niche. recognizer.match() is only consulted once
+		LOCKED, where a confident match can resolve to a different, already-known
+		niche without waiting for the next trigger_evaluation() cycle.
+		"""
 		if self._state == self.EVALUATING:
 			if self._current_eval_idx is not None:
 				return self._current_eval_idx
@@ -226,6 +239,12 @@ class HeuristicSelectionDriver:
 			return self._select_desperate(population)
 
 		if self._state == self.LOCKED:
+			rec_niche_id, _rec_sim = recognizer.match(memory)
+			if rec_niche_id != -1:
+				gladiator_idx = self._best_gladiator_in_niche(population, rec_niche_id)
+				if gladiator_idx is not None:
+					return gladiator_idx
+
 			if self._locked_idx is not None:
 				return self._locked_idx
 			if self._locked_niche is not None:
@@ -324,7 +343,7 @@ class NeuralSelectionDriver:
 			return self._select_train(population, recognizer, memory)
 		return self._select_test(population, recognizer, memory)
 
-	def record_episode_result(self, score, memory):
+	def record_episode_result(self, score, memory, recognizer=None):
 		"""No-op for neural driver (it uses record/update instead)."""
 		return False
 

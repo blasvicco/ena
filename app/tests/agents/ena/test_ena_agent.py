@@ -24,6 +24,45 @@ def _run_one_episode(agent: ENAgent, env: Any) -> np.ndarray:
 	return state
 
 
+def test_known_niche_ids_delegates_to_the_recognizer(agent: ENAgent) -> None:
+	"""ENAgent.known_niche_ids must expose the recognizer's own known_niche_ids — used by
+	cartpole_challenge.py to seed the test-phase chart's niche-event classification (see metrics.py's
+	_classify_niche_events) so an already-trained niche's first test-phase appearance isn't
+	mislabeled as a spurious 'new niche'."""
+	with step("Arrange: no niches known yet on a freshly built agent."):
+		assert agent.known_niche_ids == set()
+
+	with step("Act: register a physical prototype directly on the recognizer instance."):
+		# pylint: disable=protected-access
+		agent._recognizer.instance._physical_prototypes[7] = np.zeros(4)
+
+	with step("Assert: the agent-level property reflects it."):
+		assert agent.known_niche_ids == {7}
+
+
+def test_recognizer_confirmation_window_default_flows_through_from_enagent(agent: ENAgent) -> None:
+	"""S5 composability: ENAgent's own recognizer_confirmation_window default (3) must reach
+	the constructed recognizer strategy instance, regardless of which strategy is chosen —
+	this is what lets neutral_probe and confirmation-windowed detect_change() be used
+	together without cartpole_challenge.py needing any special wiring."""
+	with step("Assert: the default agent's recognizer instance has confirmation_window=3."):
+		# pylint: disable=protected-access
+		assert agent._recognizer.instance._confirmation_window == 3
+
+
+def test_neutral_probe_strategy_also_receives_the_confirmation_window(
+	build_agent: Callable[..., ENAgent],
+) -> None:
+	"""S5 composability: choosing recognizer_strategy='neutral_probe' must not silently
+	drop the confirmation_window setting — the two are independent, composable knobs."""
+	with step("Arrange: an agent explicitly configured with the neutral_probe strategy."):
+		agent = build_agent(recognizer_strategy="neutral_probe", recognizer_confirmation_window=5)
+
+	with step("Assert: the neutral_probe recognizer instance still respects confirmation_window."):
+		# pylint: disable=protected-access
+		assert agent._recognizer.instance._confirmation_window == 5
+
+
 def test_set_learning_false_resets_recognizer_statistics(agent: ENAgent) -> None:
 	"""S1: entering test mode must not leak training-time recognizer statistics."""
 	with step("Arrange: feed training-time statistics into the recognizer's normalizers."):
@@ -72,6 +111,42 @@ def test_env_shift_reward_history_clearing(agent: ENAgent, monkeypatch: pytest.M
 			# behavior) — the fix must not additionally wipe the history via clear_training_history.
 			assert history[:3] == [1.0, 2.0, 3.0]
 			assert len(history) == 4
+
+
+def test_detect_change_calls_recognizer_reset_alongside_memory_reset(
+	agent: ENAgent, monkeypatch: pytest.MonkeyPatch
+) -> None:
+	"""A detected shift must flush strategy-owned recognizer state (e.g. neutral_probe's own
+	probe normalizers), not just AgentMemory's — memory.reset_recognizer_statistics() alone
+	can't reach state that lives on the recognizer strategy instance instead of memory."""
+	with step("Arrange: script a detected shift and spy on the recognizer's reset()."):
+		# pylint: disable=protected-access
+		monkeypatch.setattr(agent._recognizer, "detect_change", lambda memory: True)
+		reset_calls = []
+		monkeypatch.setattr(agent._recognizer, "reset", lambda: reset_calls.append(True))
+
+	with step("Act: run one episode, triggering the scripted shift."):
+		env = agent.make_env()
+		_run_one_episode(agent, env)
+		env.close()
+
+	with step("Assert: the recognizer's reset() was called."):
+		assert reset_calls == [True]
+
+
+def test_set_learning_false_calls_recognizer_reset(agent: ENAgent, monkeypatch: pytest.MonkeyPatch) -> None:
+	"""Entering test mode must flush strategy-owned recognizer state too, not just
+	AgentMemory's — same reasoning as the detect_change case above."""
+	with step("Arrange: spy on the recognizer's reset()."):
+		# pylint: disable=protected-access
+		reset_calls = []
+		monkeypatch.setattr(agent._recognizer, "reset", lambda: reset_calls.append(True))
+
+	with step("Act: switch the agent into test mode."):
+		agent.set_learning(False)
+
+	with step("Assert: the recognizer's reset() was called."):
+		assert reset_calls == [True]
 
 
 @pytest.mark.parametrize("detect_change_result", [True, False])
@@ -303,3 +378,71 @@ def test_evolve_population_never_replaces_gladiators(build_agent: Callable[..., 
 		for slot, gladiator_id in zip(gladiator_slots, gladiator_ids):
 			assert agent.population[slot]["individual_id"] == gladiator_id
 			assert agent.population[slot]["is_gladiator"] is True
+
+
+def test_fuzzylogic_returns_max_plasticity_during_warmup(agent: ENAgent) -> None:
+	"""Fewer than 10 reward samples means no reliable percentile estimate yet — max plasticity."""
+	with step("Arrange: fewer than 10 samples in reward_history."):
+		agent.memory.reward_history.clear()
+		agent.memory.reward_history.extend([500.0] * 5)
+
+	with step("Assert: plasticity is 1.0 regardless of the reward passed."):
+		# pylint: disable=protected-access
+		assert agent._ENAgent__fuzzylogic(500.0) == 1.0
+
+
+def test_fuzzylogic_returns_low_plasticity_at_or_above_high_limit(agent: ENAgent) -> None:
+	"""A reward at or above the 90th percentile means the agent is settled — low plasticity."""
+	with step("Arrange: a stable, high-scoring reward history."):
+		agent.memory.reward_history.clear()
+		agent.memory.reward_history.extend([500.0] * 10)
+		agent.memory.min_seen = 0.0
+
+	with step("Assert: plasticity is 0.1 for a reward at the high limit."):
+		# pylint: disable=protected-access
+		assert agent._ENAgent__fuzzylogic(500.0) == pytest.approx(0.1)
+
+
+def test_fuzzylogic_scales_proportionately_instead_of_flattening_below_a_floor(agent: ENAgent) -> None:
+	"""Stage 7: plasticity must scale continuously down to memory.min_seen, not flatten to a
+	flat 1.0 the moment a score dips below the (possibly very narrow) percentile band — a
+	merely mediocre score must not be treated identically to the worst score ever seen."""
+	with step("Arrange: reward_history pinned at 500 (high_limit=500), min_seen=0 (the floor)."):
+		agent.memory.reward_history.clear()
+		agent.memory.reward_history.extend([500.0] * 10)
+		agent.memory.min_seen = 0.0
+
+	with step("Act: compute plasticity for a mediocre score and a worse one."):
+		# pylint: disable=protected-access
+		mediocre_plasticity = agent._ENAgent__fuzzylogic(400.0)
+		worse_plasticity = agent._ENAgent__fuzzylogic(250.0)
+		worst_plasticity = agent._ENAgent__fuzzylogic(0.0)
+
+	with step("Assert: plasticity scales proportionately — worse scores get strictly higher "
+			  "plasticity, not an identical flat maximum."):
+		assert mediocre_plasticity == pytest.approx(0.28)
+		assert worse_plasticity == pytest.approx(0.55)
+		assert worst_plasticity == pytest.approx(1.0)
+		assert mediocre_plasticity < worse_plasticity < worst_plasticity
+
+
+def test_reset_trust_leaves_gladiator_trust_untouched(build_agent: Callable[..., ENAgent]) -> None:
+	"""T4 (Stage 4): __reset_trust must not dilute an established gladiator's trust on an
+	unrelated exploratory failure — only non-gladiators get blended toward the dynamic
+	reference. Gladiators are already protected from replacement in __evolve_population;
+	there's no reason a failure that has nothing to do with them should erode their trust."""
+	with step("Arrange: a population with one gladiator and one non-gladiator, both at a known trust."):
+		agent = build_agent(pop_size=4)
+		for individual in agent.population:
+			individual["trust"] = 5.0
+		gladiator = agent.population[0]
+		gladiator["is_gladiator"] = True
+		non_gladiator = agent.population[1]
+
+	with step("Act: reset trust with a large blend factor."):
+		# pylint: disable=protected-access
+		agent._ENAgent__reset_trust(factor=1.0)
+
+	with step("Assert: the gladiator's trust is unchanged; the non-gladiator's was blended toward the reference."):
+		assert gladiator["trust"] == 5.0
+		assert non_gladiator["trust"] != 5.0

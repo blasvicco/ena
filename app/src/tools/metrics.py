@@ -4,6 +4,7 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
+from matplotlib.lines import Line2D
 
 
 def _qualitative_colors(count: int) -> list:
@@ -12,14 +13,23 @@ def _qualitative_colors(count: int) -> list:
 	return [cmap(i / max(count, 1)) for i in range(count)]
 
 
-def _classify_niche_events(niche_id_series: pd.Series) -> list:
+def _classify_niche_events(niche_id_series: pd.Series, known_niche_ids: set = None) -> list:
 	"""Classify each niche-id change as 'new' (never seen) or 'switch' (to a known id).
 
 	A niche id of -1 or NaN means "no niche resolved this episode" and is skipped.
 	Only value *changes* are emitted — repeated confirmations of the same niche
 	produce no event.
+
+	known_niche_ids seeds the "already seen" set — e.g. for a test-phase chart, every
+	niche established during training is already known, so it must classify as a
+	"switch" the first time it appears in the test series, not a spurious "new niche"
+	(training.py's train() never runs during test, so no niche can genuinely be
+	created there; without this seed, this function's own per-call "seen" tracking
+	would otherwise mislabel the first occurrence, since it has no memory of anything
+	that happened before the series it was given).
 	"""
-	seen, events = set(), []
+	seen = set(known_niche_ids) if known_niche_ids else set()
+	events = []
 	prev = None
 	for episode, niche_id in niche_id_series.items():
 		if pd.isna(niche_id) or niche_id == -1:
@@ -98,16 +108,22 @@ def calculate_paper_metrics(
 	return metrics_df
 
 
+# pylint: disable=too-many-arguments,too-many-positional-arguments
 def plot_academic_comparison(
 	histories,
 	names,
 	save_path=None,
 	success_threshold=475.0,
 	ylim=(-10, 550),
+	known_niche_ids_by_history=None,
 ):
 	"""
 	Creates a publication-quality plot with stability ranges (Std Dev)
 	and dynamic environment switch markers.
+
+	known_niche_ids_by_history is an optional list, parallel to histories, of niche-id
+	sets already established before this chart's own data begins (e.g. from training,
+	for a test-phase chart) — see _classify_niche_events for why this matters.
 	"""
 	figure, axes = plt.subplots(
 		len(histories),
@@ -197,15 +213,16 @@ def plot_academic_comparison(
 				)
 
 		# 3. Niche identity: "new" (never-seen niche) vs. "switch" (reclassified to a
-		# different, already-known niche) — colored by niche id so recurring fragments
-		# of the same true environment are visually traceable across the run.
+		# different, already-known niche). Fixed colors per kind so the legend swatch
+		# always matches every plotted marker — per-niche detail lives in the dedicated
+		# niche_transitions_*.png / niche_transition_matrix_*.png charts instead.
 		if "detected_env_id" in dataframe.columns:
-			events = _classify_niche_events(dataframe["detected_env_id"])
-			niche_ids = sorted({niche_id for _, niche_id, _ in events})
-			color_by_niche = dict(zip(niche_ids, _qualitative_colors(len(niche_ids))))
+			known_ids = known_niche_ids_by_history[index] if known_niche_ids_by_history else None
+			events = _classify_niche_events(dataframe["detected_env_id"], known_niche_ids=known_ids)
+			color_by_kind = {"new": "darkorange", "switch": "black"}
 
 			new_labeled, switch_labeled = False, False
-			for pos, niche_id, kind in events:
+			for pos, _niche_id, kind in events:
 				label = None
 				if kind == "new" and not new_labeled:
 					label, new_labeled = "New Niche", True
@@ -215,7 +232,7 @@ def plot_academic_comparison(
 					pos,
 					mean_score.iloc[pos],
 					"o" if kind == "new" else "x",
-					color=color_by_niche[niche_id],
+					color=color_by_kind[kind],
 					markersize=8,
 					zorder=5,
 					label=label,
@@ -362,13 +379,17 @@ def plot_specialist_transitions(df_history, pop_size=30, save_path=None):
 
 	# 3b. Outline gladiator points by their actual recognized niche id (not just their
 	# ground-truth env name) — makes niche fragmentation (many niche ids per one true
-	# environment) visible directly on this chart, without touching the main legend.
+	# environment) visible directly on this chart. Ring colors are per-niche and change
+	# every run, so rather than one legend entry per color, a single generic entry below
+	# explains what the ring itself means.
+	has_niche_rings = False
 	if "internal_env_id" in df_history.columns:
 		gladiator_rows = df_history[
 			df_history["is_gladiator"] & (df_history["internal_env_id"] != -1)
 		]
 		niche_ids = sorted(gladiator_rows["internal_env_id"].unique())
 		if niche_ids:
+			has_niche_rings = True
 			color_by_niche = dict(zip(niche_ids, _qualitative_colors(len(niche_ids))))
 			axis1.scatter(
 				gladiator_rows["episode"],
@@ -380,7 +401,23 @@ def plot_specialist_transitions(df_history, pop_size=30, save_path=None):
 				zorder=3,
 			)
 
-	axis1.legend(loc="center left", bbox_to_anchor=(1, 0.5))
+	handles, labels = axis1.get_legend_handles_labels()
+	if has_niche_rings:
+		handles.append(
+			Line2D(
+				[],
+				[],
+				marker="o",
+				linestyle="None",
+				markersize=10,
+				markerfacecolor="none",
+				markeredgecolor="black",
+				markeredgewidth=1.5,
+				label="Ring: Recognized niche id",
+			)
+		)
+		labels.append("Ring: Recognized niche id")
+	axis1.legend(handles=handles, labels=labels, loc="center left", bbox_to_anchor=(1, 0.5))
 
 	axis1.set_ylabel("Active Specialist ID", fontweight="bold")
 	axis1.set_xlabel("Episode", fontweight="bold")

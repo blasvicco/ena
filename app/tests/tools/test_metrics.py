@@ -1,6 +1,7 @@
 """Tests for the pure, chart-independent data transforms in tools/metrics.py."""
 
 # Libs imports
+import matplotlib.pyplot as plt
 import pandas as pd
 import pytest
 
@@ -11,6 +12,8 @@ from tools.metrics import (
 	_classify_niche_events,
 	_niche_env_labels,
 	_qualitative_colors,
+	plot_academic_comparison,
+	plot_specialist_transitions,
 )
 
 
@@ -50,6 +53,21 @@ def test_classify_niche_events(series: pd.Series, expected_events: list) -> None
 
 	with step("Assert: the emitted events match the expected (index, niche_id, kind) tuples."):
 		assert events == expected_events
+
+
+def test_classify_niche_events_seeds_already_known_niches_as_switches() -> None:
+	"""A niche established before this series began (e.g. from training, for a test-phase
+	chart) must classify as a 'switch' the first time it appears here, not a spurious 'new
+	niche' — this function has no memory of anything outside the series it's given unless
+	told what's already known."""
+	with step("Arrange: a series whose first value is a pre-known niche, seeded as such."):
+		series = pd.Series([5, 5, 7, 5])
+
+	with step("Act: classify with known_niche_ids seeded to include niche 5."):
+		events = _classify_niche_events(series, known_niche_ids={5})
+
+	with step("Assert: niche 5 never fires a 'new' event; niche 7 (genuinely unseen) still does."):
+		assert events == [(2, 7, "new"), (3, 5, "switch")]
 
 
 def test_build_transition_matrix_counts_consecutive_changes() -> None:
@@ -100,3 +118,130 @@ def test_build_transition_matrix_surfaces_cross_environment_transitions() -> Non
 		assert counts == {(0, 1): 1, (1, 2): 1}
 		assert labels == {0: "Mars-Light", 1: "Mars-Light", 2: "Jupiter-Heavy"}
 		assert labels[1] != labels[2]  # the (1, 2) cell crosses a true-environment boundary
+
+
+def test_plot_academic_comparison_niche_markers_match_their_legend_swatch(
+	tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+	"""C0: every 'New Niche' marker and every 'Niche Switch' marker must share one fixed
+	color per kind, matching the legend swatch — regardless of how many distinct niche ids
+	are involved (previously colored per-niche-id while the legend only showed one swatch)."""
+	with step("Arrange: a history whose detected_env_id produces 'new' events for two "
+			  "different niche ids and 'switch' events for another, and prevent the figure "
+			  "from being closed so its artists stay inspectable after the call."):
+		monkeypatch.setattr(plt, "close", lambda *args, **kwargs: None)
+		dataframe = pd.DataFrame(
+			{
+				"episode": range(7),
+				"score": [100.0, 110.0, 90.0, 95.0, 105.0, 98.0, 102.0],
+				"env_id": ["Env-A"] * 7,
+				"detected_env_id": [0, 0, 1, 1, 0, 2, 0],
+			}
+		)
+
+	with step("Act: render the comparison chart."):
+		plot_academic_comparison([dataframe], ["Agent"], save_path=str(tmp_path / "chart.png"))
+
+	with step("Assert: every 'new'-kind marker and every 'switch'-kind marker uses one "
+			  "fixed color each, matching what the legend actually shows."):
+		axis = plt.gcf().axes[0]
+		new_lines = [line for line in axis.lines if line.get_marker() == "o" and line.get_linestyle() == "None"]
+		switch_lines = [line for line in axis.lines if line.get_marker() == "x"]
+
+		assert len(new_lines) == 2  # niches 1 and 2 both provisioned as "new"
+		assert len(switch_lines) == 2  # niche 0 reclassified as "switch" twice
+		assert len({line.get_color() for line in new_lines}) == 1
+		assert len({line.get_color() for line in switch_lines}) == 1
+
+		legend_labels = [text.get_text() for text in axis.get_legend().get_texts()]
+		assert "New Niche" in legend_labels
+		assert "Niche Switch" in legend_labels
+		plt.close(axis.figure)
+
+
+def test_plot_academic_comparison_seeds_known_niches_to_avoid_spurious_new_niche_markers(
+	tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+	"""A test-phase chart must not show 'New Niche' for a niche that was actually
+	established during training — known_niche_ids_by_history seeds each history's
+	already-known niches, so their first appearance here classifies as a 'switch'."""
+	with step("Arrange: the same history as above, but with every niche it contains "
+			  "pre-declared as already known (as if all came from training)."):
+		monkeypatch.setattr(plt, "close", lambda *args, **kwargs: None)
+		dataframe = pd.DataFrame(
+			{
+				"episode": range(7),
+				"score": [100.0, 110.0, 90.0, 95.0, 105.0, 98.0, 102.0],
+				"env_id": ["Env-A"] * 7,
+				"detected_env_id": [0, 0, 1, 1, 0, 2, 0],
+			}
+		)
+
+	with step("Act: render the chart with known_niche_ids_by_history seeding all three niches."):
+		plot_academic_comparison(
+			[dataframe],
+			["Agent"],
+			save_path=str(tmp_path / "chart.png"),
+			known_niche_ids_by_history=[{0, 1, 2}],
+		)
+
+	with step("Assert: no 'new'-kind marker was drawn, and the legend has no 'New Niche' entry."):
+		axis = plt.gcf().axes[0]
+		new_lines = [line for line in axis.lines if line.get_marker() == "o" and line.get_linestyle() == "None"]
+		assert not new_lines
+
+		legend_labels = [text.get_text() for text in axis.get_legend().get_texts()]
+		assert "New Niche" not in legend_labels
+		assert "Niche Switch" in legend_labels
+		plt.close(axis.figure)
+
+
+def test_plot_specialist_transitions_explains_the_niche_ring_in_the_legend() -> None:
+	"""The outer ring around a gladiator marker encodes its recognized niche ID (distinct
+	from the fill color, which groups by ground-truth env name) — since ring colors are
+	per-niche and change every run, a single generic legend entry explains what the ring
+	means rather than one entry per color."""
+	with step("Arrange: a history with two gladiators sharing an env name but different niches."):
+		dataframe = pd.DataFrame(
+			{
+				"env_id": ["Mars-Light"] * 4,
+				"episode": range(4),
+				"specialist_id": [1, 2, 1, 2],
+				"is_gladiator": [True, True, True, True],
+				"gladiator_env": ["Mars-Light"] * 4,
+				"internal_env_id": [0, 1, 0, 1],
+			}
+		)
+
+	with step("Act: render the specialist transitions chart."):
+		plot_specialist_transitions(dataframe, pop_size=5)
+
+	with step("Assert: the legend includes an entry explaining the niche-ID ring."):
+		axis = plt.gcf().axes[0]
+		legend_labels = [text.get_text() for text in axis.get_legend().get_texts()]
+		assert any("Recognized niche id" in label for label in legend_labels)
+		plt.close(axis.figure)
+
+
+def test_plot_specialist_transitions_omits_ring_legend_entry_without_niche_data() -> None:
+	"""No internal_env_id data (or no gladiators) means no rings are drawn — the legend
+	must not claim a ring meaning that isn't actually on the chart."""
+	with step("Arrange: a history with no gladiators at all."):
+		dataframe = pd.DataFrame(
+			{
+				"env_id": ["Mars-Light"] * 3,
+				"episode": range(3),
+				"specialist_id": [1, 2, 3],
+				"is_gladiator": [False, False, False],
+				"gladiator_env": [None, None, None],
+			}
+		)
+
+	with step("Act: render the specialist transitions chart."):
+		plot_specialist_transitions(dataframe, pop_size=5, save_path=None)
+
+	with step("Assert: the legend has no niche-ring explanation."):
+		axis = plt.gcf().axes[0]
+		legend_labels = [text.get_text() for text in axis.get_legend().get_texts()]
+		assert not any("Recognized niche id" in label for label in legend_labels)
+		plt.close(axis.figure)

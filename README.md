@@ -37,16 +37,18 @@ app/
 │   │   │   ├── ena.py                  # ENAgent — the Evolutionary Neuroplastic Agent
 │   │   │   ├── hall_of_fame.py         # Archive of elite frozen specialists ("Gladiators")
 │   │   │   ├── memory.py               # AgentMemory — reward/plasticity history & running stats
-│   │   │   ├── recognizer.py           # EnvironmentRecognizer — detects & identifies env shifts
+│   │   │   ├── recognizer.py           # EnvironmentRecognizer — pluggable env-shift detection/ID strategies
 │   │   │   └── selection_controller.py # Specialist-selection strategies (heuristic + neural)
 │   │   ├── dqn.py                      # DQNAgent — Deep Q-Network baseline
 │   │   ├── ppo.py                      # PPOAgent — PPO-clip baseline (discrete + continuous)
 │   │   └── sac.py                      # SACAgent — Soft Actor-Critic baseline (continuous)
-│   ├── cartpole.py                     # CartPole experiment runner
+│   ├── cartpole_challenge.py                     # CartPole experiment runner
 │   ├── half_cheetah.py                 # HalfCheetah experiment runner
 │   └── tools/
 │       ├── metrics.py                  # Reliability / Stability Gap / Efficiency computation + plots
-│       ├── visualization.py            # Live multi-experiment progress reporting
+│       ├── visualization.py            # Live multi-experiment progress reporting (terminal bar + ETA)
+│       ├── live_monitor.py             # Matplotlib live convergence chart, polls live_training_*.csv
+│       ├── live_dashboard.py           # Streamlit live convergence dashboard (auto-refreshing, browser-based)
 │       ├── aggregate_metrics.py        # Aggregates metrics across repeated experiment runs
 │       └── plot_variance.py            # Publication-quality variance plots across runs
 ├── latex/                          # Full LaTeX source for the paper
@@ -79,11 +81,11 @@ docker compose up -d
 docker compose exec ena_experiment bash
 ```
 
-The `app/` directory is bind-mounted to `/home/app` inside the container, so edits on the host are immediately reflected.
+The `app/` directory is bind-mounted to `/home/app` inside the container, so edits on the host are immediately reflected. Port `8501` (Streamlit's default) is mapped to the host, for the live dashboard described below.
 
 **3. Run an experiment**
 ```bash
-python src/cartpole.py
+python src/cartpole_challenge.py
 # or
 python src/half_cheetah.py
 ```
@@ -97,7 +99,7 @@ pip install -r app/requirements.txt
 
 **2. Run an experiment**
 ```bash
-python app/src/cartpole.py
+python app/src/cartpole_challenge.py
 # or
 python app/src/half_cheetah.py
 ```
@@ -116,9 +118,29 @@ Produces `reliability_box.png` and `stability_bar.png` — the figures used in t
 
 ---
 
+## Live Convergence Monitoring
+
+Every training run writes `live_training_{agent_name}.csv` to the experiment's output directory incrementally, one row per episode (score, plasticity, detected niche, ...), flushed immediately — so you can watch convergence while a run is still in progress instead of waiting for it to finish. The terminal progress bar also shows a live ETA per phase, e.g. `Training ENA-01 Fuzzy-Fuzzy (ETA 6m 22s)`, estimated from the average time per episode elapsed so far.
+
+Two ways to watch the CSV update live, run as a **separate process** from the training run (read-only, no risk to reproducibility):
+
+**Streamlit dashboard (recommended — auto-refreshing, in a browser):**
+```bash
+streamlit run app/src/tools/live_dashboard.py
+```
+Run this either directly on the host (simplest — `app/` is bind-mounted so the CSV paths are visible there too) or inside the container (`docker compose exec ena_experiment streamlit run src/tools/live_dashboard.py --server.headless true`, then open `http://localhost:8501` on the host — port `8501` is already mapped in `docker-compose.yml`). It auto-discovers the most recently modified `live_training_*.csv` and refreshes every 3 seconds.
+
+**Matplotlib monitor (needs a real display — run on the host, not inside the container):**
+```bash
+python app/src/tools/live_monitor.py cartpole_outputs/exp_1/live_training_ENA-01\ Fuzzy-Fuzzy.csv
+```
+Polls the given CSV and keeps an updating chart on screen until interrupted (Ctrl+C). This will not work inside a headless docker container — matplotlib's interactive mode needs a display backend.
+
+---
+
 ## Scripts
 
-### `src/cartpole.py`
+### `src/cartpole_challenge.py`
 Runs the ENA agent (and, where enabled, the DQN/PPO baselines) on CartPole under shifting gravity (Earth, Mars, Jupiter), then tests against training worlds plus held-out Neptune/Brown-dwarf phases. Writes per-experiment results, plots, and logs to an output directory.
 
 ### `src/half_cheetah.py`
@@ -126,6 +148,12 @@ Runs the same comparative protocol on MuJoCo HalfCheetah, varying gravity/fricti
 
 ### `src/tools/metrics.py`
 Computes the paper's core metrics (Reliability, Stability Gap, Efficiency) from raw episode histories and renders the academic comparison, plasticity, and specialist-transition figures.
+
+### `src/tools/live_monitor.py`
+Standalone matplotlib chart that polls a `live_training_*.csv` and re-renders score/plasticity every few seconds while a run is still in progress. See [Live Convergence Monitoring](#live-convergence-monitoring) above.
+
+### `src/tools/live_dashboard.py`
+Streamlit app: the browser-based, auto-refreshing equivalent of `live_monitor.py`. See [Live Convergence Monitoring](#live-convergence-monitoring) above.
 
 ### `src/tools/aggregate_metrics.py`
 Aggregates metrics across all repeated experiment runs into a single summary report.

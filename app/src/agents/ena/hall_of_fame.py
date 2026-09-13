@@ -138,13 +138,7 @@ class HallOfFame:
 		# Late Identity Binding: Determine the niche ID for this successful individual
 		recognizer.match_niche(memory, winner, self, population=population)
 
-		if self.__continual_improvement(
-			winner,
-			current_trust,
-			current_z_score,
-			recognizer,
-			obs_normalizer
-		):
+		if self.__continual_improvement(winner, current_trust, current_z_score, recognizer, obs_normalizer):
 			return
 
 		if self.__genetic_diversity(
@@ -152,17 +146,12 @@ class HallOfFame:
 			current_trust,
 			current_z_score,
 			recognizer,
-			obs_normalizer
+			obs_normalizer,
+			population,
 		):
 			return
 
-		if self.__slot_induction(
-			winner,
-			current_trust,
-			current_z_score,
-			recognizer,
-			obs_normalizer
-		):
+		if self.__slot_induction(winner, current_trust, current_z_score, recognizer, obs_normalizer):
 			return
 
 		self.__eco_niche_protection(
@@ -170,7 +159,8 @@ class HallOfFame:
 			current_trust,
 			current_z_score,
 			recognizer,
-			obs_normalizer
+			obs_normalizer,
+			population,
 		)
 
 	# Private
@@ -215,10 +205,7 @@ class HallOfFame:
 		# Cross-niche: winner is already a gladiator from a different niche.
 		# Its live weights have evolved since the original HoF snapshot —
 		# fork it as a new entry for this niche if that niche has room.
-		niche_count = sum(
-			1 for individual in self._records.values()
-			if individual.get("internal_env_id") == current_env_id
-		)
+		niche_count = sum(1 for individual in self._records.values() if individual.get("internal_env_id") == current_env_id)
 		if niche_count < self.max_per_niche:
 			clone_id = str(uuid.uuid4())
 			clone = {
@@ -236,21 +223,33 @@ class HallOfFame:
 			self._records[clone_id] = clone
 		return True
 
-	def __eco_niche_protection(self, winner, current_trust, current_z_score, recognizer, obs_normalizer):
+	# pylint: disable=too-many-arguments,too-many-positional-arguments
+	def __eco_niche_protection(self, winner, current_trust, current_z_score, recognizer, obs_normalizer, population):
 		"""STEP 6: SAME-NICHE REPLACEMENT — evict weakest in winner's niche if winner is better."""
 		current_niche_id = recognizer.current_niche_id
-		niche_records = [
-			individual for individual in self._records.values()
-			if individual.get("internal_env_id") == current_niche_id
-		]
+		niche_records = [individual for individual in self._records.values() if individual.get("internal_env_id") == current_niche_id]
 		if not niche_records:
 			return
 		weakest = min(niche_records, key=lambda individual: individual.get("trust"))
 		if current_trust > weakest.get("trust"):
-			del self._records[weakest["individual_id"]]
+			self.__evict(weakest["individual_id"], population)
 			self.__save(winner, current_trust, current_z_score, recognizer, obs_normalizer)
 
-	def __genetic_diversity(self, winner, current_trust, current_z_score, recognizer, obs_normalizer):
+	def __evict(self, individual_id, population):
+		"""Remove a record from the archive and clear its live population member's gladiator
+		tags — without this, a population slot evicted from the archive keeps competing in
+		trigger_evaluation() and staying protected in __evolve_population() as a "zombie
+		gladiator" invisible to niches_*.txt."""
+		del self._records[individual_id]
+		for individual in population:
+			if individual.get("individual_id") == individual_id:
+				individual["is_gladiator"] = False
+				individual["internal_env_id"] = -1
+				individual["env_name"] = "Unknown"
+				break
+
+	# pylint: disable=too-many-arguments,too-many-positional-arguments
+	def __genetic_diversity(self, winner, current_trust, current_z_score, recognizer, obs_normalizer, population):
 		"""STEP 4: NICHE PROTECTION (Genetic Similarity)"""
 		current_env_id = recognizer.current_niche_id
 		for hof_id, hof_record in list(self._records.items()):
@@ -262,7 +261,7 @@ class HallOfFame:
 			if similarity > self.SIMILARITY_THRESHOLD:
 				existing_trust = hof_record.get("trust", -99)
 				if current_trust > existing_trust:
-					del self._records[hof_id]
+					self.__evict(hof_id, population)
 					self.__save(winner, current_trust, current_z_score, recognizer, obs_normalizer)
 				# Whether we replaced or not, twin found — exit
 				return True
@@ -271,9 +270,7 @@ class HallOfFame:
 	def __memory_decay(self):
 		"""STEP 1: MEMORY DECAY"""
 		for item in self._records.values():
-			item["induction_z_score"] = (
-				item.get("induction_z_score", 0) * self.MEMORY_DECAY_RATE
-			)
+			item["induction_z_score"] = item.get("induction_z_score", 0) * self.MEMORY_DECAY_RATE
 
 	def __performance_gate(self, current_trust, population, plasticity_history):
 		"""STEP 2: CALCULATE CONTEXT & METRICS"""
@@ -318,10 +315,7 @@ class HallOfFame:
 	def __slot_induction(self, winner, current_trust, current_z_score, recognizer, obs_normalizer):
 		"""STEP 5: OPEN SLOT INDUCTION — induct if winner's niche is below budget."""
 		current_niche_id = recognizer.current_niche_id
-		niche_count = sum(
-			1 for individual in self._records.values()
-			if individual.get("internal_env_id") == current_niche_id
-		)
+		niche_count = sum(1 for individual in self._records.values() if individual.get("internal_env_id") == current_niche_id)
 		if niche_count < self.max_per_niche:
 			self.__save(winner, current_trust, current_z_score, recognizer, obs_normalizer)
 			return True

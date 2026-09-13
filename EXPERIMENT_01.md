@@ -1,10 +1,10 @@
-# EXPERIMENT_01 — `app/src/cartpole.py`
+# EXPERIMENT_01 — `app/src/cartpole_challenge.py`
 
-This document describes, step by step, what running `cartpole.py` actually does. It covers the CartPole domain runner as currently checked in — see [[project-ena-state]]-equivalent caveat below: only the ENA-01 (Fuzzy-Fuzzy) agent is active today; DQN and PPO are wired in but commented out of the run.
+This document describes, step by step, what running `cartpole_challenge.py` actually does. It covers the CartPole domain runner as currently checked in — see [[project-ena-state]]-equivalent caveat below: only the ENA-01 (Fuzzy-Fuzzy) agent is active today; DQN and PPO are wired in but commented out of the run.
 
 ## 0. Purpose
 
-`cartpole.py` is a domain runner: it builds one or more agents, trains them on a sequence of non-stationary CartPole physics regimes ("worlds"), tests them (including on unseen/extrapolated physics), computes academic comparison metrics, and writes logs + plots to a per-experiment output directory. It is the CartPole counterpart to `half_cheetah.py` (same lifecycle, different domain).
+`cartpole_challenge.py` is a domain runner: it builds one or more agents, trains them on a sequence of non-stationary CartPole physics regimes ("worlds"), tests them (including on unseen/extrapolated physics), computes academic comparison metrics, and writes logs + plots to a per-experiment output directory. It is the CartPole counterpart to `half_cheetah.py` (same lifecycle, different domain).
 
 ## 1. Top-level constants
 

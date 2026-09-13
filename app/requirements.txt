@@ -9,5 +9,6 @@ pylint
 pytest
 seaborn
 shimmy
+streamlit
 tensorflow
 rich

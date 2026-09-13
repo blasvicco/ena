@@ -3,6 +3,7 @@
 """ENA Experiments: HalfCheetah"""
 
 # General imports
+import csv
 import os
 import threading
 import time
@@ -112,14 +113,24 @@ def agent_testing(agents, experiment_id, output_dir, output_file, queue, worlds)
 	agent_ids = []
 	execution_times = {}
 	history_testing = {}
+	known_niche_ids_by_history = []
 	for agent in agents:
 		agent_name = agent.get_name()
 		episodes = agent.get_episodes()
 		agent_ids.append(agent_name)
 		post_update(experiment_id, queue, status=f"Testing {agent_name}", progress=8)
+		# Niches already established by the end of training — so the test chart's niche
+		# events classify a niche's first test-phase appearance as a "switch", not a
+		# spurious "new niche" (no niche can genuinely be created once train() stops running).
+		known_niche_ids_by_history.append(getattr(agent, "known_niche_ids", None))
 		agent.set_learning(False, output_dir=output_dir)
 		start_time = time.time()
-		history_testing[agent_name] = play(agent, test_worlds, episodes)
+		history_testing[agent_name] = play(
+			agent,
+			test_worlds,
+			episodes,
+			on_episode=make_eta_reporter(experiment_id, queue, "Testing", agent_name, start_time),
+		)
 		execution_times[agent_name] = time.time() - start_time
 
 	# Calculate and print metrics for this experiment
@@ -140,6 +151,7 @@ def agent_testing(agents, experiment_id, output_dir, output_file, queue, worlds)
 		save_path=os.path.join(output_dir, "test.png"),
 		success_threshold=SUCCESS_THRESHOLD,
 		ylim=Y_LIM,
+		known_niche_ids_by_history=known_niche_ids_by_history,
 	)
 
 	for agent in agents:
@@ -168,7 +180,14 @@ def agent_training(agents, experiment_id, output_dir, output_file, queue, worlds
 		post_update(experiment_id, queue, status=f"Training {agent_name}", progress=8)
 		agent.set_learning(True)
 		start_time = time.time()
-		history_training[agent_name] = play(agent, worlds, episodes)
+		live_log_path = os.path.join(output_dir, f"live_training_{agent_name}.csv")
+		history_training[agent_name] = play(
+			agent,
+			worlds,
+			episodes,
+			live_log_path=live_log_path,
+			on_episode=make_eta_reporter(experiment_id, queue, "Training", agent_name, start_time),
+		)
 		execution_times[agent_name] = time.time() - start_time
 
 	# Training Summary
@@ -243,47 +262,64 @@ def make_env(
 	return env
 
 
-def play(agent, envs, episodes_per_env):
-	"""Play the game"""
+def play(agent, envs, episodes_per_env, live_log_path=None, on_episode=None):
+	"""Play the game.
+
+	If live_log_path is given, each episode's row is also appended to that CSV,
+	flushed immediately — lets a separate process (e.g. tools/live_monitor.py) watch
+	convergence while this run is still in progress, without changing the returned
+	DataFrame or any existing chart in any way.
+
+	If on_episode is given, it's called after every episode as on_episode(episode_num,
+	total_episodes) — e.g. to report a live ETA.
+	"""
 	history = []
-	for env_idx, env in enumerate(envs):
-		for _ in range(episodes_per_env[env_idx]):
-			state, _ = env.reset()
-			state = np.array(state, dtype=np.float32)
-			episode_score = 0
-			is_done = False
+	total_episodes = sum(episodes_per_env)
+	live_log_file = None
+	live_log_writer = None
+	if live_log_path:
+		# pylint: disable=consider-using-with
+		live_log_file = open(live_log_path, "w", newline="", encoding="utf-8")
 
-			while not is_done:
-				# 1. Agent performs the step internally
-				next_state, reward, terminated, truncated, action = agent.act(
-					env, state
-				)
-				is_done = terminated or truncated
+	try:
+		for env_idx, env in enumerate(envs):
+			for _ in range(episodes_per_env[env_idx]):
+				state, _ = env.reset()
+				state = np.array(state, dtype=np.float32)
+				episode_score = 0
+				is_done = False
 
-				# 2. Collect data for training
-				if agent.learn:
-					agent.train(
-						env=env,
-						step_data={
-							"action": action,
-							"done": is_done,
-							"terminated": terminated,  # True only on genuine terminal state
-							"next_state": next_state,
-							"reward": reward,
-							"state": state,
-						},
+				while not is_done:
+					# 1. Agent performs the step internally
+					next_state, reward, terminated, truncated, action = agent.act(
+						env, state
 					)
+					is_done = terminated or truncated
 
-				episode_score += reward
-				state = next_state
+					# 2. Collect data for training
+					if agent.learn:
+						agent.train(
+							env=env,
+							step_data={
+								"action": action,
+								"done": is_done,
+								"terminated": terminated,  # True only on genuine terminal state
+								"next_state": next_state,
+								"reward": reward,
+								"state": state,
+							},
+						)
 
-			current_individual = (
-				agent.population[getattr(agent, "best_individual_idx", 0)]
-				if hasattr(agent, "population")
-				else {}
-			)
-			history.append(
-				{
+					episode_score += reward
+					state = next_state
+
+				current_individual = (
+					agent.population[getattr(agent, "best_individual_idx", 0)]
+					if hasattr(agent, "population")
+					else {}
+				)
+				plasticity_history = getattr(agent, "plasticity_history", None)
+				row = {
 					"env_id": getattr(env.unwrapped, "name", env_idx),
 					"episode": len(history) + 1,
 					"score": episode_score,
@@ -291,8 +327,25 @@ def play(agent, envs, episodes_per_env):
 					"is_gladiator": current_individual.get("is_gladiator", False),
 					"gladiator_env": current_individual.get("env_name", None),
 					"detected_env_id": getattr(agent, "current_env_id", -1),
+					"internal_env_id": current_individual.get("internal_env_id", -1),
+					"env_shift_detected": getattr(agent, "last_env_shift_detected", False),
+					"plasticity": plasticity_history[-1] if plasticity_history else None,
 				}
-			)
+				history.append(row)
+
+				if on_episode is not None:
+					on_episode(len(history), total_episodes)
+
+				if live_log_file is not None:
+					if live_log_writer is None:
+						live_log_writer = csv.DictWriter(live_log_file, fieldnames=list(row.keys()))
+						live_log_writer.writeheader()
+					live_log_writer.writerow(row)
+					live_log_file.flush()
+	finally:
+		if live_log_file is not None:
+			live_log_file.close()
+
 	return pd.DataFrame(history)
 
 
@@ -307,6 +360,32 @@ def post_update(experiment_id, queue, status=None, progress=0, done=False):
 				"status": status,
 			}
 		)
+
+
+def format_duration(seconds):
+	"""Format a duration in seconds as e.g. '1h 55m 31s', '6m 22s', or '42s'."""
+	hours, remainder = divmod(int(seconds), 3600)
+	minutes, secs = divmod(remainder, 60)
+	if hours:
+		return f"{hours}h {minutes}m {secs}s"
+	if minutes:
+		return f"{minutes}m {secs}s"
+	return f"{secs}s"
+
+
+def make_eta_reporter(experiment_id, queue, label, agent_name, start_time):
+	"""Build a play() on_episode callback that reports a live ETA via the status queue,
+	estimated from the average time per episode elapsed so far this phase."""
+
+	def _report(episode_num, total_episodes):
+		if episode_num <= 0 or episode_num >= total_episodes:
+			return
+		elapsed = time.time() - start_time
+		remaining = (elapsed / episode_num) * (total_episodes - episode_num)
+		eta_str = format_duration(remaining)
+		post_update(experiment_id, queue, status=f"{label} {agent_name} (ETA {eta_str})")
+
+	return _report
 
 
 def run_experiment(experiment_id, output_dir, queue=None):

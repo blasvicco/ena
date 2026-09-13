@@ -3,6 +3,7 @@
 """ENA Experiments"""
 
 # General imports
+import csv
 import os
 import threading
 import time
@@ -103,14 +104,24 @@ def agent_testing(agents, experiment_id, output_dir, output_file, queue, worlds)
 	agent_ids = []
 	execution_times = {}
 	history_testing = {}
+	known_niche_ids_by_history = []
 	for agent in agents:
 		agent_name = agent.get_name()
 		episodes = agent.get_episodes()
 		agent_ids.append(agent_name)
 		post_update(experiment_id, queue, status=f"Testing {agent_name}", progress=8)
+		# Niches already established by the end of training — so the test chart's niche
+		# events classify a niche's first test-phase appearance as a "switch", not a
+		# spurious "new niche" (no niche can genuinely be created once train() stops running).
+		known_niche_ids_by_history.append(getattr(agent, "known_niche_ids", None))
 		agent.set_learning(False, output_dir=output_dir)
 		start_time = time.time()
-		history_testing[agent_name] = play(agent, test_worlds, episodes)
+		history_testing[agent_name] = play(
+			agent,
+			test_worlds,
+			episodes,
+			on_episode=make_eta_reporter(experiment_id, queue, "Testing", agent_name, start_time),
+		)
 		execution_times[agent_name] = time.time() - start_time
 
 	# Calculate and print metrics for this experiment
@@ -129,6 +140,7 @@ def agent_testing(agents, experiment_id, output_dir, output_file, queue, worlds)
 		history_testing.values(),
 		agent_ids,
 		save_path=os.path.join(output_dir, "test.png"),
+		known_niche_ids_by_history=known_niche_ids_by_history,
 	)
 
 	for agent in agents:
@@ -157,7 +169,14 @@ def agent_training(agents, experiment_id, output_dir, output_file, queue, worlds
 		post_update(experiment_id, queue, status=f"Training {agent_name}", progress=8)
 		agent.set_learning(True)
 		start_time = time.time()
-		history_training[agent_name] = play(agent, worlds, episodes)
+		live_log_path = os.path.join(output_dir, f"live_training_{agent_name}.csv")
+		history_training[agent_name] = play(
+			agent,
+			worlds,
+			episodes,
+			live_log_path=live_log_path,
+			on_episode=make_eta_reporter(experiment_id, queue, "Training", agent_name, start_time),
+		)
 		execution_times[agent_name] = time.time() - start_time
 
 	# Training Summary
@@ -231,52 +250,84 @@ def make_env(
 	return env
 
 
-def play(agent, environments, episodes_per_env):
-	"""Play the game"""
+def play(agent, environments, episodes_per_env, live_log_path=None, on_episode=None):
+	"""Play the game.
+
+	If live_log_path is given, each episode's row is also appended to that CSV,
+	flushed immediately — lets a separate process (e.g. tools/live_monitor.py) watch
+	convergence while this run is still in progress, without changing the returned
+	DataFrame or any existing chart in any way.
+
+	If on_episode is given, it's called after every episode as on_episode(episode_num,
+	total_episodes) — e.g. to report a live ETA.
+	"""
 	history = []
-	for env_idx, env in enumerate(environments):
-		for unused_idx in range(episodes_per_env[env_idx]):
-			state, unused_meta = env.reset()
-			state = np.array(state, dtype=np.float32)
-			episode_score = 0
-			is_done = False
+	total_episodes = sum(episodes_per_env)
+	live_log_file = None
+	live_log_writer = None
+	if live_log_path:
+		# pylint: disable=consider-using-with
+		live_log_file = open(live_log_path, "w", newline="", encoding="utf-8")
 
-			while not is_done:
-				# 1. Agent performs the step internally
-				# Returns: (next_state, reward, done, action)
-				next_state, reward, terminated, truncated, action = agent.act(
-					env, state
-				)
-				is_done = terminated or truncated
+	try:
+		for env_idx, env in enumerate(environments):
+			for unused_idx in range(episodes_per_env[env_idx]):
+				state, unused_meta = env.reset()
+				state = np.array(state, dtype=np.float32)
+				episode_score = 0
+				is_done = False
 
-				# 2. Collect data for training (DQN uses this per-step, ENA uses this later)
-				if agent.learn:
-					agent.train(
-						env=env,
-						step_data={
-							"action": action,
-							"done": is_done,
-							"next_state": next_state,
-							"reward": reward,
-							"state": state,
-						},
-					)
+				while not is_done:
+					# 1. Agent performs the step internally
+					# Returns: (next_state, reward, done, action)
+					next_state, reward, terminated, truncated, action = agent.act(env, state)
+					is_done = terminated or truncated
 
-				episode_score += reward
-				state = next_state
+					# 2. Collect data for training (DQN uses this per-step, ENA uses this later)
+					if agent.learn:
+						agent.train(
+							env=env,
+							step_data={
+								"action": action,
+								"done": is_done,
+								"next_state": next_state,
+								"reward": reward,
+								"state": state,
+							},
+						)
 
-			current_individual = agent.population[getattr(agent, "best_individual_idx", 0)] if hasattr(agent, 'population') else {}
-			history.append(
-				{
+					episode_score += reward
+					state = next_state
+
+				current_individual = agent.population[getattr(agent, "best_individual_idx", 0)] if hasattr(agent, "population") else {}
+				plasticity_history = getattr(agent, "plasticity_history", None)
+				row = {
 					"env_id": getattr(env.unwrapped, "name", env_idx),
 					"episode": len(history) + 1,
 					"score": episode_score,
 					"specialist_id": getattr(agent, "best_individual_idx", 0),
 					"detected_env_id": getattr(agent, "current_env_id", -1),
+					"internal_env_id": current_individual.get("internal_env_id", -1),
 					"is_gladiator": current_individual.get("is_gladiator", False),
 					"gladiator_env": current_individual.get("env_name", None),
+					"env_shift_detected": getattr(agent, "last_env_shift_detected", False),
+					"plasticity": plasticity_history[-1] if plasticity_history else None,
 				}
-			)
+				history.append(row)
+
+				if on_episode is not None:
+					on_episode(len(history), total_episodes)
+
+				if live_log_file is not None:
+					if live_log_writer is None:
+						live_log_writer = csv.DictWriter(live_log_file, fieldnames=list(row.keys()))
+						live_log_writer.writeheader()
+					live_log_writer.writerow(row)
+					live_log_file.flush()
+	finally:
+		if live_log_file is not None:
+			live_log_file.close()
+
 	return pd.DataFrame(history)
 
 
@@ -291,6 +342,32 @@ def post_update(experiment_id, queue, status=None, progress=0, done=False):
 				"status": status,
 			}
 		)
+
+
+def format_duration(seconds):
+	"""Format a duration in seconds as e.g. '1h 55m 31s', '6m 22s', or '42s'."""
+	hours, remainder = divmod(int(seconds), 3600)
+	minutes, secs = divmod(remainder, 60)
+	if hours:
+		return f"{hours}h {minutes}m {secs}s"
+	if minutes:
+		return f"{minutes}m {secs}s"
+	return f"{secs}s"
+
+
+def make_eta_reporter(experiment_id, queue, label, agent_name, start_time):
+	"""Build a play() on_episode callback that reports a live ETA via the status queue,
+	estimated from the average time per episode elapsed so far this phase."""
+
+	def _report(episode_num, total_episodes):
+		if episode_num <= 0 or episode_num >= total_episodes:
+			return
+		elapsed = time.time() - start_time
+		remaining = (elapsed / episode_num) * (total_episodes - episode_num)
+		eta_str = format_duration(remaining)
+		post_update(experiment_id, queue, status=f"{label} {agent_name} (ETA {eta_str})")
+
+	return _report
 
 
 def run_experiment(experiment_id, output_dir, queue=None):
@@ -343,46 +420,47 @@ def run_experiment(experiment_id, output_dir, queue=None):
 			pop_size=100,
 			recognizer_threshold=0.90,
 			recognizer_ema_alpha=0.05,
+			recognizer_strategy="neutral_probe",
 			selection_driver="heuristic",
 			trust_algorithm="fuzzylogic",
 		)
 		ena_agent_01.set_name("ENA-01 Fuzzy-Fuzzy")
 		ena_agent_01.set_episodes(TRAINING_EPISODES_ENA)
-#
-#		ena_agent_02 = ENAgent(
-#			brain=ena_brain,
-#			make_env=make_env,
-#			gladiator_amounts=15,
-#			max_threads=max_agent_threads,
-#			mutation_rate=0.05,
-#			physics=["gravity", "masspole", "length"],
-#			plasticity_algorithm="quadratic",
-#			pop_size=50,
-#			trust_algorithm="quadratic",
-#		)
-#		ena_agent_02.set_name("ENA-02 Quadratic-Quadratic")
-#		ena_agent_02.set_episodes(TRAINING_EPISODES_ENA)
+		#
+		# 		ena_agent_02 = ENAgent(
+		# 			brain=ena_brain,
+		# 			make_env=make_env,
+		# 			gladiator_amounts=15,
+		# 			max_threads=max_agent_threads,
+		# 			mutation_rate=0.05,
+		# 			physics=["gravity", "masspole", "length"],
+		# 			plasticity_algorithm="quadratic",
+		# 			pop_size=50,
+		# 			trust_algorithm="quadratic",
+		# 		)
+		# 		ena_agent_02.set_name("ENA-02 Quadratic-Quadratic")
+		# 		ena_agent_02.set_episodes(TRAINING_EPISODES_ENA)
 
-#		dqn_agent = DQNAgent(brain=dqn_brain, make_env=make_env)
-#		dqn_agent.set_name("DQN-TF")
-#		dqn_agent.set_episodes(TRAINING_EPISODES_BASELINE)
+		# 		dqn_agent = DQNAgent(brain=dqn_brain, make_env=make_env)
+		# 		dqn_agent.set_name("DQN-TF")
+		# 		dqn_agent.set_episodes(TRAINING_EPISODES_BASELINE)
 
-#		ppo_agent = PPOAgent(
-#			brain=ppo_actor_brain,
-#			critic_brain=ppo_critic_brain,
-#			make_env=make_env,
-#			entropy_coef=0.01,  # Benefit from entropy in discrete CartPole
-#		)
-#		ppo_agent.set_name("PPO-TF")
-#		ppo_agent.set_episodes(TRAINING_EPISODES_BASELINE)
+		# 		ppo_agent = PPOAgent(
+		# 			brain=ppo_actor_brain,
+		# 			critic_brain=ppo_critic_brain,
+		# 			make_env=make_env,
+		# 			entropy_coef=0.01,  # Benefit from entropy in discrete CartPole
+		# 		)
+		# 		ppo_agent.set_name("PPO-TF")
+		# 		ppo_agent.set_episodes(TRAINING_EPISODES_BASELINE)
 
 		# 3. Training Phase
 		agent_training(
 			agents=[
 				ena_agent_01,
-#				ena_agent_02,
-#				dqn_agent,
-#				ppo_agent,
+				# 				ena_agent_02,
+				# 				dqn_agent,
+				# 				ppo_agent,
 			],
 			experiment_id=experiment_id,
 			output_dir=output_dir,
@@ -394,20 +472,20 @@ def run_experiment(experiment_id, output_dir, queue=None):
 		# 4. Testing Phase
 		# Set episodes for testing
 		ena_agent_01.set_episodes(TESTING_EPISODES)
-#		ena_agent_02.set_episodes(TESTING_EPISODES)
-#		dqn_agent.set_episodes(TESTING_EPISODES)
-#		ppo_agent.set_episodes(TESTING_EPISODES)
+		# 		ena_agent_02.set_episodes(TESTING_EPISODES)
+		# 		dqn_agent.set_episodes(TESTING_EPISODES)
+		# 		ppo_agent.set_episodes(TESTING_EPISODES)
 
 		# Load gladiators for ENA agents
 		ena_agent_01.load_gladiators()
-#		ena_agent_02.load_gladiators()
+		# 		ena_agent_02.load_gladiators()
 
 		agent_testing(
 			agents=[
 				ena_agent_01,
-#				ena_agent_02,
-#				dqn_agent,
-#				ppo_agent,
+				# 				ena_agent_02,
+				# 				dqn_agent,
+				# 				ppo_agent,
 			],
 			experiment_id=experiment_id,
 			output_dir=output_dir,
@@ -457,9 +535,7 @@ def run_experiment_worker(experiment_id, reporting_queue):
 # =============================================================================
 if __name__ == "__main__":
 	vprint(
-		f"[green]Hardware:[/green] GPU detection successful: {GPUS}."
-		if GPUS
-		else "[yellow]Hardware:[/yellow] No GPU detected. Defaulting to CPU."
+		f"[green]Hardware:[/green] GPU detection successful: {GPUS}." if GPUS else "[yellow]Hardware:[/yellow] No GPU detected. Defaulting to CPU."
 	)
 
 	with Manager() as manager:
@@ -477,16 +553,11 @@ if __name__ == "__main__":
 		vprint(f"[bold green]{'='*60}[/bold green]\n")
 
 		# 3. Launch each experiment in isolated processes
-		with concurrent.futures.ProcessPoolExecutor(
-			max_workers=MAX_WORKERS
-		) as executor:
+		with concurrent.futures.ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
 			futures = {}
 			for exp_id in range(NUM_EXPERIMENTS):
 				exp_dir = os.path.join("cartpole_outputs", f"exp_{exp_id + 1}")
-				analyzed = (
-					os.path.exists(os.path.join(exp_dir, "outputs.txt"))
-					and os.path.getsize(os.path.join(exp_dir, "outputs.txt")) > 0
-				)
+				analyzed = os.path.exists(os.path.join(exp_dir, "outputs.txt")) and os.path.getsize(os.path.join(exp_dir, "outputs.txt")) > 0
 				if analyzed:
 					REPORTING_QUEUE.put(
 						{
@@ -505,9 +576,7 @@ if __name__ == "__main__":
 				try:
 					future.result()
 				except Exception as exc:  # pylint: disable=broad-except
-					vprint(
-						f"[bold red]Experiment {exp_id + 1} crashed: {exc}[/bold red]"
-					)
+					vprint(f"[bold red]Experiment {exp_id + 1} crashed: {exc}[/bold red]")
 
 		# 4. Cleanup — still inside Manager context so queue is alive
 		REPORTING_QUEUE.put(None)
