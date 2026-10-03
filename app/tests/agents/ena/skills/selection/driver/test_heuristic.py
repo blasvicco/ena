@@ -1,8 +1,8 @@
-"""Tests for HeuristicSelectionDriver's test-time selection cascade."""
+"""Tests for the heuristic selection driver's test-time selection cascade."""
 
 # App imports
 from helpers import step
-from agents.ena.selection_controller import HeuristicSelectionDriver
+from agents.ena.skills.selection.driver.heuristic import Instance
 
 # pylint: disable=protected-access
 
@@ -42,9 +42,11 @@ def _population(gladiator_niches=()):
 def test_evaluating_ignores_recognizer_match() -> None:
 	"""S2: mid-evaluation, the queued candidate is used and match() is never even consulted —
 	the EVALUATING queue must run to completion to gather a fresh score per niche."""
-	with step("Arrange: a driver mid-evaluation with a queued (niche, gladiator) pair, and a "
-			  "recognizer that would confidently (but wrongly, for this step) match niche 4."):
-		driver = HeuristicSelectionDriver()
+	with step(
+		"Arrange: a driver mid-evaluation with a queued (niche, gladiator) pair, and a "
+		"recognizer that would confidently (but wrongly, for this step) match niche 4."
+	):
+		driver = Instance()
 		population = _population(gladiator_niches=(2, 4))
 		driver._state = driver.EVALUATING
 		driver._eval_queue = [(2, 2)]
@@ -60,9 +62,9 @@ def test_evaluating_ignores_recognizer_match() -> None:
 
 def test_locked_trusts_a_confident_recognizer_match_over_the_locked_niche() -> None:
 	"""S2: once LOCKED, a confident match() to a different, already-known niche is trusted —
-	it can resolve to a niche switch without waiting for the next trigger_evaluation() cycle."""
+	it can resolve to a niche switch without waiting for the next evaluate() cycle."""
 	with step("Arrange: locked onto niche 2, but the recognizer confidently matches niche 4."):
-		driver = HeuristicSelectionDriver()
+		driver = Instance()
 		population = _population(gladiator_niches=(2, 4))
 		driver._state = driver.LOCKED
 		driver._locked_niche = 2
@@ -78,7 +80,7 @@ def test_locked_trusts_a_confident_recognizer_match_over_the_locked_niche() -> N
 def test_locked_falls_back_to_the_locked_niche_when_no_match() -> None:
 	"""S2: once LOCKED, an unresolved match() (-1) must not disturb the current lock."""
 	with step("Arrange: locked onto niche 2, and the recognizer has no confident match."):
-		driver = HeuristicSelectionDriver()
+		driver = Instance()
 		population = _population(gladiator_niches=(2, 4))
 		driver._state = driver.LOCKED
 		driver._locked_niche = 2
@@ -94,7 +96,7 @@ def test_locked_falls_back_to_the_locked_niche_when_no_match() -> None:
 def test_no_gladiators_falls_back_to_random_non_gladiator() -> None:
 	"""With no gladiators in the population at all, selection must fall back to a random mutant."""
 	with step("Arrange: a locked driver with no locked niche and a population with no gladiators."):
-		driver = HeuristicSelectionDriver()
+		driver = Instance()
 		population = _population(gladiator_niches=())
 		recognizer = _FakeRecognizer(match_result=(-1, 0.5))
 
@@ -111,9 +113,11 @@ def test_evaluation_prefers_a_recognizer_confirmed_niche_over_a_higher_raw_score
 	niche — guards against a 'generalist' gladiator winning the raw-score contest under
 	someone else's physics, which is what made the post-Stage-2 test run lock onto one wrong
 	gladiator across every true environment."""
-	with step("Arrange: a driver evaluating niches 2 and 4; the recognizer confirms niche 2's "
-			  "own episode (match points back at 2) but not niche 4's (match points elsewhere)."):
-		driver = HeuristicSelectionDriver()
+	with step(
+		"Arrange: a driver evaluating niches 2 and 4; the recognizer confirms niche 2's "
+		"own episode (match points back at 2) but not niche 4's (match points elsewhere)."
+	):
+		driver = Instance()
 		population = _population(gladiator_niches=(2, 4))
 		driver._state = driver.EVALUATING
 		driver._eval_queue = [(2, 2), (4, 4)]
@@ -134,7 +138,7 @@ def test_evaluation_falls_back_to_raw_score_when_nothing_is_confirmed() -> None:
 	"""S2b: if the recognizer confirms none of the evaluated niches, fall back to today's
 	raw-score argmax rather than refusing to lock at all."""
 	with step("Arrange: a driver evaluating niches 2 and 4; the recognizer confirms neither."):
-		driver = HeuristicSelectionDriver()
+		driver = Instance()
 		population = _population(gladiator_niches=(2, 4))
 		driver._state = driver.EVALUATING
 		driver._eval_queue = [(2, 2), (4, 4)]

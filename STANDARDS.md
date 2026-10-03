@@ -1,56 +1,5 @@
 # Standards
 
-This document describes how the codebase is organized and the coding conventions expected for Python code in this project.
-
-## Project Structure
-
-```
-app/
-├── src/
-│   ├── agents/     # Agent definitions (dqn.py, ppo.py, sac.py), plus:
-│   │   ├── tools/  # General agent-shared contract & utilities (abstract.py, baseline.py, normalizers.py)
-│   │   └── ena/    # ENA-exclusive components (ena.py, memory.py, recognizer.py, hall_of_fame.py, selection_controller.py)
-│   ├── cartpole_challenge.py, half_cheetah.py  # Domain runners — the only *.py directly under src/
-│   └── tools/      # Metrics, visualization, live monitoring, and output post-processing scripts
-├── latex/          # Paper source (independent of the codebase)
-├── shell/          # do.sh — format (Black) + lint (Pylint) helper
-├── tests/          # pytest suite, structurally parallel to src/
-├── requirements.txt
-└── .pylintrc
-hub/python/Dockerfile
-docker-compose.yml
-```
-
-### `app/src/agents/`
-
-All agents share a common contract defined in `agents/tools/abstract.py` (`AAgent`): a `brain` factory (builds the underlying Keras model) and a `make_env` factory (builds the Gym-like environment) are injected at construction time, and every agent implements `act`, `train`, and `set_learning`. This is a strategy pattern — swapping `brain`/`make_env` retargets an agent to a new architecture or domain without touching its algorithm.
-
-Each `.py` file directly under `agents/` is an agent definition only (`dqn.py`, `ppo.py`, `sac.py`; ENA's definition lives at `agents/ena/ena.py`, see below). Support code is split into two subfolders by scope:
-
-`agents/tools/` — building blocks shared across multiple agents:
-- `abstract.py` (`AAgent`) — the shared agent contract described above.
-- `baseline.py` (`ABaseline`) — shared base for single-model RL baselines.
-- `normalizers.py` — running/identity observation normalizers shared across agents.
-
-`agents/ena/` — components exclusive to the ENA agent:
-- `ena.py` (`ENAgent`) — the ENA agent itself; composition root wiring together the pieces below.
-- `memory.py` (`AgentMemory`) — reward/plasticity history and running statistics, decoupled from `ENAgent`.
-- `recognizer.py` (`EnvironmentRecognizer`) — pluggable facade (same pattern as `SelectionController`) over strategies for detecting environment shifts and identifying the current niche: `LiveRolloutRecognizer` (default, sources its physics signature from the live rollout), `ConfirmationWindowRecognizer` (requires consecutive confirmations before firing a shift), `NeutralProbeRecognizer` (policy-independent physics fingerprint via a short neutral-action probe). These compose — e.g. `confirmation_window` works with any strategy — rather than being mutually exclusive.
-- `hall_of_fame.py` (`HallOfFame`) — archive of elite frozen specialists ("Gladiators"), gated by a staged pipeline (performance, continual improvement, genetic diversity, slot induction).
-- `selection_controller.py` — specialist-selection strategies (`HeuristicSelectionDriver`, `NeuralSelectionDriver`) behind a common `SelectionController` facade.
-
-`agents/dqn.py`, `agents/ppo.py`, `agents/sac.py` — DQN, PPO-clip, and SAC baseline implementations, built on `agents/tools/baseline.py`.
-
-### `app/src/`
-
-Domain runners (`cartpole_challenge.py`, `half_cheetah.py`) each build agent instances, run training + testing episodes across a shifting-physics protocol, and write results to a per-experiment output directory. Their shared `play()` loop also writes `live_training_{agent_name}.csv` incrementally (one row per episode, flushed immediately) and drives a per-phase ETA in the terminal progress bar via an `on_episode` callback — both purely additive, with zero effect on the final in-memory history or existing charts. They are the only `.py` files directly under `src/`; everything else lives in `src/tools/`: `metrics.py` computes the reported metrics (Reliability, Stability Gap, Efficiency) and renders the comparison figures; `visualization.py` handles live progress reporting; `live_monitor.py` (matplotlib) and `live_dashboard.py` (Streamlit) render the live CSV while a run is in progress, as separate read-only processes; `aggregate_metrics.py` and `plot_variance.py` post-process results across repeated runs.
-
-### Docker setup
-
-`docker-compose.yml` defines a single `ena_experiment` service built from `hub/python/Dockerfile` (`python:3.11-slim`, with `build-essential`/`gcc` for native extensions and the OpenCV/MuJoCo system libraries required by `gymnasium[mujoco]`). `app/` is bind-mounted to `/home/app` so host edits are immediately visible in the container. Port `8501` (Streamlit's default) is mapped to the host, for `src/tools/live_dashboard.py`. The container itself doesn't run an experiment on start — it's kept alive with `tail -f /dev/null` so it can be entered via `docker compose exec ena_experiment bash` and used as an interactive dev environment. Python dependencies (`app/requirements.txt`) are installed at image build time, not on every container start — adding a dependency requires `docker compose up -d --build` (or `docker compose down && docker compose up -d` after a `build`) to take effect, which recreates the container and kills anything running inside it.
-
----
-
 ## Python Coding Standards
 
 These are the standards new and modified code should meet. Where existing code falls short, bring it up to standard in the lines you're already touching rather than leaving it as-is.

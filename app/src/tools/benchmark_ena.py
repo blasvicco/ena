@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 """Fast synthetic benchmark for ENA's niche/gladiator distribution.
 
-Exercises the real ENAgent/HallOfFame/EnvironmentRecognizer control flow — via cartpole_challenge.py's
-own play() loop, unmodified — with SyntheticCartPoleEnv standing in for real CartPole physics,
+Exercises the real ENAgent/HallOfFame/EnvironmentRecognizer control flow — via the CartPole studies' shared
+play() loop (cartpole_ena_performance.py), unmodified — with SyntheticCartPoleEnv standing in for real CartPole physics,
 so a candidate fix's effect on niche fragmentation and gladiator-count skew across true
-environments can be measured in minutes instead of the hours a full cartpole_challenge.py experiment
+environments can be measured in minutes instead of the hours a full cartpole_ena_performance.py experiment
 takes. Same governing physics equations and score semantics as the real environment, so the
 resulting niches_*.txt-style distribution is directly comparable in kind, if not in exact
 magnitude, to a real run's.
@@ -14,7 +14,7 @@ own internal op-level parallelism (independent of --max-threads) introduces floa
 non-associativity that compounds over hundreds of episodes of evolutionary dynamics into
 completely different outcomes. So this runs several seeds and reports mean±std per
 environment, the same way the project's own tools/aggregate_metrics.py and plot_variance.py
-treat a single full cartpole_challenge.py run as statistically insufficient on its own.
+treat a single full experiment run as statistically insufficient on its own.
 
 Usage:
 	python tools/benchmark_ena.py --save benchmark_outputs/before.json
@@ -39,7 +39,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # App imports
 # pylint: disable=wrong-import-position
 from agents.ena.ena import ENAgent
-from cartpole_challenge import ena_brain, play
+from cartpole_ena_performance import ena_brain, play
 from tools.synthetic_cartpole import make_synthetic_env
 
 OUTPUT_DIR = "benchmark_outputs"
@@ -58,10 +58,9 @@ def _build_agent(
 	max_threads: int,
 	recognizer_threshold: float = 0.90,
 	recognizer_ema_alpha: float = 0.05,
-	recognizer_probe_steps: int = 10,
 ) -> ENAgent:
-	"""Build an ENAgent mirroring cartpole_challenge.py's ena_agent_01 configuration. The three
-	recognizer_* params default to cartpole_challenge.py's current values but are overridable so this
+	"""Build an ENAgent close to cartpole_ena_performance.py's ENA-Combined configuration. The
+	recognizer_* params default to the studies' current values but are overridable so this
 	tool can compare a candidate recognizer tuning against baseline without editing the file."""
 	agent = ENAgent(
 		brain=ena_brain,
@@ -72,14 +71,13 @@ def _build_agent(
 		max_threads=max_threads,
 		mutation_rate=0.05,
 		physics=["gravity", "masspole", "length"],
-		plasticity_algorithm="fuzzylogic",
+		plasticity_algorithm="linear_ramp",
 		pop_size=pop_size,
 		recognizer_threshold=recognizer_threshold,
 		recognizer_ema_alpha=recognizer_ema_alpha,
-		recognizer_probe_steps=recognizer_probe_steps,
-		recognizer_strategy="neutral_probe",
+		recognizer_strategy="dynamics_model",
 		selection_driver="heuristic",
-		trust_algorithm="fuzzylogic",
+		trust_algorithm="linear_ramp",
 	)
 	agent.set_name("ENA-Benchmark")
 	return agent
@@ -117,7 +115,7 @@ def _run_single_seed(pop_size: int, episodes_per_phase: int, max_threads: int, s
 
 	agent.set_learning(False)
 	niches_path = os.path.join(OUTPUT_DIR, f"niches_{agent.get_name()}_seed{seed}.txt")
-	agent.hall_of_fame.save_niche_details(OUTPUT_DIR, f"{agent.get_name()}_seed{seed}")
+	agent._skills["hall_of_fame"].save_niche_details(OUTPUT_DIR, f"{agent.get_name()}_seed{seed}")  # pylint: disable=protected-access
 
 	late_half = history.groupby("env_id", sort=False).tail(episodes_per_phase // 2)
 
@@ -266,7 +264,6 @@ def main() -> None:
 	parser.add_argument("--seeds", type=_parse_seeds, default=DEFAULT_SEEDS, help="Comma-separated seed list, e.g. 1,2,3 or 1-32.")
 	parser.add_argument("--recognizer-threshold", type=float, default=0.90)
 	parser.add_argument("--recognizer-ema-alpha", type=float, default=0.05)
-	parser.add_argument("--recognizer-probe-steps", type=int, default=10)
 	parser.add_argument("--save", type=str, default=None, help="Path to save this run's summary as JSON.")
 	parser.add_argument("--compare", type=str, default=None, help="Path to a previously saved summary to diff against.")
 	args = parser.parse_args()
@@ -274,7 +271,6 @@ def main() -> None:
 	recognizer_overrides = {
 		"recognizer_threshold": args.recognizer_threshold,
 		"recognizer_ema_alpha": args.recognizer_ema_alpha,
-		"recognizer_probe_steps": args.recognizer_probe_steps,
 	}
 	result = run_benchmark(args.pop_size, args.episodes_per_phase, args.max_threads, args.seeds, recognizer_overrides)
 	_print_report(result)

@@ -129,6 +129,7 @@ def agent_testing(agents, experiment_id, output_dir, output_file, queue, worlds)
 			agent,
 			test_worlds,
 			episodes,
+			live_log_path=os.path.join(output_dir, f"live_testing_{agent_name}.csv"),
 			on_episode=make_eta_reporter(experiment_id, queue, "Testing", agent_name, start_time),
 		)
 		execution_times[agent_name] = time.time() - start_time
@@ -291,9 +292,7 @@ def play(agent, envs, episodes_per_env, live_log_path=None, on_episode=None):
 
 				while not is_done:
 					# 1. Agent performs the step internally
-					next_state, reward, terminated, truncated, action = agent.act(
-						env, state
-					)
+					next_state, reward, terminated, truncated, action = agent.act(env, state)
 					is_done = terminated or truncated
 
 					# 2. Collect data for training
@@ -313,11 +312,7 @@ def play(agent, envs, episodes_per_env, live_log_path=None, on_episode=None):
 					episode_score += reward
 					state = next_state
 
-				current_individual = (
-					agent.population[getattr(agent, "best_individual_idx", 0)]
-					if hasattr(agent, "population")
-					else {}
-				)
+				current_individual = agent.population[getattr(agent, "best_individual_idx", 0)] if hasattr(agent, "population") else {}
 				plasticity_history = getattr(agent, "plasticity_history", None)
 				row = {
 					"env_id": getattr(env.unwrapped, "name", env_idx),
@@ -421,16 +416,16 @@ def run_experiment(experiment_id, output_dir, queue=None):
 			exploration_rate=0.2,
 			mutation_rate=0.1,
 			physics=["gravity", "friction"],
-			plasticity_algorithm="fuzzylogic",
+			plasticity_algorithm="linear_ramp",
 			pop_size=200,
 			recognizer_threshold=0.90,
 			recognizer_ema_alpha=0.05,
 			selection_driver="heuristic",
-			trust_algorithm="fuzzylogic",
+			trust_algorithm="linear_ramp",
 			mutation_noise=0.3,
 			controller_max_niches=32,
 		)
-		ena_agent_01.set_name("ENA-01 Fuzzy-Fuzzy")
+		ena_agent_01.set_name("ENA-01 LinearRamp-LinearRamp")
 		ena_agent_01.set_episodes(TRAINING_EPISODES_ENA)
 
 		# 		ena_agent_02 = ENAgent(
@@ -535,9 +530,7 @@ def run_experiment_worker(experiment_id, reporting_queue):
 
 if __name__ == "__main__":
 	vprint(
-		f"[green]Hardware:[/green] GPU detection successful: {GPUS}."
-		if GPUS
-		else "[yellow]Hardware:[/yellow] No GPU detected. Defaulting to CPU."
+		f"[green]Hardware:[/green] GPU detection successful: {GPUS}." if GPUS else "[yellow]Hardware:[/yellow] No GPU detected. Defaulting to CPU."
 	)
 
 	with Manager() as manager:
@@ -547,22 +540,15 @@ if __name__ == "__main__":
 		REPORTER_THREAD.start()
 
 		vprint(f"\n[bold green]{'='*60}[/bold green]")
-		vprint(
-			f"[bold]HALFCHEETAH: LAUNCHING {NUM_EXPERIMENTS} INDEPENDENT EXPERIMENTS[/bold]"
-		)
+		vprint(f"[bold]HALFCHEETAH: LAUNCHING {NUM_EXPERIMENTS} INDEPENDENT EXPERIMENTS[/bold]")
 		vprint(f"Utilizing [cyan]{MAX_WORKERS}[/cyan] CPU cores.")
 		vprint(f"[bold green]{'='*60}[/bold green]\n")
 
-		with concurrent.futures.ProcessPoolExecutor(
-			max_workers=MAX_WORKERS
-		) as executor:
+		with concurrent.futures.ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
 			futures = {}
 			for exp_id in range(NUM_EXPERIMENTS):
 				exp_dir = os.path.join("cheetah_outputs", f"exp_{exp_id + 1}")
-				analyzed = (
-					os.path.exists(os.path.join(exp_dir, "outputs.txt"))
-					and os.path.getsize(os.path.join(exp_dir, "outputs.txt")) > 0
-				)
+				analyzed = os.path.exists(os.path.join(exp_dir, "outputs.txt")) and os.path.getsize(os.path.join(exp_dir, "outputs.txt")) > 0
 				if analyzed:
 					REPORTING_QUEUE.put(
 						{
@@ -581,16 +567,12 @@ if __name__ == "__main__":
 				try:
 					future.result()
 				except Exception as error:  # pylint: disable=broad-except
-					vprint(
-						f"[bold red]Experiment {exp_id + 1} crashed: {error}[/bold red]"
-					)
+					vprint(f"[bold red]Experiment {exp_id + 1} crashed: {error}[/bold red]")
 
 		REPORTING_QUEUE.put(None)
 		REPORTER_THREAD.join(timeout=2.0)
 
 	vprint("\n[bold green]" + "=" * 60 + "[/bold green]")
 	vprint(f"[bold]ALL {NUM_EXPERIMENTS} EXPERIMENTS COMPLETE[/bold]")
-	vprint(
-		"Check the [cyan]outputs_cheetah/[/cyan] directory for detailed logs and plots."
-	)
+	vprint("Check the [cyan]outputs_cheetah/[/cyan] directory for detailed logs and plots.")
 	vprint("[bold green]" + "=" * 60 + "[/bold green]")

@@ -1,9 +1,15 @@
 """Agent Memory Module for EN Agent."""
-
-import numpy as np
+# General imports
 from collections import deque
+
+# Libs imports
+import numpy as np
+
+# App imports
 from ..tools.normalizers import _RunningNormalizer
 
+
+# pylint: disable=too-many-instance-attributes
 class AgentMemory:
 	"""Centralized memory storage for all historical variables and statistics."""
 
@@ -36,6 +42,12 @@ class AgentMemory:
 		"""Computes and tracks the transition dynamics (physics signature)."""
 		delta_s = next_state - state
 		self.transition_normalizer.update(delta_s[np.newaxis, :])
+
+	def record_step(self, state, next_state, reward):
+		"""Track transition dynamics and accumulate the running episode reward."""
+		self.update_transition(state, next_state)
+		self.current_episode_reward += reward
+		self.step_rewards.append(reward)
 
 	@property
 	def performance_derivative(self):

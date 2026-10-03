@@ -12,8 +12,8 @@ class ABaseline(AAgent):
 
 	learn = True
 
-	def set_learning(self, mode):
-		"""Switches between training and evaluation modes."""
+	def set_learning(self, mode, output_dir=None):
+		"""Switches between training and evaluation modes (output_dir accepted for the study runner, unused)."""
 		self.learn = mode
 
 	@abstractmethod

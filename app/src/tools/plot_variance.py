@@ -1,133 +1,153 @@
 #!/usr/bin/env python
-"""Plot variance."""
+"""Plot Reliability/Stability Gap variance across experiment replicates as box/strip charts."""
 
-# Libs imports
+# General imports
+import argparse
 import os
 import re
 
 # Libs imports
-import pandas as pd
 import matplotlib.pyplot as plt
+import pandas as pd
 import seaborn as sns
 
-def parse_txt_file(filepath):
-	"""Parses the new tabular format using robust logic from aggregate_metrics."""
+PERFORMANCE_MARKER = "--- ACADEMIC PERFORMANCE & RELIABILITY SUMMARY ---"
+# Anchored to this file's own location (app/src/tools/ -> app/), not the caller's cwd, so the
+# default target is found regardless of where this script is invoked from.
+DEFAULT_OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "cartpole_ena_performance_outputs")
+# Older runs used long descriptive agent names — shortened here for axis labels; any other
+# name (including the current ablation study's) passes through unchanged.
+LEGACY_NAME_MAP = {
+	"ENA-01 LinearRamp-LinearRamp": "ENA-01",
+	"ENA-02 Quadratic-Quadratic": "ENA-02",
+}
+
+
+# pylint: disable=too-many-locals
+def parse_txt_file(filepath: str) -> pd.DataFrame:
+	"""Parse an outputs.txt's Test-phase performance table into a DataFrame."""
 	if not os.path.exists(filepath):
 		return None
 
-	with open(filepath, 'r') as f:
-		content = f.read()
+	with open(filepath, "r", encoding="utf-8") as file_handle:
+		content = file_handle.read()
 
-	# We focus on the Test section as it's the primary indicator for the paper
-	sections = re.split(r'--- ACADEMIC PERFORMANCE & RELIABILITY SUMMARY ---', content)
+	# The Test summary is the third occurrence of the marker (index 2): preamble, Training, Test.
+	sections = content.split(PERFORMANCE_MARKER)
 	if len(sections) < 3:
 		return None
 
-	# The third section (index 2) is the Test summary
-	lines = [l for l in sections[2].strip().split('\n') if l.strip()]
+	lines = [line for line in sections[2].strip().split("\n") if line.strip()]
 	if not lines:
 		return None
 
 	header_line = lines[0]
-	present_suffixes = [s for s in ["Reliability (%)", "Stability Gap (↓)", "Efficiency (Score/s)"] if s in header_line]
-	env_headers = re.findall(r'(\S+ Avg)', header_line)
+	present_suffixes = [suffix for suffix in ["Reliability (%)", "Stability Gap (↓)", "Efficiency (Score/s)"] if suffix in header_line]
+	env_headers = re.findall(r"(\S+ Avg)", header_line)
 
 	headers = ["Agent"] + env_headers + present_suffixes
 	num_expected_cols = len(headers)
 
 	data = []
 	for line in lines[1:]:
-		parts = re.split(r'\s{2,}', line.strip())
+		parts = re.split(r"\s{2,}", line.strip())
 		if len(parts) != num_expected_cols:
 			all_parts = line.split()
 			num_suffixes = len(present_suffixes)
 			num_envs = len(env_headers)
 			if len(all_parts) >= num_expected_cols:
-				s_data = all_parts[-num_suffixes:] if num_suffixes > 0 else []
-				e_data = all_parts[-(num_suffixes + num_envs):-num_suffixes] if num_suffixes > 0 else all_parts[-num_envs:]
-				agent_name = " ".join(all_parts[:-(num_suffixes + num_envs)])
-				data.append([agent_name] + e_data + s_data)
+				suffix_data = all_parts[-num_suffixes:] if num_suffixes > 0 else []
+				env_data = all_parts[-(num_suffixes + num_envs) : -num_suffixes] if num_suffixes > 0 else all_parts[-num_envs:]
+				agent_name = " ".join(all_parts[: -(num_suffixes + num_envs)])
+				data.append([agent_name] + env_data + suffix_data)
 		else:
-				data.append(parts)
+			data.append(parts)
 
-	df = pd.DataFrame(data, columns=headers)
+	dataframe = pd.DataFrame(data, columns=headers)
+	dataframe["Agent"] = dataframe["Agent"].apply(lambda name: LEGACY_NAME_MAP.get(name, name))
 
-	# Normalize agent names for plotting
-	_name_map = {
-		'ENA-01 Fuzzy-Fuzzy': 'ENA-01',
-		'ENA-02 Quadratic-Quadratic': 'ENA-02',
-	}
-	df['Agent'] = df['Agent'].apply(lambda x: _name_map.get(x, x))
+	for column in dataframe.columns:
+		if column != "Agent":
+			dataframe[column] = dataframe[column].astype(str).str.replace("%", "").astype(float)
 
-	# Clean numeric columns
-	for col in df.columns:
-		if col != "Agent":
-			df[col] = df[col].astype(str).str.replace('%', '').astype(float)
+	return dataframe
 
-	return df
 
-def main():
-	# Primary directory search in 'app/outputs' (or 'outputs' if running from app/)
-	output_dir = os.path.join("app", "outputs") if os.path.exists("app") else "outputs"
+def get_experiment_directories(output_dir: str) -> list:
+	"""Find and numerically sort all experiment directories (exp_*) under output_dir."""
+	directories = [
+		directory for directory in os.listdir(output_dir) if directory.startswith("exp_") and os.path.isdir(os.path.join(output_dir, directory))
+	]
+	directories.sort(key=lambda item: int(re.search(r"\d+", item).group()) if re.search(r"\d+", item) else 0)
+	return directories
+
+
+def plot(output_dir: str) -> None:
+	"""Aggregate every exp_* replicate's Test-phase performance and plot variance box/bar charts."""
 	if not os.path.exists(output_dir):
-		# Check current dir if it IS the outputs dir
-		if os.path.basename(os.getcwd()) == "outputs":
-			output_dir = "."
-		else:
-			print(f"Error: {output_dir} not found.")
-			return
+		print(f"Error: {output_dir} not found.")
+		return
 
-	# Dynamic discovery of all experiment folders (exp_1, exp_2, etc.)
-	exp_dirs = [d for d in os.listdir(output_dir) if d.startswith('exp_') and os.path.isdir(os.path.join(output_dir, d))]
-	exp_dirs.sort(key=lambda x: int(re.search(r'\d+', x).group()) if re.search(r'\d+', x) else 0)
+	exp_dirs = get_experiment_directories(output_dir)
 
 	records = []
 	for exp_dir in exp_dirs:
-		filepath = os.path.join(output_dir, exp_dir, "outputs.txt")
-		df = parse_txt_file(filepath)
-		if df is not None:
-			for _, row in df.iterrows():
-				records.append({
-					'Experiment': exp_dir,
-					'Agent': row['Agent'],
-					'Reliability (%)': row.get('Reliability (%)', 0),
-					'Stability Gap': row.get('Stability Gap (↓)', 0)
-				})
-		else:
-			print(f"Warning: Could not parse {filepath}")
+		file_path = os.path.join(output_dir, exp_dir, "outputs.txt")
+		dataframe = parse_txt_file(file_path)
+		if dataframe is None:
+			print(f"Warning: Could not parse {file_path}")
+			continue
+		for _, row in dataframe.iterrows():
+			records.append(
+				{
+					"Experiment": exp_dir,
+					"Agent": row["Agent"],
+					"Reliability (%)": row.get("Reliability (%)", 0),
+					"Stability Gap": row.get("Stability Gap (↓)", 0),
+				}
+			)
 
 	if not records:
 		print("No valid data found to plot.")
 		return
 
-	df_final = pd.DataFrame(records)
+	final_dataframe = pd.DataFrame(records)
 
 	# 1. Boxplot for Reliability (Variance across all experiments)
 	plt.figure(figsize=(10, 7))
 	sns.set_style("whitegrid")
-	sns.boxplot(data=df_final, x='Agent', y='Reliability (%)', palette='Set2')
-	sns.stripplot(data=df_final, x='Agent', y='Reliability (%)', color='black', alpha=0.4, jitter=True)
-	plt.title(f'Test Phase Reliability Distribution Across {len(exp_dirs)} Experiments', fontsize=14, fontweight='bold')
-	plt.ylabel('Test Phase Reliability (%)', fontweight='bold')
-	plt.xlabel('Agent Architecture', fontweight='bold')
+	sns.boxplot(data=final_dataframe, x="Agent", y="Reliability (%)", palette="Set2")
+	sns.stripplot(data=final_dataframe, x="Agent", y="Reliability (%)", color="black", alpha=0.4, jitter=True)
+	plt.title(f"Test Phase Reliability Distribution Across {len(exp_dirs)} Experiments", fontsize=14, fontweight="bold")
+	plt.ylabel("Test Phase Reliability (%)", fontweight="bold")
+	plt.xlabel("Agent Architecture", fontweight="bold")
 	plt.ylim(-5, 105)
 	plt.tight_layout()
-	plt.savefig(os.path.join(output_dir, 'reliability_box.png'), dpi=300)
+	plt.savefig(os.path.join(output_dir, "reliability_box.png"), dpi=300)
 	plt.close()
 
 	# 2. Barplot for Stability Gap (Mean with 95% Bootstrap Confidence Intervals)
 	plt.figure(figsize=(10, 7))
-	sns.barplot(data=df_final, x='Agent', y='Stability Gap', capsize=.1, errorbar=('ci', 95), palette='Set1')
-	sns.stripplot(data=df_final, x='Agent', y='Stability Gap', color='black', alpha=0.4, jitter=True)
-	plt.title(f'Test Phase Stability Gap (Mean with 95% CI) - {len(exp_dirs)} Experiments', fontsize=14, fontweight='bold')
-	plt.ylabel('Score Delta (Pre - Post Switch)', fontweight='bold')
-	plt.xlabel('Agent Architecture', fontweight='bold')
+	sns.barplot(data=final_dataframe, x="Agent", y="Stability Gap", capsize=0.1, errorbar=("ci", 95), palette="Set1")
+	sns.stripplot(data=final_dataframe, x="Agent", y="Stability Gap", color="black", alpha=0.4, jitter=True)
+	plt.title(f"Test Phase Stability Gap (Mean with 95% CI) - {len(exp_dirs)} Experiments", fontsize=14, fontweight="bold")
+	plt.ylabel("Score Delta (Pre - Post Switch)", fontweight="bold")
+	plt.xlabel("Agent Architecture", fontweight="bold")
 	plt.tight_layout()
-	plt.savefig(os.path.join(output_dir, 'stability_bar.png'), dpi=300)
+	plt.savefig(os.path.join(output_dir, "stability_bar.png"), dpi=300)
 	plt.close()
 
 	print(f"Success: Processed {len(exp_dirs)} experiments.")
-	print("Saved 'reliability_box.png' and 'stability_bar.png'.")
+	print(f"Saved 'reliability_box.png' and 'stability_bar.png' to {output_dir}.")
 
-if __name__ == '__main__':
+
+def main() -> None:
+	"""Parse CLI arguments and run the variance plotting."""
+	parser = argparse.ArgumentParser(description=__doc__)
+	parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR, help="Directory containing exp_* replicate subdirectories.")
+	args = parser.parse_args()
+	plot(args.output_dir)
+
+
+if __name__ == "__main__":
 	main()

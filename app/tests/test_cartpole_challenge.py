@@ -1,166 +1,129 @@
-"""Tests for cartpole_challenge.py's play() per-episode history recording."""
-
-# General imports
-from types import SimpleNamespace
+"""Tests for cartpole_challenge.py — ENA vs. DQN/PPO/SAC-Discrete under equal env-step budgets."""
 
 # Libs imports
 import numpy as np
-import pandas as pd
 import pytest
 
 # App imports
 from helpers import step
 import cartpole_challenge
-from cartpole_challenge import make_eta_reporter, play
-
-
-# pylint: disable=too-few-public-methods
-class _FakeUnwrapped:
-	"""Minimal stand-in for env.unwrapped, exposing only what play() reads."""
-
-	name = "Fake-Env"
-
-
-class _FakeEnv:
-	"""A minimal env stub: one step per episode, always terminates immediately."""
-
-	def __init__(self):
-		self.unwrapped = _FakeUnwrapped()
-
-	def reset(self):
-		"""Return a zeroed observation."""
-		return np.zeros(4, dtype=np.float32), {}
-
-	def step(self, _action):
-		"""Terminate on the first step, awarding a fixed reward."""
-		return np.zeros(4, dtype=np.float32), 1.0, True, False, {}
-
-
-class _FakeAgent:
-	"""A minimal agent stub exercising exactly the attributes play() reads."""
-
-	def __init__(self):
-		self.learn = False
-		self.best_individual_idx = 0
-		self.current_env_id = 7
-		self.last_env_shift_detected = True
-		self.population = [{"is_gladiator": True, "internal_env_id": 3, "env_name": "Mars-Light"}]
-
-	def act(self, _env, state):
-		"""Return a step tuple that always ends the episode."""
-		return state, 1.0, True, False, 0
-
-	def train(self, **_kwargs):
-		"""Must not be called when agent.learn is False."""
-		raise AssertionError("train() must not be called when agent.learn is False")
-
-
-def test_play_records_env_shift_and_internal_env_id_columns() -> None:
-	"""C1/C2: play() must record the acting individual's own niche id and the
-	real detect_change() flag, not just the recognizer's global current_env_id."""
-	with step("Arrange: build a fake agent/env pair with a scripted single-step episode."):
-		agent = _FakeAgent()
-
-	with step("Act: play one episode."):
-		history = play(agent, [_FakeEnv()], [1])
-
-	with step("Assert: the recorded row reflects the individual's own niche and detect_change()."):
-		row = history.iloc[0]
-		assert bool(row["env_shift_detected"]) is True
-		assert row["internal_env_id"] == 3
-		assert row["detected_env_id"] == 7
-		assert bool(row["is_gladiator"]) is True
-		assert row["gladiator_env"] == "Mars-Light"
-
-
-def test_play_without_live_log_path_creates_no_file(tmp_path) -> None:
-	"""S6: omitting live_log_path must leave behavior exactly as before — no file created."""
-	with step("Arrange: a fake agent/env pair, and a directory that must stay empty."):
-		agent = _FakeAgent()
-
-	with step("Act: play two episodes with no live_log_path."):
-		play(agent, [_FakeEnv()], [2])
-
-	with step("Assert: nothing was written to disk."):
-		assert not list(tmp_path.iterdir())
-
-
-def test_play_with_live_log_path_mirrors_the_in_memory_history(tmp_path) -> None:
-	"""S6: with live_log_path set, the CSV on disk must match the in-memory history exactly,
-	row for row — this is what lets a separate process watch convergence live."""
-	with step("Arrange: a fake agent/env pair and a live_log_path under a temp directory."):
-		agent = _FakeAgent()
-		live_log_path = tmp_path / "live_training.csv"
-
-	with step("Act: play three episodes with live_log_path set."):
-		history = play(agent, [_FakeEnv()], [3], live_log_path=str(live_log_path))
-
-	with step("Assert: the CSV has one row per episode, matching the in-memory history."):
-		assert live_log_path.exists()
-		logged = pd.read_csv(live_log_path)
-		assert len(logged) == len(history) == 3
-		assert logged["episode"].tolist() == history["episode"].tolist()
-		assert logged["score"].tolist() == history["score"].tolist()
-		assert logged["detected_env_id"].tolist() == history["detected_env_id"].tolist()
-
-
-def test_play_calls_on_episode_with_running_count_and_total() -> None:
-	"""S6 (ETA): play() must call on_episode(episode_num, total_episodes) after every
-	episode — this is the hook make_eta_reporter's live ETA is built on."""
-	with step("Arrange: a fake agent/env pair and a recorder for on_episode calls."):
-		agent = _FakeAgent()
-		calls = []
-
-	with step("Act: play three episodes across two 'environments' (2 + 1)."):
-		play(agent, [_FakeEnv(), _FakeEnv()], [2, 1], on_episode=lambda num, total: calls.append((num, total)))
-
-	with step("Assert: on_episode was called once per episode, with a running count and a fixed total."):
-		assert calls == [(1, 3), (2, 3), (3, 3)]
-
-
-def test_make_eta_reporter_estimates_and_reports_eta(monkeypatch) -> None:
-	"""ETA is estimated from the average time per episode elapsed so far this phase, and
-	posted as a status string with an explicit, unambiguous unit suffix (e.g. '30s',
-	'6m 22s', '1h 55m 31s') rather than a bare H:MM:SS that could be misread."""
-	with step("Arrange: a fake queue, and time.time() scripted to advance by 10s."):
-		posted = []
-		queue = SimpleNamespace(put=posted.append)
-		times = iter([100.0, 110.0])
-		monkeypatch.setattr(cartpole_challenge.time, "time", lambda: next(times))
-		start_time = cartpole_challenge.time.time()  # consumes the first scripted value (100.0)
-		reporter = make_eta_reporter(
-			experiment_id=0, queue=queue, label="Training", agent_name="Agent-X", start_time=start_time
-		)
-
-	with step("Act: report at episode 5 of 20 (10s for 5 episodes -> 2s/episode -> 30s remaining)."):
-		reporter(5, 20)
-
-	with step("Assert: the posted status carries the correctly-computed, unit-labeled ETA."):
-		assert len(posted) == 1
-		assert posted[0]["status"] == "Training Agent-X (ETA 30s)"
+from agents import DQNAgent, ENAgent, PPOAgent, RandomAgent, SACDiscreteAgent
+from cartpole_ena_performance import PERFORMANCE_VARIANTS, parse_args
+from tools.early_stopping import StoppingRule
 
 
 @pytest.mark.parametrize(
-	("seconds", "expected"),
-	[(0, "0s"), (42, "42s"), (382, "6m 22s"), (6931, "1h 55m 31s")],
+	"name, agent_type",
+	[("ENA-Combined", ENAgent), ("DQN", DQNAgent), ("PPO", PPOAgent), ("SAC-Discrete", SACDiscreteAgent), ("Random", RandomAgent)],
 )
-def test_format_duration_includes_explicit_units(seconds, expected) -> None:
-	"""ETA must be unambiguous — explicit h/m/s units, not a bare H:MM:SS."""
-	with step("Act/Assert: format_duration renders the expected unit-labeled string."):
-		assert cartpole_challenge.format_duration(seconds) == expected
+def test_build_agent_returns_the_named_agent(name, agent_type) -> None:
+	"""Every challenge name builds the right agent, named as asked."""
+	with step("Act/Assert: build and check type and name."):
+		agent = cartpole_challenge.build_agent(name, max_agent_threads=1)
+		assert isinstance(agent, agent_type)
+		assert agent.get_name() == name
 
 
-def test_make_eta_reporter_skips_at_phase_boundaries() -> None:
-	"""No rate is known yet at episode 0, and there's nothing left to estimate once the
-	phase's last episode has finished — both must be silently skipped, not divide by zero."""
-	with step("Arrange: a fake queue and a reporter."):
-		posted = []
-		queue = SimpleNamespace(put=posted.append)
-		reporter = make_eta_reporter(0, queue, "Training", "Agent-X", start_time=0.0)
+def test_the_challenge_ena_is_the_performance_studys_combined_agent() -> None:
+	"""The ENA under test is exactly ENA-Combined from the performance study (same skill drivers)."""
+	with step("Act: build it and read its skill drivers' modules."):
+		agent = cartpole_challenge.build_agent("ENA-Combined", max_agent_threads=1)
+		skills = agent._skills  # pylint: disable=protected-access
+		combined = next(row for row in PERFORMANCE_VARIANTS if row["name"] == "ENA-Combined")
 
-	with step("Act: call at episode 0 and at the final episode of a 10-episode phase."):
-		reporter(0, 10)
-		reporter(10, 10)
+	with step("Assert: same plasticity, Hall of Fame and env-detection drivers, bpr selection."):
+		assert type(skills["plasticity"]._instance).__module__.endswith(combined["plasticity_algorithm"])  # pylint: disable=protected-access
+		assert type(skills["hall_of_fame"]._instance).__module__.endswith(combined["hall_of_fame_driver"])  # pylint: disable=protected-access
+		assert type(skills["env_detection"]._instance).__module__.endswith(combined["recognizer_strategy"])  # pylint: disable=protected-access
+		assert type(skills["selection"]._instance).__module__.endswith("bpr")  # pylint: disable=protected-access
 
-	with step("Assert: nothing was posted."):
-		assert not posted
+
+def test_build_agent_rejects_an_unknown_name() -> None:
+	"""A typo'd agent name is an error, not a silently missing row."""
+	with step("Act/Assert: ValueError."):
+		with pytest.raises(ValueError):
+			cartpole_challenge.build_agent("DQN-Typo", max_agent_threads=1)
+
+
+def test_first_solve_protocol_trains_every_agent_under_the_same_stopping_rule(monkeypatch, tmp_path) -> None:
+	"""Fairness: one StoppingRule for all agents, evaluations on separate copies of the training environments."""
+	with step("Arrange: capture agent_training's arguments; skip testing."):
+		captured = {}
+		monkeypatch.setattr(cartpole_challenge, "agent_training", lambda **kwargs: captured.update(kwargs))
+		monkeypatch.setattr(cartpole_challenge, "agent_testing", lambda **_kwargs: None)
+
+	with step("Act: one replicate with two baselines and Random."):
+		cartpole_challenge.run_experiment(
+			0, str(tmp_path), None, [{"name": "DQN"}, {"name": "SAC-Discrete"}], include_random=True, protocol="first-solve"
+		)
+
+	with step("Assert: the approved rule, three agents, distinct evaluation env objects for the same physics."):
+		rule = captured["stopping"]
+		assert isinstance(rule, StoppingRule)
+		assert (rule.check_every, rule.eval_episodes, rule.solved_score, rule.plateau_checks, rule.plateau_min_gain, rule.max_steps) == (
+			5_000,
+			5,
+			475.0,
+			40,
+			10.0,
+			3_000_000,
+		)
+		assert [agent.get_name() for agent in captured["agents"]] == ["DQN", "SAC-Discrete", "Random"]
+		names = [world.unwrapped.name for world in captured["worlds"]]
+		assert [world.unwrapped.name for world in captured["eval_worlds"]] == names
+		assert all(evaluation is not training for evaluation, training in zip(captured["eval_worlds"], captured["worlds"]))
+
+
+def test_defaults_run_all_agents_plus_random_for_50_replicates() -> None:
+	"""No flags: ENA, DQN, PPO, SAC-Discrete and the Random floor, 50 replicates, challenge output dir."""
+	with step("Act: parse the challenge's defaults."):
+		args = parse_args(
+			[],
+			variant_table=cartpole_challenge.CHALLENGE_AGENTS,
+			defaults={"output_dir": cartpole_challenge.OUTPUT_DIR, "num_experiments": cartpole_challenge.NUM_EXPERIMENTS, "include_random": True},
+		)
+
+	with step("Assert: the full challenge."):
+		assert args.variants == ["ENA-Combined", "DQN", "PPO", "SAC-Discrete"]
+		assert args.include_random is True
+		assert args.num_experiments == 50
+		assert args.output_dir.endswith("cartpole_challenge_outputs")
+
+
+def test_fixed_budget_protocol_trains_everyone_to_the_same_budget_without_stopping(monkeypatch, tmp_path) -> None:
+	"""Option 3 (default): first solve recorded, no stop on solve or plateau, the same per-environment budget for all."""
+	with step("Arrange: capture agent_training's arguments; skip testing."):
+		captured = {}
+		monkeypatch.setattr(cartpole_challenge, "agent_training", lambda **kwargs: captured.update(kwargs))
+		monkeypatch.setattr(cartpole_challenge, "agent_testing", lambda **_kwargs: None)
+
+	with step("Act: one fixed-budget replicate."):
+		cartpole_challenge.run_experiment(0, str(tmp_path), None, [{"name": "PPO"}], include_random=False, protocol="fixed-budget")
+
+	with step("Assert: non-stopping rule, the fixed per-environment budget, same checks."):
+		rule = captured["stopping"]
+		assert (rule.stop_when_solved, rule.stop_on_plateau) == (False, False)
+		assert rule.max_steps == cartpole_challenge.FIXED_BUDGET_PER_ENV
+		assert (rule.check_every, rule.eval_episodes, rule.solved_score) == (5_000, 5, 475.0)
+
+
+def test_protocol_defaults_to_fixed_budget_and_rejects_unknown_values() -> None:
+	"""The command line chooses the protocol; fixed-budget is the default."""
+	with step("Act/Assert: default, explicit first-solve, and a typo."):
+		assert cartpole_challenge.parse_challenge_args([]).protocol == "fixed-budget"
+		assert cartpole_challenge.parse_challenge_args(["--protocol", "first-solve"]).protocol == "first-solve"
+		with pytest.raises(SystemExit):
+			cartpole_challenge.parse_challenge_args(["--protocol", "fastest"])
+
+
+def test_challenge_ppo_uses_a_constant_learning_rate() -> None:
+	"""In a non-stationary stream PPO must keep learning at full rate in every environment (author's choice)."""
+	with step("Act/Assert: the challenge's PPO doesn't anneal."):
+		assert cartpole_challenge.build_agent("PPO", max_agent_threads=1).anneal_lr is False
+
+
+def test_challenge_sac_discrete_uses_the_stable_target_entropy() -> None:
+	"""The paper's 0.98 x log|A| diverges with 2 actions; the challenge uses 0.5 x log|A| (author's choice)."""
+	with step("Act/Assert: target entropy is half the maximum log(2)."):
+		agent = cartpole_challenge.build_agent("SAC-Discrete", max_agent_threads=1)
+		assert agent.target_entropy == pytest.approx(0.5 * np.log(2))

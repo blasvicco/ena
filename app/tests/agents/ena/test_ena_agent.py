@@ -10,6 +10,7 @@ import pytest
 # App imports
 from helpers import step
 from agents.ena.ena import ENAgent
+from agents.ena.tools.weight_projection import project_individual_weights
 
 
 def _run_one_episode(agent: ENAgent, env: Any) -> np.ndarray:
@@ -34,7 +35,7 @@ def test_known_niche_ids_delegates_to_the_recognizer(agent: ENAgent) -> None:
 
 	with step("Act: register a physical prototype directly on the recognizer instance."):
 		# pylint: disable=protected-access
-		agent._recognizer.instance._physical_prototypes[7] = np.zeros(4)
+		agent._skills["env_detection"]._instance._physical_prototypes[7] = np.zeros(4)
 
 	with step("Assert: the agent-level property reflects it."):
 		assert agent.known_niche_ids == {7}
@@ -43,24 +44,10 @@ def test_known_niche_ids_delegates_to_the_recognizer(agent: ENAgent) -> None:
 def test_recognizer_confirmation_window_default_flows_through_from_enagent(agent: ENAgent) -> None:
 	"""S5 composability: ENAgent's own recognizer_confirmation_window default (3) must reach
 	the constructed recognizer strategy instance, regardless of which strategy is chosen —
-	this is what lets neutral_probe and confirmation-windowed detect_change() be used
-	together without cartpole_challenge.py needing any special wiring."""
+	confirmation_window is a knob on the shared live-driver base, not a separate strategy."""
 	with step("Assert: the default agent's recognizer instance has confirmation_window=3."):
 		# pylint: disable=protected-access
-		assert agent._recognizer.instance._confirmation_window == 3
-
-
-def test_neutral_probe_strategy_also_receives_the_confirmation_window(
-	build_agent: Callable[..., ENAgent],
-) -> None:
-	"""S5 composability: choosing recognizer_strategy='neutral_probe' must not silently
-	drop the confirmation_window setting — the two are independent, composable knobs."""
-	with step("Arrange: an agent explicitly configured with the neutral_probe strategy."):
-		agent = build_agent(recognizer_strategy="neutral_probe", recognizer_confirmation_window=5)
-
-	with step("Assert: the neutral_probe recognizer instance still respects confirmation_window."):
-		# pylint: disable=protected-access
-		assert agent._recognizer.instance._confirmation_window == 5
+		assert agent._skills["env_detection"]._instance._confirmation_window == 3
 
 
 def test_set_learning_false_resets_recognizer_statistics(agent: ENAgent) -> None:
@@ -95,7 +82,7 @@ def test_env_shift_reward_history_clearing(agent: ENAgent, monkeypatch: pytest.M
 			agent.set_learning(False)
 		agent.memory.reward_history.extend([1.0, 2.0, 3.0])
 		# pylint: disable=protected-access
-		monkeypatch.setattr(agent._recognizer, "detect_change", lambda memory: True)
+		monkeypatch.setattr(agent._skills["env_detection"], "detect_change", lambda memory: True)
 
 	with step("Act: run one episode, triggering the scripted shift."):
 		env = agent.make_env()
@@ -113,17 +100,15 @@ def test_env_shift_reward_history_clearing(agent: ENAgent, monkeypatch: pytest.M
 			assert len(history) == 4
 
 
-def test_detect_change_calls_recognizer_reset_alongside_memory_reset(
-	agent: ENAgent, monkeypatch: pytest.MonkeyPatch
-) -> None:
-	"""A detected shift must flush strategy-owned recognizer state (e.g. neutral_probe's own
-	probe normalizers), not just AgentMemory's — memory.reset_recognizer_statistics() alone
-	can't reach state that lives on the recognizer strategy instance instead of memory."""
+def test_detect_change_calls_recognizer_reset_alongside_memory_reset(agent: ENAgent, monkeypatch: pytest.MonkeyPatch) -> None:
+	"""A detected shift must flush driver-owned recognizer state (e.g. dynamics_model's recent-transition
+	buffers), not just AgentMemory's — memory.reset_recognizer_statistics() alone can't reach state
+	that lives on the driver instance instead of memory."""
 	with step("Arrange: script a detected shift and spy on the recognizer's reset()."):
 		# pylint: disable=protected-access
-		monkeypatch.setattr(agent._recognizer, "detect_change", lambda memory: True)
+		monkeypatch.setattr(agent._skills["env_detection"], "detect_change", lambda memory: True)
 		reset_calls = []
-		monkeypatch.setattr(agent._recognizer, "reset", lambda: reset_calls.append(True))
+		monkeypatch.setattr(agent._skills["env_detection"], "reset", lambda: reset_calls.append(True))
 
 	with step("Act: run one episode, triggering the scripted shift."):
 		env = agent.make_env()
@@ -140,7 +125,7 @@ def test_set_learning_false_calls_recognizer_reset(agent: ENAgent, monkeypatch: 
 	with step("Arrange: spy on the recognizer's reset()."):
 		# pylint: disable=protected-access
 		reset_calls = []
-		monkeypatch.setattr(agent._recognizer, "reset", lambda: reset_calls.append(True))
+		monkeypatch.setattr(agent._skills["env_detection"], "reset", lambda: reset_calls.append(True))
 
 	with step("Act: switch the agent into test mode."):
 		agent.set_learning(False)
@@ -154,7 +139,7 @@ def test_last_env_shift_detected_reflects_detect_change(agent: ENAgent, monkeypa
 	"""C1: expose detect_change()'s real result, independent of niche resolution."""
 	with step("Arrange: script the recognizer's detect_change() to return a fixed result."):
 		# pylint: disable=protected-access
-		monkeypatch.setattr(agent._recognizer, "detect_change", lambda memory: detect_change_result)
+		monkeypatch.setattr(agent._skills["env_detection"], "detect_change", lambda memory: detect_change_result)
 
 	with step("Act: run one episode."):
 		env = agent.make_env()
@@ -182,7 +167,7 @@ def _spy_on_fast_call(individual: dict) -> dict:
 def test_evaluate_individual_performance_always_uses_live_normalizer(agent: ENAgent, is_gladiator: bool) -> None:
 	"""Restored (Adding-Memory) behavior: every individual — gladiators included — is
 	normalized with the live, shared obs_normalizer. No special-casing: gladiators get
-	their weights continuously re-projected to match it (see __project_individual_weights),
+	their weights continuously re-projected to match it (see tools/weight_projection.py),
 	so using the live normalizer for them is always correct."""
 	with step("Arrange: mark the individual, set distinctive live-normalizer stats, spy on its input."):
 		individual = agent.population[0]
@@ -220,8 +205,7 @@ def test_project_individual_weights_no_longer_skips_gladiators(agent: ENAgent) -
 		agent.memory.obs_normalizer.count = agent.max_eval_steps * 3  # past the warmup gate
 
 	with step("Act: project the gladiator's weights."):
-		# pylint: disable=protected-access
-		agent._ENAgent__project_individual_weights(individual)
+		project_individual_weights(individual, agent.memory.obs_normalizer, agent.max_eval_steps)
 
 	with step("Assert: its last_mu/last_var were updated to match the live normalizer, not left frozen."):
 		assert np.allclose(individual["last_mu"], agent.memory.obs_normalizer.mean)
@@ -235,8 +219,8 @@ class _NeverEndsEnv:
 		self._state_dim = state_dim
 		self.steps_taken = 0
 
-	def reset(self, seed=None):
-		"""Reset the step counter and return a zeroed observation."""
+	def reset(self, seed=None):  # pylint: disable=unused-argument
+		"""Reset the step counter and return a zeroed observation (seed accepted for the gym API, unused)."""
 		self.steps_taken = 0
 		return np.zeros(self._state_dim, dtype=np.float32), {}
 
@@ -251,9 +235,7 @@ class _NeverEndsEnv:
 	[(10, 10), (None, "max_eval_steps")],
 	ids=["explicit-cap", "defaults-to-max-eval-steps"],
 )
-def test_evaluate_individual_performance_respects_max_steps(
-	agent: ENAgent, max_steps_override, expected_steps
-) -> None:
+def test_evaluate_individual_performance_respects_max_steps(agent: ENAgent, max_steps_override, expected_steps) -> None:
 	"""Candidate evaluation depth must honor an explicit cap, and fall back to
 	max_eval_steps when none is given — the mechanism plasticity-scaled depth relies on."""
 	with step("Arrange: an individual and an env that never terminates on its own."):
@@ -263,9 +245,7 @@ def test_evaluate_individual_performance_respects_max_steps(
 
 	with step("Act: evaluate the individual with (or without) an explicit step cap."):
 		# pylint: disable=protected-access
-		score = agent._ENAgent__evaluate_individual_performance(
-			individual, env, seed=0, max_steps=max_steps_override
-		)
+		score = agent._ENAgent__evaluate_individual_performance(individual, env, seed=0, max_steps=max_steps_override)
 
 	with step("Assert: the loop stopped at the expected cap, rescaled to env_max_steps."):
 		assert env.steps_taken == expected
@@ -307,15 +287,11 @@ def test_train_handles_zero_plasticity_without_degenerate_eval_cap(
 		assert agent.memory.plasticity_history[-1] == 0.0
 
 
-def test_candidate_evaluation_applies_eval_step_cap_uniformly(
-	build_agent: Callable[..., ENAgent], monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_candidate_evaluation_applies_eval_step_cap_uniformly(build_agent: Callable[..., ENAgent], monkeypatch: pytest.MonkeyPatch) -> None:
 	"""Restored (Adding-Memory) behavior: gladiators get exactly the same plasticity-scaled
 	eval_step_cap as every other candidate — no special-casing by is_gladiator."""
 	with step("Arrange: an agent at maximal plasticity, with one candidate marked a gladiator."):
-		agent = build_agent(
-			pop_size=6, max_threads=1, plasticity_algorithm="full", min_eval_steps=7, max_eval_steps=50
-		)
+		agent = build_agent(pop_size=6, max_threads=1, plasticity_algorithm="full", min_eval_steps=7, max_eval_steps=50)
 		gladiator_idx = 1
 		agent.population[gladiator_idx]["is_gladiator"] = True
 
@@ -380,69 +356,155 @@ def test_evolve_population_never_replaces_gladiators(build_agent: Callable[..., 
 			assert agent.population[slot]["is_gladiator"] is True
 
 
-def test_fuzzylogic_returns_max_plasticity_during_warmup(agent: ENAgent) -> None:
-	"""Fewer than 10 reward samples means no reliable percentile estimate yet — max plasticity."""
-	with step("Arrange: fewer than 10 samples in reward_history."):
-		agent.memory.reward_history.clear()
-		agent.memory.reward_history.extend([500.0] * 5)
-
-	with step("Assert: plasticity is 1.0 regardless of the reward passed."):
-		# pylint: disable=protected-access
-		assert agent._ENAgent__fuzzylogic(500.0) == 1.0
-
-
-def test_fuzzylogic_returns_low_plasticity_at_or_above_high_limit(agent: ENAgent) -> None:
-	"""A reward at or above the 90th percentile means the agent is settled — low plasticity."""
-	with step("Arrange: a stable, high-scoring reward history."):
-		agent.memory.reward_history.clear()
-		agent.memory.reward_history.extend([500.0] * 10)
-		agent.memory.min_seen = 0.0
-
-	with step("Assert: plasticity is 0.1 for a reward at the high limit."):
-		# pylint: disable=protected-access
-		assert agent._ENAgent__fuzzylogic(500.0) == pytest.approx(0.1)
-
-
-def test_fuzzylogic_scales_proportionately_instead_of_flattening_below_a_floor(agent: ENAgent) -> None:
-	"""Stage 7: plasticity must scale continuously down to memory.min_seen, not flatten to a
-	flat 1.0 the moment a score dips below the (possibly very narrow) percentile band — a
-	merely mediocre score must not be treated identically to the worst score ever seen."""
-	with step("Arrange: reward_history pinned at 500 (high_limit=500), min_seen=0 (the floor)."):
-		agent.memory.reward_history.clear()
-		agent.memory.reward_history.extend([500.0] * 10)
-		agent.memory.min_seen = 0.0
-
-	with step("Act: compute plasticity for a mediocre score and a worse one."):
-		# pylint: disable=protected-access
-		mediocre_plasticity = agent._ENAgent__fuzzylogic(400.0)
-		worse_plasticity = agent._ENAgent__fuzzylogic(250.0)
-		worst_plasticity = agent._ENAgent__fuzzylogic(0.0)
-
-	with step("Assert: plasticity scales proportionately — worse scores get strictly higher "
-			  "plasticity, not an identical flat maximum."):
-		assert mediocre_plasticity == pytest.approx(0.28)
-		assert worse_plasticity == pytest.approx(0.55)
-		assert worst_plasticity == pytest.approx(1.0)
-		assert mediocre_plasticity < worse_plasticity < worst_plasticity
-
-
-def test_reset_trust_leaves_gladiator_trust_untouched(build_agent: Callable[..., ENAgent]) -> None:
-	"""T4 (Stage 4): __reset_trust must not dilute an established gladiator's trust on an
-	unrelated exploratory failure — only non-gladiators get blended toward the dynamic
-	reference. Gladiators are already protected from replacement in __evolve_population;
-	there's no reason a failure that has nothing to do with them should erode their trust."""
-	with step("Arrange: a population with one gladiator and one non-gladiator, both at a known trust."):
-		agent = build_agent(pop_size=4)
+def test_train_never_retags_a_gladiator_and_hands_the_current_env_to_the_hall_of_fame(agent: ENAgent, monkeypatch: pytest.MonkeyPatch) -> None:
+	"""S8: a gladiator's env label is set once, at induction — train() must not overwrite it
+	with whatever environment it's playing now; the Hall of Fame gets that name instead, so a
+	foreign-niche clone can be labeled with it."""
+	with step("Arrange: an all-gladiator population labeled Mars-Light, playing an env named Earth-Standard."):
 		for individual in agent.population:
-			individual["trust"] = 5.0
-		gladiator = agent.population[0]
-		gladiator["is_gladiator"] = True
-		non_gladiator = agent.population[1]
+			individual.update({"is_gladiator": True, "internal_env_id": 0, "env_name": "Mars-Light"})
+		captured = {}
+		hall_of_fame = agent._skills["hall_of_fame"]  # pylint: disable=protected-access
+		monkeypatch.setattr(hall_of_fame, "update", lambda *args, **kwargs: captured.update(kwargs))
+		env = agent.make_env()
+		env.unwrapped.name = "Earth-Standard"
+		state, _ = env.reset()
+		state = np.array(state, dtype=np.float32)
 
-	with step("Act: reset trust with a large blend factor."):
-		# pylint: disable=protected-access
-		agent._ENAgent__reset_trust(factor=1.0)
+	with step("Act: drive one full episode through act() and train()."):
+		done = False
+		while not done:
+			next_state, reward, terminated, truncated, action = agent.act(env, state)
+			done = terminated or truncated
+			agent.train(env=env, step_data={"action": action, "done": done, "next_state": next_state, "reward": reward, "state": state})
+			state = next_state
+		env.close()
 
-	with step("Assert: the gladiator's trust is unchanged; the non-gladiator's was blended toward the reference."):
-		assert gladiator["trust"] == 5.0
-		assert non_gladiator["trust"] != 5.0
+	with step("Assert: every gladiator is still labeled Mars-Light; the Hall of Fame was told Earth-Standard."):
+		assert all(individual["env_name"] == "Mars-Light" for individual in agent.population)
+		assert captured["env_name"] == "Earth-Standard"
+
+
+def test_act_reports_every_real_transition_and_each_episode_start_to_env_detection(agent: ENAgent, monkeypatch: pytest.MonkeyPatch) -> None:
+	"""S12: the dynamics_model driver learns from the acting individual's real transitions, so act()
+	must hand over every (state, action, next_state) and signal each episode start."""
+	with step("Arrange: count observe()/start_episode() calls, and real steps via memory.record_step()."):
+		calls = {"observe": 0, "start_episode": 0, "steps": 0}
+		recognizer = agent._skills["env_detection"]  # pylint: disable=protected-access
+		record_step = agent.memory.record_step
+
+		def _counting_record_step(*args):
+			calls["steps"] += 1
+			record_step(*args)
+
+		monkeypatch.setattr(agent.memory, "record_step", _counting_record_step)
+		monkeypatch.setattr(recognizer, "observe", lambda *args: calls.__setitem__("observe", calls["observe"] + 1))
+		monkeypatch.setattr(recognizer, "start_episode", lambda: calls.__setitem__("start_episode", calls["start_episode"] + 1))
+		env = agent.make_env()
+
+	with step("Act: two episodes."):
+		_run_one_episode(agent, env)
+		_run_one_episode(agent, env)
+		env.close()
+
+	with step("Assert: one start_episode per episode, one observe per real step."):
+		assert calls["start_episode"] == 2
+		assert calls["observe"] == calls["steps"] > 0
+
+
+def test_dynamics_model_strategy_trains_end_to_end_on_cartpole(build_agent: Callable[..., ENAgent]) -> None:
+	"""S12: an ENAgent using the dynamics_model driver drives act()+train() through several real episodes."""
+	with step("Arrange: an agent with the dynamics_model driver and the default hall of fame."):
+		agent = build_agent(recognizer_strategy="dynamics_model", plasticity_algorithm="linear_ramp", trust_algorithm="linear_ramp")
+		env = agent.make_env()
+		env.unwrapped.name = "Test-Env"
+
+	with step("Act: five training episodes."):
+		for _ in range(5):
+			state, _ = env.reset()
+			state = np.array(state, dtype=np.float32)
+			done = False
+			while not done:
+				next_state, reward, terminated, truncated, action = agent.act(env, state)
+				done = terminated or truncated
+				agent.train(env=env, step_data={"action": action, "done": done, "next_state": next_state, "reward": reward, "state": state})
+				state = next_state
+		env.close()
+
+	with step("Assert: five episodes' plasticity recorded, and every known niche owns a model."):
+		assert len(agent.plasticity_history) == 5
+		assert agent.known_niche_ids == set(agent._skills["env_detection"]._instance._models)  # pylint: disable=protected-access
+
+
+def test_bpr_selection_with_dynamics_model_runs_train_then_test(build_agent: Callable[..., ENAgent]) -> None:
+	"""S13: selection_driver="bpr" on top of dynamics_model drives a train phase, then a test phase, end to end."""
+	with step("Arrange: an agent with the dynamics_model recognizer and the bpr selection driver."):
+		agent = build_agent(recognizer_strategy="dynamics_model", selection_driver="bpr", trust_algorithm="linear_ramp")
+		env = agent.make_env()
+		env.unwrapped.name = "Test-Env"
+
+	with step("Act: three training episodes, then switch to test mode and play three test episodes."):
+		for _ in range(3):
+			state, _ = env.reset()
+			state = np.array(state, dtype=np.float32)
+			done = False
+			while not done:
+				next_state, reward, terminated, truncated, action = agent.act(env, state)
+				done = terminated or truncated
+				agent.train(env=env, step_data={"action": action, "done": done, "next_state": next_state, "reward": reward, "state": state})
+				state = next_state
+		agent.set_learning(False)
+		for _ in range(3):
+			_run_one_episode(agent, env)
+		env.close()
+
+	with step("Assert: the belief covers exactly the population's gladiator niches."):
+		gladiator_niches = {ind["internal_env_id"] for ind in agent.population if ind.get("is_gladiator")}
+		assert set(agent._skills["selection"]._instance.belief) == gladiator_niches  # pylint: disable=protected-access
+
+
+def test_total_env_steps_counts_played_and_candidate_evaluation_steps(build_agent: Callable[..., ENAgent]) -> None:
+	"""S16: the challenge experiment equalizes environment steps across agents, so ENA must count every
+	step it consumes — the played episode's and every candidate evaluation's — not just the played ones."""
+	with step("Arrange: a zero-plasticity agent (2 candidates x at most 10 steps per training episode)."):
+		agent = build_agent(plasticity_algorithm="zero", pop_size=5)
+		env = agent.make_env()
+		env.unwrapped.name = "Test-Env"
+		state, _ = env.reset()
+		state = np.array(state, dtype=np.float32)
+
+	with step("Act: one training episode, counting the played steps."):
+		played, done = 0, False
+		while not done:
+			next_state, reward, terminated, truncated, action = agent.act(env, state)
+			played += 1
+			done = terminated or truncated
+			agent.train(env=env, step_data={"action": action, "done": done, "next_state": next_state, "reward": reward, "state": state})
+			state = next_state
+		env.close()
+
+	with step("Assert: played steps exact, 2-20 candidate steps, total is their sum."):
+		assert agent.played_env_steps == played
+		assert 2 <= agent.candidate_env_steps <= 20
+		assert agent.total_env_steps == agent.played_env_steps + agent.candidate_env_steps
+
+
+def test_evaluation_episode_plays_the_highest_trust_individual_without_side_effects(agent: ENAgent) -> None:
+	"""S16: early stopping evaluates ENA on a separate env without touching its training state or step counters."""
+	with step("Arrange: distinct trusts, so the highest-trust individual is unambiguous; snapshot the state."):
+		for index, individual in enumerate(agent.population):
+			individual["trust"] = float(index)
+		trusts = [individual["trust"] for individual in agent.population]
+		counters = (agent.played_env_steps, agent.candidate_env_steps)
+		history = list(agent.memory.reward_history)
+		env = agent.make_env()
+
+	with step("Act: one evaluation episode."):
+		score, steps = agent.evaluation_episode(env)
+		env.close()
+
+	with step("Assert: a real episode was played; trust, counters and reward history unchanged."):
+		assert steps > 0 and score == steps  # CartPole: +1 per step
+		assert [individual["trust"] for individual in agent.population] == trusts
+		assert (agent.played_env_steps, agent.candidate_env_steps) == counters
+		assert list(agent.memory.reward_history) == history

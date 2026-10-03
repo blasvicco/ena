@@ -120,7 +120,7 @@ Produces `reliability_box.png` and `stability_bar.png` — the figures used in t
 
 ## Live Convergence Monitoring
 
-Every training run writes `live_training_{agent_name}.csv` to the experiment's output directory incrementally, one row per episode (score, plasticity, detected niche, ...), flushed immediately — so you can watch convergence while a run is still in progress instead of waiting for it to finish. The terminal progress bar also shows a live ETA per phase, e.g. `Training ENA-01 Fuzzy-Fuzzy (ETA 6m 22s)`, estimated from the average time per episode elapsed so far.
+Every training run writes `live_training_{agent_name}.csv` to the experiment's output directory incrementally, one row per episode (score, plasticity, detected niche, ...), flushed immediately — so you can watch convergence while a run is still in progress instead of waiting for it to finish. The terminal progress bar also shows a live ETA per phase, e.g. `Training ENA-Combined (ETA 6m 22s)`, estimated from the average time per episode elapsed so far.
 
 Two ways to watch the CSV update live, run as a **separate process** from the training run (read-only, no risk to reproducibility):
 
@@ -132,7 +132,7 @@ Run this either directly on the host (simplest — `app/` is bind-mounted so the
 
 **Matplotlib monitor (needs a real display — run on the host, not inside the container):**
 ```bash
-python app/src/tools/live_monitor.py cartpole_outputs/exp_1/live_training_ENA-01\ Fuzzy-Fuzzy.csv
+python app/src/tools/live_monitor.py app/cartpole_ena_performance_outputs/exp_1/live_training_ENA-Combined.csv
 ```
 Polls the given CSV and keeps an updating chart on screen until interrupted (Ctrl+C). This will not work inside a headless docker container — matplotlib's interactive mode needs a display backend.
 

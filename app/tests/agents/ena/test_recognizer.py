@@ -6,7 +6,7 @@ import pytest
 
 # App imports
 from helpers import step
-from agents.ena.recognizer import EnvironmentRecognizer
+from agents.ena.skills.env_detection.main import EnvironmentRecognizer
 
 BASELINE = np.array([1.0, 0.0, 0.0, 0.0])
 SHIFTED = np.array([0.0, 1.0, 0.0, 0.0])  # cosine similarity 0.0 vs BASELINE — well below threshold
@@ -15,12 +15,18 @@ SHIFTED = np.array([0.0, 1.0, 0.0, 0.0])  # cosine similarity 0.0 vs BASELINE �
 def _script_detection_vectors(recognizer, vectors):
 	"""Make compute_physical_vector return each vector in sequence, one per call.
 
-	Patches the underlying strategy instance, not the facade — detect_change() is
-	implemented on the strategy and calls its *own* compute_physical_vector internally
+	Patches the underlying driver instance, not the facade — detect_change() is
+	implemented on the driver and calls its *own* compute_physical_vector internally
 	(deliberately not compute_full_vector — see detect_change()'s docstring for why).
 	"""
 	iterator = iter(vectors)
-	recognizer.instance.compute_physical_vector = lambda memory: next(iterator)  # noqa: ARG005
+	recognizer._instance.compute_physical_vector = lambda memory: next(iterator)  # noqa: ARG005  # pylint: disable=protected-access
+	_script_fingerprint_ready(recognizer, True)
+
+
+def _script_fingerprint_ready(recognizer, ready):
+	"""Make the driver report its fingerprint as fully accumulated (or not)."""
+	recognizer._instance._fingerprint_ready = lambda memory: ready  # noqa: ARG005  # pylint: disable=protected-access
 
 
 # ---------------------------------------------------------------
@@ -116,7 +122,7 @@ def test_detect_change_ignores_performance_derivative_and_plasticity_oscillation
 	"""Stage 7: detect_change() must not fire from performance_derivative/recent_plasticity
 	swinging on their own, with the underlying physics never changing. These are no longer
 	part of the compared vector — this is specifically what breaks the feedback loop where a
-	firing forces plasticity to 1.0 (clear_training_history's warmup path in __fuzzylogic),
+	firing forces plasticity to 1.0 (clear_training_history's warmup path in the linear_ramp curve),
 	which itself would otherwise look like a 'shift' on the very next reading, confirmed via
 	a real run's live CSV: firings alternated in lockstep with plasticity swinging between
 	its warmup value and its steady-state one, even while scores stayed at the maximum."""
@@ -128,6 +134,7 @@ def test_detect_change_ignores_performance_derivative_and_plasticity_oscillation
 			def __init__(self):
 				self.mean = np.zeros(4)
 				self.var = np.ones(4)
+				self.count = self.max_count = 20
 
 		def __init__(self, performance_derivative, recent_plasticity):
 			self.short_term_normalizer = self._Normalizer()
@@ -139,8 +146,10 @@ def test_detect_change_ignores_performance_derivative_and_plasticity_oscillation
 		recognizer = EnvironmentRecognizer("live", state_dim=4)
 		assert recognizer.detect_change(_FakeMemory(0.0, 1.0)) is False
 
-	with step("Act: swing performance_derivative/recent_plasticity wildly across many readings, "
-			  "with the underlying physics (normalizer stats) never changing."):
+	with step(
+		"Act: swing performance_derivative/recent_plasticity wildly across many readings, "
+		"with the underlying physics (normalizer stats) never changing."
+	):
 		results = [
 			recognizer.detect_change(_FakeMemory(performance_derivative=perf_deriv, recent_plasticity=plasticity))
 			for perf_deriv, plasticity in [(0.0, 0.1), (50.0, 1.0), (-50.0, 0.1), (0.0, 1.0), (0.0, 0.1)]
@@ -166,130 +175,6 @@ def test_live_strategy_has_no_confirmation_window_regression() -> None:
 		assert result is True
 
 
-# ---------------------------------------------------------------
-# S5.3: NeutralProbeRecognizer
-# ---------------------------------------------------------------
-
-
-# pylint: disable=too-few-public-methods
-class _ActionSpace:
-	"""Minimal discrete action space stub."""
-
-	def sample(self):
-		"""Return the only available action."""
-		return 0
-
-
-class _NeverEndsEnv:
-	"""Env stub with a fixed physics-dependent transition and a discrete action space,
-	so probe() can run without a real gymnasium environment."""
-
-	def __init__(self, state_dim, drift):
-		self.unwrapped = self
-		self._state_dim = state_dim
-		self._drift = drift
-		self._state = np.zeros(state_dim, dtype=np.float32)
-		self.action_space = _ActionSpace()
-
-	def reset(self):
-		"""Reset to a zeroed observation."""
-		self._state = np.zeros(self._state_dim, dtype=np.float32)
-		return self._state, {}
-
-	def step(self, _action):
-		"""Advance the observation by a fixed, physics-like drift each step."""
-		self._state = self._state + self._drift
-		return self._state, 0.0, False, False, {}
-
-	def close(self):
-		"""No-op close."""
-
-
-def _make_env_factory(drift):
-	"""Build a make_env(**kwargs)-shaped factory for a fixed-drift _NeverEndsEnv."""
-
-	def _factory(**_kwargs):
-		return _NeverEndsEnv(4, drift=drift)
-
-	return _factory
-
-
-def test_neutral_probe_physical_vector_is_unaffected_by_the_live_rollout() -> None:
-	"""S5.3: the probe-derived physical vector must not change no matter what the live
-	rollout's short_term_normalizer/transition_normalizer currently look like — it's the
-	whole point of decoupling the fingerprint from whichever policy is acting."""
-
-	class _FakeMemory:
-		"""Memory stub exposing wildly different live-rollout normalizer stats."""
-
-		class _Normalizer:
-			def __init__(self, mean, var):
-				self.mean = mean
-				self.var = var
-
-		def __init__(self):
-			self.short_term_normalizer = self._Normalizer(np.full(4, 999.0), np.full(4, 999.0))
-			self.transition_normalizer = self._Normalizer(np.full(4, -999.0), np.full(4, 999.0))
-
-	with step("Arrange: a neutral_probe recognizer, probed once against a fixed-physics env."):
-		recognizer = EnvironmentRecognizer("neutral_probe", state_dim=4, probe_steps=5)
-		make_env = _make_env_factory(drift=0.1)
-		physics_env = _NeverEndsEnv(4, drift=0.1)
-		recognizer.probe(make_env, physics_env, physics_keys=[])
-		vector_before = recognizer.compute_physical_vector(memory=_FakeMemory())
-
-	with step("Act: recompute the physical vector against a memory with wildly different live stats."):
-		vector_after = recognizer.compute_physical_vector(memory=_FakeMemory())
-
-	with step("Assert: the probe-derived vector is identical, ignoring the live rollout entirely."):
-		assert np.allclose(vector_before, vector_after)
-
-
-def test_neutral_probe_physical_vector_reflects_the_probe_envs_actual_physics() -> None:
-	"""S5.3: two probe envs with different underlying dynamics must produce measurably
-	different physical vectors — the probe is a real, working physics fingerprint."""
-	with step("Arrange: two neutral_probe recognizers, probed against envs with different drift."):
-		recognizer_a = EnvironmentRecognizer("neutral_probe", state_dim=4, probe_steps=5)
-		recognizer_b = EnvironmentRecognizer("neutral_probe", state_dim=4, probe_steps=5)
-		make_env_a = _make_env_factory(drift=0.1)
-		make_env_b = _make_env_factory(drift=5.0)
-
-	with step("Act: probe each and compute their physical vectors."):
-		recognizer_a.probe(make_env_a, _NeverEndsEnv(4, drift=0.1), physics_keys=[])
-		recognizer_b.probe(make_env_b, _NeverEndsEnv(4, drift=5.0), physics_keys=[])
-		vector_a = recognizer_a.compute_physical_vector(memory=None)
-		vector_b = recognizer_b.compute_physical_vector(memory=None)
-
-	with step("Assert: the two probes produce measurably different vectors."):
-		assert not np.allclose(vector_a, vector_b)
-
-
-def test_neutral_probe_reset_flushes_the_probe_normalizers() -> None:
-	"""A detected environment shift must flush the probe's own running normalizers, not just
-	AgentMemory's — they live on this instance, so memory.reset_recognizer_statistics() alone
-	never reached them, leaving every environment switch blending in the *previous*
-	environment's physics for up to probe_steps*20 samples (~20 episodes) via EMA decay,
-	right during the window niche identification most needs a clean reading."""
-	with step("Arrange: a probed recognizer, and a never-probed one as the identity reference."):
-		recognizer = EnvironmentRecognizer("neutral_probe", state_dim=4, probe_steps=5)
-		fresh_recognizer = EnvironmentRecognizer("neutral_probe", state_dim=4, probe_steps=5)
-		make_env = _make_env_factory(drift=5.0)
-		recognizer.probe(make_env, _NeverEndsEnv(4, drift=5.0), physics_keys=[])
-		assert not np.allclose(
-			recognizer.compute_physical_vector(memory=None),
-			fresh_recognizer.compute_physical_vector(memory=None),
-		)  # sanity: probing actually changed something
-
-	with step("Act: reset the probed recognizer."):
-		recognizer.reset()
-
-	with step("Assert: its physical vector matches a never-probed recognizer's identity state."):
-		assert np.allclose(
-			recognizer.compute_physical_vector(memory=None),
-			fresh_recognizer.compute_physical_vector(memory=None),
-		)
-
-
 def test_live_and_confirmation_window_reset_is_a_harmless_noop() -> None:
 	"""'live'/'confirmation_window' source their physical vector from AgentMemory, already
 	flushed by memory.reset_recognizer_statistics() — reset() must not error, and must not
@@ -300,43 +185,124 @@ def test_live_and_confirmation_window_reset_is_a_harmless_noop() -> None:
 
 
 # ---------------------------------------------------------------
-# Composability: confirmation_window + neutral_probe together
+# S8.1: a gladiator never drags its home niche's prototype to foreign physics
 # ---------------------------------------------------------------
 
+HOME = np.array([1.0, 0.0, 0.0, 0.0])
+OTHER = np.array([0.0, 1.0, 0.0, 0.0])
+UNKNOWN = np.array([0.0, 0.0, 1.0, 0.0])
 
-def test_neutral_probe_defaults_to_immediate_fire_like_live() -> None:
-	"""Composability: neutral_probe's own default (no explicit confirmation_window) must
-	still fire immediately, same as the 'live' strategy's default — the two concerns
-	(data source vs. confirmation window) are independent, and neither strategy secretly
-	changes the other's default."""
-	with step("Arrange: a neutral_probe recognizer with an established baseline, no confirmation_window given."):
-		recognizer = EnvironmentRecognizer("neutral_probe", state_dim=4)
-		_script_detection_vectors(recognizer, [BASELINE])
+
+def _recognizer_with_prototypes(prototypes):
+	"""A live recognizer seeded with the given {niche_id: prototype} map."""
+	recognizer = EnvironmentRecognizer("live", state_dim=1, ema_alpha=0.5)
+	instance = recognizer._instance  # pylint: disable=protected-access
+	instance._physical_prototypes = {niche_id: vector.copy() for niche_id, vector in prototypes.items()}  # pylint: disable=protected-access
+	instance._next_niche_id = max(prototypes) + 1  # pylint: disable=protected-access
+	return recognizer
+
+
+def _match_gladiator(recognizer, physical_vector, home_niche_id=0):
+	"""Run match_niche() for a home_niche_id gladiator under the given physics."""
+	recognizer._instance.compute_physical_vector = lambda memory: physical_vector  # pylint: disable=protected-access
+	gladiator = {"is_gladiator": True, "internal_env_id": home_niche_id}
+	hall_of_fame = type("_FakeHallOfFame", (), {"_records": {}})()
+	return recognizer.match_niche(memory=None, current_individual=gladiator, hall_of_fame=hall_of_fame)
+
+
+def test_gladiator_under_its_home_physics_resolves_home_and_refines_the_home_prototype() -> None:
+	"""S8.1: a gladiator succeeding under physics that match its home prototype keeps its home
+	niche, and the confirmed observation is blended into that prototype."""
+	with step("Arrange: a recognizer whose home prototype (niche 0) is slightly off from the observed physics."):
+		recognizer = _recognizer_with_prototypes({0: np.array([1.0, 0.1, 0.0, 0.0]), 1: OTHER})
+
+	with step("Act: match a niche-0 gladiator under home physics."):
+		niche_id = _match_gladiator(recognizer, HOME)
+
+	with step("Assert: resolves to niche 0, whose prototype moved toward the observation."):
+		assert niche_id == 0
+		assert recognizer.current_niche_id == 0
+		assert np.allclose(recognizer._instance._physical_prototypes[0], [1.0, 0.05, 0.0, 0.0])  # pylint: disable=protected-access
+
+
+def test_gladiator_under_another_known_niches_physics_resolves_there_and_leaves_home_untouched() -> None:
+	"""S8.1: a gladiator also winning under a different, known niche's physics must resolve to
+	that niche (so the Hall of Fame can clone it there) — never overwrite its home prototype."""
+	with step("Arrange: a recognizer with a home prototype (0) and a second, distinct known niche (1)."):
+		recognizer = _recognizer_with_prototypes({0: HOME, 1: OTHER})
+
+	with step("Act: match a niche-0 gladiator under niche 1's physics."):
+		niche_id = _match_gladiator(recognizer, OTHER)
+
+	with step("Assert: resolves to niche 1, and niche 0's prototype is exactly as it was."):
+		assert niche_id == 1
+		assert recognizer.current_niche_id == 1
+		assert np.allclose(recognizer._instance._physical_prototypes[0], HOME)  # pylint: disable=protected-access
+
+
+def test_gladiator_under_unknown_physics_provisions_a_new_niche_and_leaves_home_untouched() -> None:
+	"""S8.1: physics matching no known prototype provisions a new niche for the clone, rather
+	than being blended into the gladiator's home prototype."""
+	with step("Arrange: a recognizer with two known niches."):
+		recognizer = _recognizer_with_prototypes({0: HOME, 1: OTHER})
+
+	with step("Act: match a niche-0 gladiator under physics resembling neither."):
+		niche_id = _match_gladiator(recognizer, UNKNOWN)
+
+	with step("Assert: a brand-new niche (2) holds the new physics; niche 0 is untouched."):
+		assert niche_id == 2
+		assert np.allclose(recognizer._instance._physical_prototypes[2], UNKNOWN)  # pylint: disable=protected-access
+		assert np.allclose(recognizer._instance._physical_prototypes[0], HOME)  # pylint: disable=protected-access
+
+
+# ---------------------------------------------------------------
+# S11(a): no baseline from a not-yet-refilled fingerprint
+# ---------------------------------------------------------------
+
+IMMATURE = np.array([0.0, 0.0, 1.0, 0.0])  # read from a just-reset, near-empty normalizer
+MATURE = np.array([0.0, 0.0, 0.0, 1.0])  # same physics once fully re-accumulated — dissimilar to IMMATURE
+
+
+def _fired_live_recognizer():
+	"""A live recognizer that has just fired on a genuine BASELINE -> SHIFTED switch."""
+	recognizer = EnvironmentRecognizer("live", state_dim=4)
+	_script_detection_vectors(recognizer, [BASELINE, SHIFTED])
+	assert recognizer.detect_change(memory=None) is False
+	assert recognizer.detect_change(memory=None) is True
+	return recognizer
+
+
+def test_detect_change_does_not_refire_as_a_just_reset_fingerprint_refills() -> None:
+	"""S11(a): after a firing, the fingerprint is read from just-reset normalizers. Its drift
+	while they refill is not a new shift — previously the baseline was set to that immature
+	reading, so the refill itself looked like a shift, re-fired, reset again, and looped."""
+	with step("Arrange: a recognizer that just fired on a real switch."):
+		recognizer = _fired_live_recognizer()
+
+	with step("Act: immature readings while the fingerprint refills, then the mature ones."):
+		recognizer._instance.compute_physical_vector = lambda memory: IMMATURE  # pylint: disable=protected-access
+		_script_fingerprint_ready(recognizer, False)
+		refilling = [recognizer.detect_change(memory=None) for _ in range(3)]
+		_script_detection_vectors(recognizer, [MATURE] * 10)
+		refilled = [recognizer.detect_change(memory=None) for _ in range(10)]
+
+	with step("Assert: nothing fires — neither during the refill nor once it's complete."):
+		assert refilling == [False] * 3
+		assert refilled == [False] * 10
+
+
+def test_detect_change_still_catches_a_real_switch_after_the_fingerprint_refills() -> None:
+	"""S11(a): waiting for the refill must not blind detection to the next genuine switch."""
+	with step("Arrange: a recognizer that fired, waited out a refill, and re-established its baseline."):
+		recognizer = _fired_live_recognizer()
+		_script_fingerprint_ready(recognizer, False)
 		assert recognizer.detect_change(memory=None) is False
+		_script_detection_vectors(recognizer, [MATURE] * 7)
+		assert [recognizer.detect_change(memory=None) for _ in range(7)] == [False] * 7  # baseline + cooldown + settle
 
-	with step("Act: a single shifted reading."):
-		_script_detection_vectors(recognizer, [SHIFTED])
+	with step("Act: a genuine switch away from the re-established baseline."):
+		_script_detection_vectors(recognizer, [BASELINE])
 		result = recognizer.detect_change(memory=None)
 
-	with step("Assert: it fires immediately, with no confirmation window."):
+	with step("Assert: it fires."):
 		assert result is True
-
-
-def test_neutral_probe_composes_with_an_explicit_confirmation_window() -> None:
-	"""Composability: neutral_probe's policy-independent fingerprint AND a confirmation
-	window can be used together — this is the combination that fixes both niche
-	fragmentation (neutral_probe) and spurious detect_change() firing (confirmation
-	window) at the same time, instead of forcing a choice between the two strategies."""
-	with step("Arrange: a neutral_probe recognizer with confirmation_window=3, baseline established."):
-		recognizer = EnvironmentRecognizer("neutral_probe", state_dim=4, confirmation_window=3)
-		_script_detection_vectors(recognizer, [BASELINE])
-		assert recognizer.detect_change(memory=None) is False
-		_script_detection_vectors(recognizer, [SHIFTED, SHIFTED])
-
-	with step("Act/Assert: fewer than the confirmation window must not fire."):
-		assert recognizer.detect_change(memory=None) is False
-		assert recognizer.detect_change(memory=None) is False
-
-	with step("Act/Assert: the 3rd consecutive low-similarity reading fires."):
-		_script_detection_vectors(recognizer, [SHIFTED])
-		assert recognizer.detect_change(memory=None) is True

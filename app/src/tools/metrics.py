@@ -10,7 +10,7 @@ from matplotlib.lines import Line2D
 def _qualitative_colors(count: int) -> list:
 	"""Return count visually distinct colors, scaling past any fixed palette size."""
 	cmap = plt.get_cmap("tab20" if count > 10 else "tab10")
-	return [cmap(i / max(count, 1)) for i in range(count)]
+	return [cmap(index / max(count, 1)) for index in range(count)]
 
 
 def _classify_niche_events(niche_id_series: pd.Series, known_niche_ids: set = None) -> list:
@@ -58,9 +58,7 @@ def calculate_paper_metrics(
 	metrics = []
 	for dataframe, name in zip(histories, names):
 		# Dynamically find where environments change
-		switches = dataframe[
-			dataframe["env_id"].ne(dataframe["env_id"].shift())
-		].index.tolist()
+		switches = dataframe[dataframe["env_id"].ne(dataframe["env_id"].shift())].index.tolist()
 
 		# 1. Reliability Metric: % of episodes above mastery threshold
 		total_episodes = len(dataframe)
@@ -78,9 +76,7 @@ def calculate_paper_metrics(
 		if len(switches) > 1:
 			first_switch = switches[1]
 			# Compare average of 20 episodes before vs 20 episodes after switch
-			pre = dataframe.iloc[max(0, first_switch - 20) : first_switch][
-				"score"
-			].mean()
+			pre = dataframe.iloc[max(0, first_switch - 20) : first_switch]["score"].mean()
 			post = dataframe.iloc[first_switch : first_switch + 20]["score"].mean()
 			stability_gap = pre - post
 
@@ -106,6 +102,74 @@ def calculate_paper_metrics(
 		print("\n--- ACADEMIC PERFORMANCE & RELIABILITY SUMMARY ---", file=file)
 		print(metrics_df.to_string(index=False), file=file)
 	return metrics_df
+
+
+def estimate_eval_cost(plasticity: float, pop_size: int, min_eval_steps: int, max_eval_steps: int) -> tuple:
+	"""Mirror ena.py train()'s num_to_eval/eval_step_cap formula, for display only."""
+	# Deliberately duplicated, not imported, to keep this a display-only concern with zero
+	# coupling into agents.ena — if ena.py's own formula ever changes, this one should too.
+	num_to_eval = max(2, int(pop_size * plasticity))
+	eval_step_cap = min_eval_steps + (max_eval_steps - min_eval_steps) * plasticity
+	return num_to_eval, eval_step_cap
+
+
+def calculate_compute_cost(histories: list, names: list, file=None) -> pd.DataFrame:
+	"""Summarize each agent's logged per-generation candidate-evaluation compute."""
+	rows = []
+	for dataframe, name in zip(histories, names):
+		if "candidate_env_steps" not in dataframe:
+			continue
+		depth = dataframe["eval_step_cap"].dropna()
+		breadth = dataframe["num_to_eval"].dropna()
+		cost = dataframe["candidate_env_steps"].dropna()
+		if cost.empty:
+			continue
+		rows.append(
+			{
+				"Agent": name,
+				"Avg Eval Depth": f"{depth.mean():.1f}",
+				"Avg Candidates/Gen": f"{breadth.mean():.1f}",
+				"Total Candidate Env-Steps": f"{cost.sum():,.0f}",
+			}
+		)
+
+	cost_df = pd.DataFrame(rows)
+	if file and not cost_df.empty:
+		print("\n--- COMPUTE-COST SUMMARY (candidate evaluation, training phase) ---", file=file)
+		print(cost_df.to_string(index=False), file=file)
+	return cost_df
+
+
+ADAPTATION_MARKER = "--- ADAPTATION SUMMARY (training, early-stopped per environment) ---"
+
+
+def calculate_adaptation(histories: list, names: list, file=None) -> pd.DataFrame:
+	"""Per agent: env-steps used and solved flag per environment, plus training/evaluation step totals.
+
+	Reads play()'s attrs["phases"]. "<env>:steps" is the steps to the first solve when "<env>:solved"
+	is 1, otherwise the steps consumed until the plateau, cap or budget ended it. Train-Env-Steps is
+	every training step, including those after the first solve (fixed-budget protocol).
+	"""
+	rows = []
+	for dataframe, name in zip(histories, names):
+		phases = dataframe.attrs.get("phases") or []
+		if not phases:
+			continue
+		row = {"Agent": name}
+		for phase in phases:
+			solved_at = phase.get("solve_steps")
+			row[f"{phase['env_id']}:steps"] = f"{solved_at if solved_at is not None else phase['steps']:,}"
+			row[f"{phase['env_id']}:solved"] = int(phase["status"] == "solved")
+		row["Solved-Phases"] = sum(int(phase["status"] == "solved") for phase in phases)
+		row["Train-Env-Steps"] = f"{sum(phase['steps'] for phase in phases):,}"
+		row["Eval-Env-Steps"] = f"{sum(phase['eval_steps'] for phase in phases):,}"
+		rows.append(row)
+
+	adaptation_df = pd.DataFrame(rows)
+	if file and not adaptation_df.empty:
+		print(f"\n{ADAPTATION_MARKER}", file=file)
+		print(adaptation_df.to_string(index=False), file=file)
+	return adaptation_df
 
 
 # pylint: disable=too-many-arguments,too-many-positional-arguments
@@ -169,9 +233,7 @@ def plot_academic_comparison(
 		)
 
 		# 1. Dynamic Environment Switches (Ground Truth)
-		switches = dataframe[
-			dataframe["env_id"].ne(dataframe["env_id"].shift())
-		].index.tolist()
+		switches = dataframe[dataframe["env_id"].ne(dataframe["env_id"].shift())].index.tolist()
 		for switch_index in switches:
 			if switch_index > 0:
 				axes[index].axvline(
@@ -195,11 +257,7 @@ def plot_academic_comparison(
 		# 2. Real-time shift detection (detect_change() firing) — independent of which
 		# niche the agent resolves to, and meaningful in both train and test charts.
 		if "env_shift_detected" in dataframe.columns:
-			shift_positions = [
-				pos
-				for pos, fired in enumerate(dataframe["env_shift_detected"])
-				if bool(fired)
-			]
+			shift_positions = [pos for pos, fired in enumerate(dataframe["env_shift_detected"]) if bool(fired)]
 			if shift_positions:
 				y_pos = ylim[0] + (ylim[1] - ylim[0]) * 0.03
 				axes[index].plot(
@@ -249,9 +307,7 @@ def plot_academic_comparison(
 		axes[index].grid(True, alpha=0.2)
 		axes[index].legend(loc="upper left")
 
-	plt.suptitle(
-		"Neuroevolutionary Adaptation\nAcross Gravitational Shifts", fontsize=16
-	)
+	plt.suptitle("Neuroevolutionary Adaptation\nAcross Gravitational Shifts", fontsize=16)
 	plt.xlabel("Total Episodes", fontsize=12)
 	plt.tight_layout(rect=[0, 0.03, 1, 0.95])
 	if save_path:
@@ -361,9 +417,7 @@ def plot_specialist_transitions(df_history, pop_size=30, save_path=None):
 		df_history["gladiator_env"] = "Unknown"
 
 	df_history["agent_type"] = df_history.apply(
-		lambda row: f"Gladiator: {row['gladiator_env']}"
-		if row["is_gladiator"]
-		else "Mutant/Learner",
+		lambda row: f"Gladiator: {row['gladiator_env']}" if row["is_gladiator"] else "Mutant/Learner",
 		axis=1,
 	)
 
@@ -384,9 +438,7 @@ def plot_specialist_transitions(df_history, pop_size=30, save_path=None):
 	# explains what the ring itself means.
 	has_niche_rings = False
 	if "internal_env_id" in df_history.columns:
-		gladiator_rows = df_history[
-			df_history["is_gladiator"] & (df_history["internal_env_id"] != -1)
-		]
+		gladiator_rows = df_history[df_history["is_gladiator"] & (df_history["internal_env_id"] != -1)]
 		niche_ids = sorted(gladiator_rows["internal_env_id"].unique())
 		if niche_ids:
 			has_niche_rings = True
@@ -466,16 +518,10 @@ def _niche_env_labels(df_history: pd.DataFrame) -> dict:
 	"""Best-effort niche id -> ground-truth env name, from whichever rows resolved it."""
 	if "detected_env_id" not in df_history.columns or "gladiator_env" not in df_history.columns:
 		return {}
-	labeled = df_history[
-		(df_history["detected_env_id"] != -1) & df_history["gladiator_env"].notna()
-	]
+	labeled = df_history[(df_history["detected_env_id"] != -1) & df_history["gladiator_env"].notna()]
 	if labeled.empty:
 		return {}
-	return (
-		labeled.groupby("detected_env_id")["gladiator_env"]
-		.agg(lambda envs: envs.value_counts().idxmax())
-		.to_dict()
-	)
+	return labeled.groupby("detected_env_id")["gladiator_env"].agg(lambda envs: envs.value_counts().idxmax()).to_dict()
 
 
 def plot_niche_transition_sequence(df_history, save_path=None):
@@ -505,9 +551,7 @@ def plot_niche_transition_sequence(df_history, save_path=None):
 			ha="center",
 		)
 
-	resolved = df_history[
-		df_history["detected_env_id"].notna() & (df_history["detected_env_id"] != -1)
-	]
+	resolved = df_history[df_history["detected_env_id"].notna() & (df_history["detected_env_id"] != -1)]
 	axis1.plot(
 		resolved["episode"],
 		resolved["detected_env_id"],

@@ -12,6 +12,8 @@ from tools.metrics import (
 	_classify_niche_events,
 	_niche_env_labels,
 	_qualitative_colors,
+	calculate_compute_cost,
+	estimate_eval_cost,
 	plot_academic_comparison,
 	plot_specialist_transitions,
 )
@@ -26,6 +28,57 @@ def test_qualitative_colors_returns_n_distinct_colors(distinct_color_count: int)
 	with step("Assert: every color is unique and the palette has the requested size."):
 		assert len(colors) == distinct_color_count
 		assert len(set(colors)) == distinct_color_count
+
+
+@pytest.mark.parametrize(
+	("plasticity", "expected_num_to_eval", "expected_eval_step_cap"),
+	[
+		pytest.param(0.0, 2, 10.0, id="zero-plasticity-floors-at-the-minimum"),
+		pytest.param(1.0, 20, 100.0, id="full-plasticity-reaches-the-maximum"),
+	],
+)
+def test_estimate_eval_cost_scales_with_plasticity(plasticity: float, expected_num_to_eval: int, expected_eval_step_cap: float) -> None:
+	"""Mirrors ena.py train()'s formula exactly — same floors/ceilings at 0.0/1.0 plasticity."""
+	with step("Act: estimate eval cost at the given plasticity."):
+		num_to_eval, eval_step_cap = estimate_eval_cost(plasticity, pop_size=20, min_eval_steps=10, max_eval_steps=100)
+
+	with step("Assert: it matches ena.py train()'s own num_to_eval/eval_step_cap at this plasticity."):
+		assert num_to_eval == expected_num_to_eval
+		assert eval_step_cap == pytest.approx(expected_eval_step_cap)
+
+
+def test_calculate_compute_cost_summarizes_logged_columns() -> None:
+	"""Aggregates the already-logged num_to_eval/eval_step_cap/candidate_env_steps columns."""
+	with step("Arrange: a training history with logged compute-cost columns."):
+		history = pd.DataFrame(
+			{
+				"num_to_eval": [2, 10, 20],
+				"eval_step_cap": [10.0, 50.0, 100.0],
+				"candidate_env_steps": [20.0, 500.0, 2000.0],
+			}
+		)
+
+	with step("Act: summarize compute cost."):
+		cost_df = calculate_compute_cost([history], ["ENA-Plasticity"])
+
+	with step("Assert: the summary reports the mean depth/breadth and total env-steps."):
+		row = cost_df.iloc[0]
+		assert row["Agent"] == "ENA-Plasticity"
+		assert row["Avg Eval Depth"] == "53.3"
+		assert row["Avg Candidates/Gen"] == "10.7"
+		assert row["Total Candidate Env-Steps"] == "2,520"
+
+
+def test_calculate_compute_cost_skips_agents_without_the_column() -> None:
+	"""An agent with no compute-cost columns (e.g. RandomAgent) must be excluded, not error."""
+	with step("Arrange: a history with no compute-cost columns at all."):
+		history = pd.DataFrame({"episode": [1, 2], "score": [1.0, 1.0]})
+
+	with step("Act: summarize compute cost."):
+		cost_df = calculate_compute_cost([history], ["Random"])
+
+	with step("Assert: the agent is skipped entirely — no row, no error."):
+		assert cost_df.empty
 
 
 @pytest.mark.parametrize(
@@ -120,15 +173,15 @@ def test_build_transition_matrix_surfaces_cross_environment_transitions() -> Non
 		assert labels[1] != labels[2]  # the (1, 2) cell crosses a true-environment boundary
 
 
-def test_plot_academic_comparison_niche_markers_match_their_legend_swatch(
-	tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_plot_academic_comparison_niche_markers_match_their_legend_swatch(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
 	"""C0: every 'New Niche' marker and every 'Niche Switch' marker must share one fixed
 	color per kind, matching the legend swatch — regardless of how many distinct niche ids
 	are involved (previously colored per-niche-id while the legend only showed one swatch)."""
-	with step("Arrange: a history whose detected_env_id produces 'new' events for two "
-			  "different niche ids and 'switch' events for another, and prevent the figure "
-			  "from being closed so its artists stay inspectable after the call."):
+	with step(
+		"Arrange: a history whose detected_env_id produces 'new' events for two "
+		"different niche ids and 'switch' events for another, and prevent the figure "
+		"from being closed so its artists stay inspectable after the call."
+	):
 		monkeypatch.setattr(plt, "close", lambda *args, **kwargs: None)
 		dataframe = pd.DataFrame(
 			{
@@ -142,8 +195,9 @@ def test_plot_academic_comparison_niche_markers_match_their_legend_swatch(
 	with step("Act: render the comparison chart."):
 		plot_academic_comparison([dataframe], ["Agent"], save_path=str(tmp_path / "chart.png"))
 
-	with step("Assert: every 'new'-kind marker and every 'switch'-kind marker uses one "
-			  "fixed color each, matching what the legend actually shows."):
+	with step(
+		"Assert: every 'new'-kind marker and every 'switch'-kind marker uses one " "fixed color each, matching what the legend actually shows."
+	):
 		axis = plt.gcf().axes[0]
 		new_lines = [line for line in axis.lines if line.get_marker() == "o" and line.get_linestyle() == "None"]
 		switch_lines = [line for line in axis.lines if line.get_marker() == "x"]
@@ -159,14 +213,13 @@ def test_plot_academic_comparison_niche_markers_match_their_legend_swatch(
 		plt.close(axis.figure)
 
 
-def test_plot_academic_comparison_seeds_known_niches_to_avoid_spurious_new_niche_markers(
-	tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_plot_academic_comparison_seeds_known_niches_to_avoid_spurious_new_niche_markers(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
 	"""A test-phase chart must not show 'New Niche' for a niche that was actually
 	established during training — known_niche_ids_by_history seeds each history's
 	already-known niches, so their first appearance here classifies as a 'switch'."""
-	with step("Arrange: the same history as above, but with every niche it contains "
-			  "pre-declared as already known (as if all came from training)."):
+	with step(
+		"Arrange: the same history as above, but with every niche it contains " "pre-declared as already known (as if all came from training)."
+	):
 		monkeypatch.setattr(plt, "close", lambda *args, **kwargs: None)
 		dataframe = pd.DataFrame(
 			{

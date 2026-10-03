@@ -1,13 +1,14 @@
 #!/usr/bin/env python
-"""Live convergence monitor: tails a live_training_*.csv written by cartpole_challenge.py/half_cheetah.py's
-play() and re-renders a score/plasticity chart while a run is still in progress.
+"""Live convergence monitor: tails a live_training_*.csv written by cartpole_challenge.py/
+half_cheetah.py/cartpole_ena_performance.py/cartpole_ena_compute.py's play() and re-renders a score/plasticity chart while a run
+is still in progress.
 
 Run this as a separate process from the training run itself — it only reads the CSV, never
 touches the training process. Since app/ is bind-mounted into the container, it works either
 inside `docker compose exec` or directly on the host (where a real display is available).
 
 Usage:
-	python tools/live_monitor.py cartpole_outputs/exp_1/live_training_ENA-01\\ Fuzzy-Fuzzy.csv
+	python tools/live_monitor.py cartpole_ena_performance_outputs/exp_1/live_training_ENA-Combined.csv
 	python tools/live_monitor.py <path/to/live_training.csv> --interval 5 --window 50
 """
 
@@ -23,9 +24,17 @@ import pandas as pd
 def _read_log(csv_path):
 	"""Read the live-training CSV, tolerating a torn last line mid-write."""
 	try:
-		return pd.read_csv(csv_path)
-	except (pd.errors.EmptyDataError, pd.errors.ParserError):
+		log = pd.read_csv(csv_path)
+	except (pd.errors.EmptyDataError, pd.errors.ParserError, FileNotFoundError, UnicodeDecodeError, OSError):
 		return None
+	if log.empty:
+		return log
+	# A concurrent flush can leave the last row's trailing fields half-written — pandas
+	# parses that as NaN in the always-populated columns rather than raising, so this row
+	# must be dropped here rather than reaching the unguarded int() in _render below.
+	if log.iloc[-1][["episode", "score"]].isna().any():
+		log = log.iloc[:-1]
+	return log
 
 
 def _render(axis_score, axis_plasticity, dataframe, window):

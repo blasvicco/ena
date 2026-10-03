@@ -3,7 +3,7 @@
 Used by benchmark_ena.py to exercise ENAgent's real control flow (selection, trust,
 HallOfFame, EnvironmentRecognizer) without gym.make()'s registry lookup and wrapper-stack
 construction overhead — the dominant per-episode cost given ENA builds a fresh env per
-candidate evaluation (thread_eval_task) and per episode-start probe (NeutralProbeRecognizer).
+candidate evaluation (thread_eval_task).
 The governing equations, constants, and termination/reward semantics are identical to
 gymnasium's CartPoleEnv, so scores and physics-fingerprint statistics stay comparable.
 """

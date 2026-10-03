@@ -1,492 +1,192 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""ENA Experiments"""
+"""ENA vs. state-of-the-art RL on non-stationary CartPole — same early-stopping rule for all, frozen test (50 replicates)."""
 
 # General imports
-import csv
+import argparse
+import functools
 import os
-import threading
-import time
-import traceback
-import faulthandler
-import concurrent.futures
-from multiprocessing import Manager
-
 
 # Libs imports
-import gymnasium as gym
 import numpy as np
-import pandas as pd
-import tensorflow as tf
-from keras import Model, Input, initializers, Sequential
+from keras import Input, Model, initializers
 from keras.layers import Dense
 
 # App imports
-from agents import DQNAgent, ENAgent, PPOAgent
-from tools.metrics import (
-	calculate_paper_metrics,
-	plot_academic_comparison,
-	plot_plasticity_analysis,
-	plot_specialist_transitions,
+from agents import DQNAgent, ENAgent, PPOAgent, RandomAgent, SACDiscreteAgent
+from cartpole_ena_performance import (
+	PERFORMANCE_VARIANTS,
+	TESTING_EPISODES,
+	TRAINING_EPISODES_ENA,
+	MAX_WORKERS,
+	agent_testing,
+	agent_training,
+	build_ena_agent,
+	make_env,
+	make_training_worlds,
+	parse_args,
+	post_update,
+	run_study,
+	seed_experiment,
+	select_variants,
 )
-from tools.visualization import vprint, ProgressReporter
+from tools.early_stopping import StoppingRule
+from tools.visualization import vprint
 
 # Constants
-NUM_EXPERIMENTS = 1
-MAX_WORKERS = os.cpu_count() - 2
-GPUS = tf.config.list_physical_devices("GPU")
-TESTING_EPISODES = [200, 200, 200, 200, 200]
-TRAINING_EPISODES_BASELINE = [1500, 1500, 1500]
-TRAINING_EPISODES_ENA = [500, 500, 500]
+NUM_EXPERIMENTS = 50
+# Anchored to this file's own location (one level up from src/), not the caller's cwd.
+OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cartpole_challenge_outputs")
+ENA_NAME = "ENA-Combined"
+
+# Two protocols, selected with --protocol:
+# - "fixed-budget" (default): every agent trains FIXED_BUDGET_PER_ENV env-steps on each environment.
+#   The same periodic evaluation records the first solve per environment (adaptability) but never
+#   ends training, so the frozen test compares agents after equal training (performance).
+# - "first-solve": training on each environment ends at the first solve, a plateau or the
+#   MAX_STEPS_PER_ENV cap (answers "who solves it soonest"; results in cartpole_challenge_first_solve_outputs).
+# Common to both:
+# - ENA is the performance study's ENA-Combined (Plasticity + Hall of Fame + env detection, bpr
+#   selection, linear_ramp plasticity and trust).
+# - Training: every agent trains on each environment under the same StoppingRule — a frozen
+#   evaluation (EVAL_EPISODES episodes, separate env copy, the agent's test-time policy) every
+#   CHECK_EVERY env-steps it consumes (ENA's include its candidate evaluations); the environment
+#   ends when the evaluation mean reaches SOLVED_SCORE (CartPole-v1's "solved" threshold), on a
+#   plateau, or at MAX_STEPS_PER_ENV. Steps-to-solve per environment measures adaptability;
+#   evaluation steps are reported separately and never count as training.
+# - Frozen test: no agent learns during the 5 test environments (incl. never-trained Neptune and
+#   Brown-dwarf); baselines act greedily, ENA's weights are frozen and only its archive selection
+#   (choosing among stored gladiators) adapts.
+# Baselines use their implementations' default hyperparameters.
+CHECK_EVERY = 5_000
+EVAL_EPISODES = 5
+SOLVED_SCORE = 475.0
+PLATEAU_CHECKS = 40  # 200k env-steps without a 10-point gain
+PLATEAU_MIN_GAIN = 10.0
+MAX_STEPS_PER_ENV = 3_000_000
+# Per-environment budget for the fixed-budget protocol: about ENA-Combined's own consumption in the
+# performance study (7.68M env-steps over 3 environments, candidate evaluations included).
+FIXED_BUDGET_PER_ENV = 2_500_000
+PROTOCOLS = ("fixed-budget", "first-solve")
+OUTPUT_DIRS = {
+	"fixed-budget": OUTPUT_DIR,
+	"first-solve": os.path.join(os.path.dirname(OUTPUT_DIR), "cartpole_challenge_first_solve_outputs"),
+}
+CHALLENGE_AGENTS = [{"name": ENA_NAME}, {"name": "DQN"}, {"name": "PPO"}, {"name": "SAC-Discrete"}]
 
 
 # Helper methods
-def dqn_brain(action_dim, state_dim, hidden=(64, 64)):
-	"""Build a Q-network Brain."""
+def mlp_brain(action_dim: int, state_dim: int, hidden: tuple = (64, 64)) -> Model:
+	"""Build a ReLU MLP: state -> one output per action (DQN Q-network, SAC-Discrete actor and critics)."""
 	inputs = Input(shape=(state_dim,))
-	unimportant_tensor = inputs
+	hidden_tensor = inputs
 	for units in hidden:
-		unimportant_tensor = Dense(units, activation="relu")(unimportant_tensor)
-	outputs = Dense(action_dim)(unimportant_tensor)
+		hidden_tensor = Dense(units, activation="relu")(hidden_tensor)
+	outputs = Dense(action_dim)(hidden_tensor)
 	return Model(inputs, outputs)
 
 
-def ena_brain(action_dim, state_dim):
-	"""Build a ENA-NN."""
-	initializer = initializers.Orthogonal(gain=1.0)
-	return Sequential(
-		[
-			Input(shape=(state_dim,)),
-			Dense(4, activation="relu", kernel_initializer=initializer),
-			Dense(2, activation="relu", kernel_initializer=initializer),
-			Dense(
-				action_dim,
-				activation="linear",
-				kernel_initializer=initializer,
-			),
-		]
-	)
-
-
-def ppo_actor_brain(action_dim, state_dim, hidden=(64, 64)):
+def ppo_actor_brain(action_dim: int, state_dim: int, hidden: tuple = (64, 64)) -> Model:
 	"""Factory for PPO actor network."""
 	init_hidden = initializers.Orthogonal(gain=np.sqrt(2))
 	init_output = initializers.Orthogonal(gain=0.01)
 	inputs = Input(shape=(state_dim,))
-	x = inputs
+	hidden_tensor = inputs
 	for units in hidden:
-		x = Dense(units, activation="tanh", kernel_initializer=init_hidden)(x)
-	outputs = Dense(action_dim, kernel_initializer=init_output)(x)
+		hidden_tensor = Dense(units, activation="tanh", kernel_initializer=init_hidden)(hidden_tensor)
+	outputs = Dense(action_dim, kernel_initializer=init_output)(hidden_tensor)
 	return Model(inputs, outputs)
 
 
-def ppo_critic_brain(action_dim, state_dim, hidden=(64, 64)):
+def ppo_critic_brain(_action_dim: int, state_dim: int, hidden: tuple = (64, 64)) -> Model:
 	"""Factory for PPO critic network."""
 	init_hidden = initializers.Orthogonal(gain=np.sqrt(2))
 	init_output = initializers.Orthogonal(gain=1.0)
 	inputs = Input(shape=(state_dim,))
-	x = inputs
+	hidden_tensor = inputs
 	for units in hidden:
-		x = Dense(units, activation="tanh", kernel_initializer=init_hidden)(x)
-	outputs = Dense(1, kernel_initializer=init_output)(x)
+		hidden_tensor = Dense(units, activation="tanh", kernel_initializer=init_hidden)(hidden_tensor)
+	outputs = Dense(1, kernel_initializer=init_output)(hidden_tensor)
 	return Model(inputs, outputs)
 
 
-# pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
-def agent_testing(agents, experiment_id, output_dir, output_file, queue, worlds):
-	"""Test agents on worlds"""
-	# Neural weights are frozen; only the archive selector updates Trust at test time.
-	post_update(experiment_id, queue, status="Phase 2: Testing Setup", progress=8)
-	mystery_env = make_env(gravity=11.15, name="Neptune")
-	extrap_env = make_env(gravity=50.0, name="Brown-dwarf")
-	test_worlds = [worlds[0], mystery_env, worlds[1], extrap_env, worlds[2]]
+def build_agent(name: str, max_agent_threads: int):
+	"""One challenge agent by name; its training episodes are set later (or replaced by ENA's step budget)."""
+	if name == ENA_NAME:
+		return build_ena_agent(next(row for row in PERFORMANCE_VARIANTS if row["name"] == ENA_NAME), max_agent_threads)
+	if name == "DQN":
+		agent = DQNAgent(brain=mlp_brain, make_env=make_env)
+	elif name == "PPO":
+		# Constant learning rate (Stable-Baselines3's PPO default): in a non-stationary stream PPO keeps
+		# learning at full rate in every environment and isn't told when training will end.
+		agent = PPOAgent(brain=ppo_actor_brain, critic_brain=ppo_critic_brain, make_env=make_env, entropy_coef=0.01, anneal_lr=False)
+	elif name == "SAC-Discrete":
+		# Target entropy 0.5 x log|A| instead of the paper's 0.98: with CartPole's 2 actions, 0.98 is almost
+		# the maximum entropy, the policy can't reach it, and the temperature alpha grows without bound
+		# (measured: alpha 1.9 -> 20,700 and Q 13 -> 130,000 within 150k steps, play collapsing to random).
+		# 0.89 (CleanRL's choice) diverged the same way; 0.5 stayed stable (alpha ~1-3.5, Q bounded).
+		agent = SACDiscreteAgent(brain=mlp_brain, make_env=make_env, target_entropy_ratio=0.5)
+	elif name == "Random":
+		agent = RandomAgent(brain=None, make_env=make_env)
+	else:
+		raise ValueError(f"Unknown challenge agent: {name!r}")
+	agent.set_name(name)
+	agent.set_episodes(TRAINING_EPISODES_ENA)
+	return agent
 
-	agent_ids = []
-	execution_times = {}
-	history_testing = {}
-	known_niche_ids_by_history = []
-	for agent in agents:
-		agent_name = agent.get_name()
-		episodes = agent.get_episodes()
-		agent_ids.append(agent_name)
-		post_update(experiment_id, queue, status=f"Testing {agent_name}", progress=8)
-		# Niches already established by the end of training — so the test chart's niche
-		# events classify a niche's first test-phase appearance as a "switch", not a
-		# spurious "new niche" (no niche can genuinely be created once train() stops running).
-		known_niche_ids_by_history.append(getattr(agent, "known_niche_ids", None))
-		agent.set_learning(False, output_dir=output_dir)
-		start_time = time.time()
-		history_testing[agent_name] = play(
-			agent,
-			test_worlds,
-			episodes,
-			on_episode=make_eta_reporter(experiment_id, queue, "Testing", agent_name, start_time),
-		)
-		execution_times[agent_name] = time.time() - start_time
 
-	# Calculate and print metrics for this experiment
-	print(f"\n  --- Experiment {experiment_id + 1} Test Results ---", file=output_file)
-	calculate_paper_metrics(
-		history_testing.values(),
-		agent_ids,
-		file=output_file,
-		success_threshold=475.0,
-		times=execution_times,
+# pylint: disable=too-many-arguments,too-many-positional-arguments
+def make_stopping_rule(protocol: str = "fixed-budget") -> StoppingRule:
+	"""The challenge's evaluation/stopping rule for a protocol, identical for every agent."""
+	if protocol not in PROTOCOLS:
+		raise ValueError(f"Unknown protocol {protocol!r}; expected one of {PROTOCOLS}")
+	fixed_budget = protocol == "fixed-budget"
+	return StoppingRule(
+		check_every=CHECK_EVERY,
+		eval_episodes=EVAL_EPISODES,
+		solved_score=SOLVED_SCORE,
+		plateau_checks=PLATEAU_CHECKS,
+		plateau_min_gain=PLATEAU_MIN_GAIN,
+		max_steps=FIXED_BUDGET_PER_ENV if fixed_budget else MAX_STEPS_PER_ENV,
+		stop_when_solved=not fixed_budget,
+		stop_on_plateau=not fixed_budget,
 	)
 
-	# Testing Plots
-	post_update(experiment_id, queue, status="Generating Testing Plots", progress=8)
-	plot_academic_comparison(
-		history_testing.values(),
-		agent_ids,
-		save_path=os.path.join(output_dir, "test.png"),
-		known_niche_ids_by_history=known_niche_ids_by_history,
-	)
 
-	for agent in agents:
-		is_ena = isinstance(agent, ENAgent)
-		if is_ena:
-			agent_name = agent.get_name()
-			plot_specialist_transitions(
-				history_testing[agent_name],
-				pop_size=agent.pop_size,
-				save_path=os.path.join(
-					output_dir,
-					f"specialist_transitions_{agent_name}.png",
-				),
-			)
-
-
-def agent_training(agents, experiment_id, output_dir, output_file, queue, worlds):
-	"""Train agents on worlds"""
-	agent_ids = []
-	execution_times = {}
-	history_training = {}
-	for agent in agents:
-		agent_name = agent.get_name()
-		episodes = agent.get_episodes()
-		agent_ids.append(agent_name)
-		post_update(experiment_id, queue, status=f"Training {agent_name}", progress=8)
-		agent.set_learning(True)
-		start_time = time.time()
-		live_log_path = os.path.join(output_dir, f"live_training_{agent_name}.csv")
-		history_training[agent_name] = play(
-			agent,
-			worlds,
-			episodes,
-			live_log_path=live_log_path,
-			on_episode=make_eta_reporter(experiment_id, queue, "Training", agent_name, start_time),
-		)
-		execution_times[agent_name] = time.time() - start_time
-
-	# Training Summary
-	print("\n  --- Training Performance vs Time ---", file=output_file)
-	for agent_name, duration in execution_times.items():
-		print(f"  {agent_name}: {duration:.2f} seconds", file=output_file)
-
-	# Training Metrics
-	print("\nTraining:", file=output_file)
-	calculate_paper_metrics(
-		history_training.values(),
-		agent_ids,
-		file=output_file,
-		success_threshold=475.0,
-		times=execution_times,
-	)
-
-	# Training Plots
-	post_update(experiment_id, queue, status="Generating Training Plots", progress=8)
-	plot_academic_comparison(
-		history_training.values(),
-		agent_ids,
-		save_path=os.path.join(output_dir, "training.png"),
-	)
-
-	for agent in agents:
-		is_ena = isinstance(agent, ENAgent)
-		if is_ena:
-			agent_name = agent.get_name()
-			plot_plasticity_analysis(
-				agent,
-				history_training[agent_name],
-				save_path=os.path.join(
-					output_dir,
-					f"plasticity_{agent_name}.png",
-				),
-			)
-			plot_specialist_transitions(
-				history_training[agent_name],
-				pop_size=agent.pop_size,
-				save_path=os.path.join(
-					output_dir,
-					f"specialist_transitions_TRAINING_{agent_name}.png",
-				),
-			)
-
-
-def make_env(
-	gravity=-9.8,
-	masspole=0.1,
-	name="Earth",
-	length=0.5,
-	render_mode=None,
-):
-	"""Create the environment"""
-	env = gym.make("CartPole-v1", render_mode=render_mode)
-
-	# Physics Parameters
-	env.unwrapped.gravity = gravity
-	env.unwrapped.length = length
-	env.unwrapped.masspole = masspole
-	env.unwrapped.name = name
-
-	# Recalculate all internal dependencies used by the physics engine
-	env.unwrapped.total_mass = env.unwrapped.masspole + env.unwrapped.masscart
-	env.unwrapped.polemass_length = env.unwrapped.masspole * env.unwrapped.length
-
-	if hasattr(env.unwrapped, "masspole_length"):
-		env.unwrapped.masspole_length = env.unwrapped.masspole * env.unwrapped.length
-
-	return env
-
-
-def play(agent, environments, episodes_per_env, live_log_path=None, on_episode=None):
-	"""Play the game.
-
-	If live_log_path is given, each episode's row is also appended to that CSV,
-	flushed immediately — lets a separate process (e.g. tools/live_monitor.py) watch
-	convergence while this run is still in progress, without changing the returned
-	DataFrame or any existing chart in any way.
-
-	If on_episode is given, it's called after every episode as on_episode(episode_num,
-	total_episodes) — e.g. to report a live ETA.
-	"""
-	history = []
-	total_episodes = sum(episodes_per_env)
-	live_log_file = None
-	live_log_writer = None
-	if live_log_path:
-		# pylint: disable=consider-using-with
-		live_log_file = open(live_log_path, "w", newline="", encoding="utf-8")
-
-	try:
-		for env_idx, env in enumerate(environments):
-			for unused_idx in range(episodes_per_env[env_idx]):
-				state, unused_meta = env.reset()
-				state = np.array(state, dtype=np.float32)
-				episode_score = 0
-				is_done = False
-
-				while not is_done:
-					# 1. Agent performs the step internally
-					# Returns: (next_state, reward, done, action)
-					next_state, reward, terminated, truncated, action = agent.act(env, state)
-					is_done = terminated or truncated
-
-					# 2. Collect data for training (DQN uses this per-step, ENA uses this later)
-					if agent.learn:
-						agent.train(
-							env=env,
-							step_data={
-								"action": action,
-								"done": is_done,
-								"next_state": next_state,
-								"reward": reward,
-								"state": state,
-							},
-						)
-
-					episode_score += reward
-					state = next_state
-
-				current_individual = agent.population[getattr(agent, "best_individual_idx", 0)] if hasattr(agent, "population") else {}
-				plasticity_history = getattr(agent, "plasticity_history", None)
-				row = {
-					"env_id": getattr(env.unwrapped, "name", env_idx),
-					"episode": len(history) + 1,
-					"score": episode_score,
-					"specialist_id": getattr(agent, "best_individual_idx", 0),
-					"detected_env_id": getattr(agent, "current_env_id", -1),
-					"internal_env_id": current_individual.get("internal_env_id", -1),
-					"is_gladiator": current_individual.get("is_gladiator", False),
-					"gladiator_env": current_individual.get("env_name", None),
-					"env_shift_detected": getattr(agent, "last_env_shift_detected", False),
-					"plasticity": plasticity_history[-1] if plasticity_history else None,
-				}
-				history.append(row)
-
-				if on_episode is not None:
-					on_episode(len(history), total_episodes)
-
-				if live_log_file is not None:
-					if live_log_writer is None:
-						live_log_writer = csv.DictWriter(live_log_file, fieldnames=list(row.keys()))
-						live_log_writer.writeheader()
-					live_log_writer.writerow(row)
-					live_log_file.flush()
-	finally:
-		if live_log_file is not None:
-			live_log_file.close()
-
-	return pd.DataFrame(history)
-
-
-def post_update(experiment_id, queue, status=None, progress=0, done=False):
-	"""Post update to the reporting queue."""
-	if queue:
-		queue.put(
-			{
-				"done": done,
-				"exp_id": experiment_id,
-				"progress": progress,
-				"status": status,
-			}
-		)
-
-
-def format_duration(seconds):
-	"""Format a duration in seconds as e.g. '1h 55m 31s', '6m 22s', or '42s'."""
-	hours, remainder = divmod(int(seconds), 3600)
-	minutes, secs = divmod(remainder, 60)
-	if hours:
-		return f"{hours}h {minutes}m {secs}s"
-	if minutes:
-		return f"{minutes}m {secs}s"
-	return f"{secs}s"
-
-
-def make_eta_reporter(experiment_id, queue, label, agent_name, start_time):
-	"""Build a play() on_episode callback that reports a live ETA via the status queue,
-	estimated from the average time per episode elapsed so far this phase."""
-
-	def _report(episode_num, total_episodes):
-		if episode_num <= 0 or episode_num >= total_episodes:
-			return
-		elapsed = time.time() - start_time
-		remaining = (elapsed / episode_num) * (total_episodes - episode_num)
-		eta_str = format_duration(remaining)
-		post_update(experiment_id, queue, status=f"{label} {agent_name} (ETA {eta_str})")
-
-	return _report
-
-
-def run_experiment(experiment_id, output_dir, queue=None):
-	"""Run a single experiment."""
+# pylint: disable=too-many-arguments,too-many-positional-arguments
+def run_experiment(experiment_id: int, output_dir: str, queue, variants: list, include_random: bool, protocol: str = "fixed-budget") -> None:
+	"""Run one replicate: every agent trained under the same evaluation/stopping rule, then a frozen test."""
+	names = [row["name"] for row in variants]
 	post_update(experiment_id, queue, status="Initializing Agents...", progress=2)
+	seed_experiment(experiment_id)
 
-	# 0. Prepare Experiment Directory
 	os.makedirs(output_dir, exist_ok=True)
-	outputs_path = os.path.join(output_dir, "outputs.txt")
-	with open(outputs_path, "w", encoding="utf-8") as output_file:
+	with open(os.path.join(output_dir, "outputs.txt"), "w", encoding="utf-8") as output_file:
 		vprint(f"Experiment {experiment_id + 1} Log", file=output_file)
 		vprint("=" * 30, file=output_file)
 
-		# 1. Prepare Environments
-		worlds = [
-			make_env(
-				gravity=3.7,
-				masspole=0.05,
-				name="Mars-Light",
-				length=0.1,
-			),
-			make_env(
-				gravity=24.8,
-				masspole=0.5,
-				name="Jupiter-Heavy",
-				length=1.5,
-			),
-			make_env(
-				gravity=9.8,
-				masspole=0.1,
-				name="Earth-Standard",
-				length=0.5,
-			),
-		]
-
+		worlds = make_training_worlds()
 		max_agent_threads = max(1, os.cpu_count() // MAX_WORKERS)
+		agents = [build_agent(name, max_agent_threads) for name in names + (["Random"] if include_random else [])]
 
-		# Define explicit episode counts (2 episodes per training environment for quick test)
-		# 2. Initialize Agents — fresh instances per experiment for independence
-		ena_agent_01 = ENAgent(
-			brain=ena_brain,
-			controller_episode_rate=0.15,
-			make_env=make_env,
-			max_per_niche=5,
-			max_gladiator_ratio=0.5,
-			max_threads=max_agent_threads,
-			mutation_rate=0.05,
-			physics=["gravity", "masspole", "length"],
-			plasticity_algorithm="fuzzylogic",
-			pop_size=100,
-			recognizer_threshold=0.90,
-			recognizer_ema_alpha=0.05,
-			recognizer_strategy="neutral_probe",
-			selection_driver="heuristic",
-			trust_algorithm="fuzzylogic",
-		)
-		ena_agent_01.set_name("ENA-01 Fuzzy-Fuzzy")
-		ena_agent_01.set_episodes(TRAINING_EPISODES_ENA)
-		#
-		# 		ena_agent_02 = ENAgent(
-		# 			brain=ena_brain,
-		# 			make_env=make_env,
-		# 			gladiator_amounts=15,
-		# 			max_threads=max_agent_threads,
-		# 			mutation_rate=0.05,
-		# 			physics=["gravity", "masspole", "length"],
-		# 			plasticity_algorithm="quadratic",
-		# 			pop_size=50,
-		# 			trust_algorithm="quadratic",
-		# 		)
-		# 		ena_agent_02.set_name("ENA-02 Quadratic-Quadratic")
-		# 		ena_agent_02.set_episodes(TRAINING_EPISODES_ENA)
-
-		# 		dqn_agent = DQNAgent(brain=dqn_brain, make_env=make_env)
-		# 		dqn_agent.set_name("DQN-TF")
-		# 		dqn_agent.set_episodes(TRAINING_EPISODES_BASELINE)
-
-		# 		ppo_agent = PPOAgent(
-		# 			brain=ppo_actor_brain,
-		# 			critic_brain=ppo_critic_brain,
-		# 			make_env=make_env,
-		# 			entropy_coef=0.01,  # Benefit from entropy in discrete CartPole
-		# 		)
-		# 		ppo_agent.set_name("PPO-TF")
-		# 		ppo_agent.set_episodes(TRAINING_EPISODES_BASELINE)
-
-		# 3. Training Phase
 		agent_training(
-			agents=[
-				ena_agent_01,
-				# 				ena_agent_02,
-				# 				dqn_agent,
-				# 				ppo_agent,
-			],
+			agents=agents,
 			experiment_id=experiment_id,
 			output_dir=output_dir,
 			output_file=output_file,
 			queue=queue,
 			worlds=worlds,
+			stopping=make_stopping_rule(protocol),
+			eval_worlds=make_training_worlds(),
 		)
 
-		# 4. Testing Phase
-		# Set episodes for testing
-		ena_agent_01.set_episodes(TESTING_EPISODES)
-		# 		ena_agent_02.set_episodes(TESTING_EPISODES)
-		# 		dqn_agent.set_episodes(TESTING_EPISODES)
-		# 		ppo_agent.set_episodes(TESTING_EPISODES)
-
-		# Load gladiators for ENA agents
-		ena_agent_01.load_gladiators()
-		# 		ena_agent_02.load_gladiators()
+		for agent in agents:
+			agent.set_episodes(TESTING_EPISODES)
+			if isinstance(agent, ENAgent):
+				agent.load_gladiators()
 
 		agent_testing(
-			agents=[
-				ena_agent_01,
-				# 				ena_agent_02,
-				# 				dqn_agent,
-				# 				ppo_agent,
-			],
+			agents=agents,
 			experiment_id=experiment_id,
 			output_dir=output_dir,
 			output_file=output_file,
@@ -497,92 +197,31 @@ def run_experiment(experiment_id, output_dir, queue=None):
 		post_update(experiment_id, queue, status="Done", done=True, progress=2)
 
 
-def run_experiment_worker(experiment_id, reporting_queue):
-	"""Wrapper that runs a single experiment in an isolated process."""
-	output_dir = os.path.join("cartpole_outputs", f"exp_{experiment_id + 1}")
-	os.makedirs(output_dir, exist_ok=True)
-	crash_log_path = os.path.join(output_dir, "crash.log")
-
-	crash_file = None
-	try:
-		# pylint: disable=consider-using-with
-		crash_file = open(crash_log_path, "w", encoding="utf-8")  # keep open
-		faulthandler.enable(file=crash_file)
-	except Exception:  # pylint: disable=broad-except
-		pass
-
-	try:
-		run_experiment(experiment_id, output_dir, reporting_queue)
-	except Exception:  # pylint: disable=broad-except
-		tb_str = traceback.format_exc()
-		if crash_file and not crash_file.closed:
-			crash_file.write(tb_str)
-			crash_file.flush()
-		reporting_queue.put(
-			{
-				"done": True,
-				"exp_id": experiment_id,
-				"status": f"[bold red]Error: {tb_str}[/bold red]",
-			}
-		)
-	finally:
-		if crash_file:
-			crash_file.close()
+def parse_challenge_args(argv: list = None) -> argparse.Namespace:
+	"""The shared study flags plus --protocol; the default output directory follows the protocol."""
+	protocol_parser = argparse.ArgumentParser(add_help=False)
+	protocol_parser.add_argument("--protocol", choices=PROTOCOLS, default="fixed-budget")
+	known, remaining = protocol_parser.parse_known_args(argv)
+	args = parse_args(
+		remaining,
+		variant_table=CHALLENGE_AGENTS,
+		defaults={"output_dir": OUTPUT_DIRS[known.protocol], "num_experiments": NUM_EXPERIMENTS, "include_random": True},
+	)
+	args.protocol = known.protocol
+	return args
 
 
 # =============================================================================
 # MAIN: Run N independent experiments to produce statistically valid results
 # =============================================================================
 if __name__ == "__main__":
-	vprint(
-		f"[green]Hardware:[/green] GPU detection successful: {GPUS}." if GPUS else "[yellow]Hardware:[/yellow] No GPU detected. Defaulting to CPU."
+	ARGS = parse_challenge_args()
+	run_study(
+		ARGS.num_experiments,
+		ARGS.output_dir,
+		select_variants(CHALLENGE_AGENTS, ARGS.variants),
+		ARGS.include_random,
+		f"ENA CHALLENGE ({ARGS.protocol})",
+		experiment_fn=functools.partial(run_experiment, protocol=ARGS.protocol),
+		workers=ARGS.workers,
 	)
-
-	with Manager() as manager:
-		# 1. Setup Queue
-		REPORTING_QUEUE = manager.Queue()
-
-		# 2. Initialize and Start the Progress Reporter Thread
-		REPORTER = ProgressReporter(REPORTING_QUEUE, NUM_EXPERIMENTS)
-		REPORTER_THREAD = threading.Thread(target=REPORTER.run, daemon=True)
-		REPORTER_THREAD.start()
-
-		vprint(f"\n[bold green]{'='*60}[/bold green]")
-		vprint(f"[bold]LAUNCHING {NUM_EXPERIMENTS} INDEPENDENT EXPERIMENTS[/bold]")
-		vprint(f"Utilizing [cyan]{MAX_WORKERS}[/cyan] CPU cores.")
-		vprint(f"[bold green]{'='*60}[/bold green]\n")
-
-		# 3. Launch each experiment in isolated processes
-		with concurrent.futures.ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
-			futures = {}
-			for exp_id in range(NUM_EXPERIMENTS):
-				exp_dir = os.path.join("cartpole_outputs", f"exp_{exp_id + 1}")
-				analyzed = os.path.exists(os.path.join(exp_dir, "outputs.txt")) and os.path.getsize(os.path.join(exp_dir, "outputs.txt")) > 0
-				if analyzed:
-					REPORTING_QUEUE.put(
-						{
-							"exp_id": exp_id,
-							"status": "[yellow]Skipping (already exists)[/yellow]",
-							"done": True,
-						}
-					)
-					continue
-
-				future = executor.submit(run_experiment_worker, exp_id, REPORTING_QUEUE)
-				futures[future] = exp_id
-
-			for future in concurrent.futures.as_completed(futures):
-				exp_id = futures[future]
-				try:
-					future.result()
-				except Exception as exc:  # pylint: disable=broad-except
-					vprint(f"[bold red]Experiment {exp_id + 1} crashed: {exc}[/bold red]")
-
-		# 4. Cleanup — still inside Manager context so queue is alive
-		REPORTING_QUEUE.put(None)
-		REPORTER_THREAD.join(timeout=2.0)
-
-	vprint("\n[bold green]" + "=" * 60 + "[/bold green]")
-	vprint(f"[bold]ALL {NUM_EXPERIMENTS} EXPERIMENTS COMPLETE[/bold]")
-	vprint("Check the [cyan]outputs/[/cyan] directory for detailed logs and plots.")
-	vprint("[bold green]" + "=" * 60 + "[/bold green]")
