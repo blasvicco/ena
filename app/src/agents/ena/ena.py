@@ -7,7 +7,6 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Libs imports
 import numpy as np
-from keras import initializers
 import tensorflow as tf
 
 # App imports
@@ -24,6 +23,14 @@ from .tools.inference import infer_action
 from .tools.reward_normalizer import normalize_reward
 from .tools.weight_projection import project_individual_weights
 
+# Search settings (the paper reads them through tools/paper_config.py).
+TRUST_RESET_SIGNAL = 0.1  # a failure signal above this re-opens the competition (Trust reset toward the reference)
+MIN_CANDIDATES = 2  # candidates evaluated per episode even at zero Plasticity
+ELITE_SHARE = 0.2  # top share of the population (by Trust) that parents the next generation
+REPLACED_SHARE = 0.8  # bottom share replaced each generation (archived specialists excepted)
+MUTANT_SHARE = 0.4  # of the replaced: mutants of an elite
+CROSSOVER_SHARE = 0.4  # of the replaced: crossovers of two elites (the rest are freshly initialized)
+
 
 # pylint: disable=too-many-instance-attributes
 class ENAgent(AAgent):
@@ -34,10 +41,9 @@ class ENAgent(AAgent):
 		self,
 		brain,
 		make_env,
-		controller_episode_rate: float = 0.03,
-		controller_max_niches: int = 32,
-		selection_driver: str = "heuristic",
-		env_max_steps: float = 1000.0,
+		selection_driver: str = "bpr",
+		max_episode_steps: int = None,
+		return_scale: float = None,
 		exploration_rate: float = 0.20,
 		hall_of_fame_driver: str = "default",
 		max_per_niche: int = 5,
@@ -51,20 +57,18 @@ class ENAgent(AAgent):
 		physics: list = ["gravity", "masspole", "length"],
 		plasticity_algorithm: str = "zero",
 		pop_size: int = 30,
-		recognizer_threshold: float = 0.90,
-		recognizer_ema_alpha: float = 0.10,
-		recognizer_strategy: str = "live",
-		recognizer_confirmation_window: int = 3,
+		recognizer_strategy: str = "dynamics_model",
 		recognizer_residual_tolerance: float = 3.0,
 		recognizer_novelty_margin: float = 2.0,
 		recognizer_cusum_false_alarm_steps: float = 1e8,
-		genetic_threshold: float = 0.80,
-		genetic_bonus: float = 0.50,
+		recognizer_var_floor: float = 1e-6,
+		recognizer_min_samples: int = 100,
+		recognizer_min_verify_samples: int = 50,
+		recognizer_recent_size: int = 500,
 		trust_algorithm: str = "zero",
 	) -> None:
 		super().__init__(brain, make_env)
 		self.learn = True
-		self.env_max_steps = float(env_max_steps)
 		self.max_eval_steps = max_eval_steps
 		self.min_eval_steps = min_eval_steps
 		self.physics = physics
@@ -74,38 +78,36 @@ class ENAgent(AAgent):
 		self.state_dim = int(tmp_env.observation_space.shape[0])
 		self.is_continuous = not hasattr(tmp_env.action_space, "n")
 		self.action_dim = int(tmp_env.action_space.shape[0]) if self.is_continuous else int(tmp_env.action_space.n)
+		# Episode length (rescales truncated candidate evaluations) and the return that counts as solving
+		# the task (BPR's utility scale, early return normalization), from the environment's own spec.
+		spec = getattr(tmp_env, "spec", None)
+		self.max_episode_steps = int(max_episode_steps if max_episode_steps is not None else getattr(spec, "max_episode_steps", 0) or 0)
+		self.return_scale = float(return_scale if return_scale is not None else getattr(spec, "reward_threshold", 0.0) or 0.0)
 		tmp_env.close()
+		if self.max_episode_steps <= 0 or self.return_scale <= 0:
+			raise ValueError("ENAgent needs max_episode_steps and return_scale: pass them, or use an environment whose spec defines them")
 
-		self.memory = AgentMemory(history_size, self.state_dim, max_eval_steps, ema_alpha=recognizer_ema_alpha)
+		self.memory = AgentMemory(history_size, self.state_dim, max_eval_steps)
 
 		# Skills (pluggable, one facade per mechanism — see agents/ena/skills/)
 		self._skills = {
 			"env_detection": EnvironmentRecognizer(
 				recognizer_strategy,
 				self.state_dim,
-				similarity_threshold=recognizer_threshold,
-				ema_alpha=recognizer_ema_alpha,
-				genetic_threshold=genetic_threshold,
-				genetic_bonus=genetic_bonus,
-				confirmation_window=recognizer_confirmation_window,
 				action_dim=self.action_dim,
 				is_continuous=self.is_continuous,
 				residual_tolerance=recognizer_residual_tolerance,
 				novelty_margin=recognizer_novelty_margin,
 				cusum_false_alarm_steps=recognizer_cusum_false_alarm_steps,
+				# Domain calibration (defaults: CartPole's): see dynamics_model.Instance for each setting's role.
+				var_floor=recognizer_var_floor,
+				min_samples=recognizer_min_samples,
+				min_verify_samples=recognizer_min_verify_samples,
+				recent_size=recognizer_recent_size,
 			),
 		}
 
-		context_dim = len(self._skills["env_detection"].compute_full_vector(self.memory))
-		self._skills["selection"] = SelectionController(
-			selection_driver,
-			buffer_size=32,
-			context_dim=context_dim,
-			controller_episode_rate=controller_episode_rate,
-			env_max_steps=self.env_max_steps,
-			exploration_rate=exploration_rate,
-			max_niches=controller_max_niches,
-		)
+		self._skills["selection"] = SelectionController(selection_driver, return_scale=self.return_scale, exploration_rate=exploration_rate)
 
 		self._skills["hall_of_fame"] = HallOfFame(
 			hall_of_fame_driver,
@@ -146,14 +148,12 @@ class ENAgent(AAgent):
 
 		chosen = self.population[self.best_individual_idx]
 		self.memory.obs_normalizer.update(state[np.newaxis, :])
-		self._skills["env_detection"].update(state, self.memory)
 		action = infer_action(chosen, state, self.memory, self.is_continuous)
 
 		next_state, reward, terminated, truncated, _ = env.step(action)
 		self.played_env_steps += 1
-		self.memory.record_step(state, next_state, reward)
+		self.memory.record_step(reward)
 		self._skills["env_detection"].observe(state, action, next_state, self.memory)
-		self._skills["selection"].on_step(self.memory, self._skills["env_detection"], self.learn)
 
 		if terminated or truncated:
 			self.__end_episode()
@@ -220,13 +220,11 @@ class ENAgent(AAgent):
 				individual["age"] = 0
 
 		self.learn = mode
-		self._skills["selection"].set_mode(self.memory, self.learn)
 
 		# Trigger initial evaluation when entering test mode
 		if not mode:
-			# Flush leftover training-phase recognizer statistics so match() compares
-			# the actual test-phase physics against fresh data, not stale training stats.
-			self.memory.reset_recognizer_statistics()
+			# Drop the last training regime's transitions so test-phase identification judges
+			# the test physics on fresh evidence.
 			self._skills["env_detection"].reset()
 			self._skills["selection"].evaluate(self.population)
 
@@ -252,7 +250,7 @@ class ENAgent(AAgent):
 		# 3. Update the current Specialist's Trust
 		chosen = self.population[self.best_individual_idx]
 		chosen["age"] += 1
-		norm_score = normalize_reward(self.memory.last_episode_score, self.memory, self.env_max_steps)
+		norm_score = normalize_reward(self.memory.last_episode_score, self.memory, self.return_scale)
 		chosen["trust"] = (1 - failure_signal) * chosen["trust"] + (failure_signal * norm_score)
 		# 4. Compute plasticity for this episode
 		plasticity = self._skills["plasticity"].compute(self.memory.last_episode_score, self.memory, self.learn)
@@ -272,12 +270,12 @@ class ENAgent(AAgent):
 		)
 
 		# 7. Only reset trust (challenge the specialist) when failing
-		if failure_signal > 0.1:
-			self._skills["trust"].reset_population(self.population, self.memory, self.env_max_steps, factor=failure_signal)
+		if failure_signal > TRUST_RESET_SIGNAL:
+			self._skills["trust"].reset_population(self.population, self.memory, self.return_scale, factor=failure_signal)
 
 		# tools/metrics.py's estimate_eval_cost() mirrors this formula for display (live
 		# dashboard / compute-cost report) — update both if this one changes.
-		num_to_eval = max(2, int(self.pop_size * plasticity))
+		num_to_eval = max(MIN_CANDIDATES, int(self.pop_size * plasticity))
 		other_indices = [index for index in range(self.pop_size) if index != self.best_individual_idx]
 		test_indices = random.sample(other_indices, min(len(other_indices), num_to_eval))
 
@@ -303,7 +301,7 @@ class ENAgent(AAgent):
 
 		for task_idx, score in eval_results:
 			individual_signal = self._skills["trust"].decay(score, self.memory)
-			eval_norm_score = normalize_reward(score, self.memory, self.env_max_steps)
+			eval_norm_score = normalize_reward(score, self.memory, self.return_scale)
 			old = self.population[task_idx]["trust"]
 			self.population[task_idx]["trust"] = (1 - individual_signal) * old + (individual_signal * eval_norm_score)
 
@@ -319,13 +317,12 @@ class ENAgent(AAgent):
 		if model is None:
 			model = self.brain(self.action_dim, self.state_dim)
 		else:
-			for index, layer in enumerate(model.layers):
-				if hasattr(layer, "kernel_initializer") and layer.kernel_initializer is not None:
-					gain = 0.1 if index == len(model.layers) - 1 else 1.0
-					initializer = initializers.Orthogonal(gain=gain)
-					layer.kernel.assign(initializer(shape=layer.kernel.shape))
-				if hasattr(layer, "bias_initializer") and layer.bias_initializer is not None:
-					layer.bias.assign(initializers.Zeros()(shape=layer.bias.shape))
+			# Redraw every weight from the brain's own initializers, as the initial population was drawn.
+			for layer in model.layers:
+				if getattr(layer, "kernel_initializer", None) is not None:
+					layer.kernel.assign(layer.kernel_initializer(shape=layer.kernel.shape))
+				if getattr(layer, "bias_initializer", None) is not None and getattr(layer, "bias", None) is not None:
+					layer.bias.assign(layer.bias_initializer(shape=layer.bias.shape))
 
 		fast_call = existing_fast_call if existing_fast_call is not None else tf.function(model, reduce_retracing=True)
 
@@ -334,8 +331,10 @@ class ENAgent(AAgent):
 			"individual_id": str(uuid.uuid4()),
 			"model": model,
 			"fast_call": fast_call,
-			"trust": self._skills["trust"].reference(self.memory, self.env_max_steps),
+			"trust": self._skills["trust"].reference(self.memory, self.return_scale),
 			"is_gladiator": False,
+			"internal_env_id": -1,
+			"env_name": "Unknown",
 			"last_mu": np.copy(self.memory.obs_normalizer.mean),
 			"last_var": np.copy(self.memory.obs_normalizer.var),
 		}
@@ -343,7 +342,7 @@ class ENAgent(AAgent):
 	def __end_episode(self) -> None:
 		"""Finalize the episode: score bookkeeping, driver finalization, and shift detection."""
 		self.memory.last_episode_score = self.memory.current_episode_reward
-		self._skills["selection"].on_episode_end(self.memory, self.learn, self.population, self._skills["env_detection"], self.env_max_steps)
+		self._skills["selection"].on_episode_end(self.memory, self.learn, self._skills["env_detection"])
 
 		self._last_env_shift_detected = self._skills["env_detection"].evaluate(self.memory, self.learn)
 		if self._last_env_shift_detected and not self.learn:
@@ -361,9 +360,9 @@ class ENAgent(AAgent):
 		with self._env_steps_lock:  # candidates are evaluated from a thread pool
 			self.candidate_env_steps += steps
 
-		# Scale truncated eval score to full-episode equivalent using env_max_steps
+		# A truncated evaluation is extrapolated to the full episode length
 		if not done:
-			score = score * (self.env_max_steps / eval_step_cap)
+			score = score * (self.max_episode_steps / eval_step_cap)
 
 		return float(score)
 
@@ -399,10 +398,10 @@ class ENAgent(AAgent):
 
 		# 2. Strategy Budget
 		if replace_count is None:
-			replace_count = int(self.pop_size * 0.8)
+			replace_count = int(self.pop_size * REPLACED_SHARE)
 		replace_count = max(1, min(replace_count, self.pop_size - 2))
 
-		elite_pool_size = max(2, int(self.pop_size * 0.2))
+		elite_pool_size = max(2, int(self.pop_size * ELITE_SHARE))
 		elite_indices = indices[:elite_pool_size]
 
 		# Kill the WORST individuals — but strictly protect gladiators
@@ -410,9 +409,9 @@ class ENAgent(AAgent):
 		random.shuffle(to_replace_indices)
 		actual_replace_count = len(to_replace_indices)
 
-		mutant_count = int(actual_replace_count * 0.4)
-		crossover_count = int(actual_replace_count * 0.4)
-		default_trust = self._skills["trust"].reference(self.memory, self.env_max_steps)
+		mutant_count = int(actual_replace_count * MUTANT_SHARE)
+		crossover_count = int(actual_replace_count * CROSSOVER_SHARE)
+		default_trust = self._skills["trust"].reference(self.memory, self.return_scale)
 		plasticity = self.memory.plasticity_history[-1] if self.memory.plasticity_history else 1.0
 
 		for _ in range(mutant_count):
@@ -451,7 +450,6 @@ class ENAgent(AAgent):
 
 	def __start_episode(self) -> None:
 		"""Reset per-episode selection/step state and signal the episode start to env_detection."""
-		self._skills["selection"].reset_episode()
 		self.memory.steps_this_episode = 0
 		self._episode_started = True
 		self._skills["env_detection"].start_episode()

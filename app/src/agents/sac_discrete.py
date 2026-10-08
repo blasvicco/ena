@@ -11,7 +11,7 @@ from keras import optimizers
 
 # App imports
 from .sac import ReplayBuffer
-from .tools.baseline import ABaseline
+from .tools.baseline import ABaseline, transition
 
 
 # pylint: disable=too-many-instance-attributes
@@ -91,8 +91,7 @@ class SACDiscreteAgent(ABaseline):
 		"""Store the transition and, on schedule, run one SAC-Discrete update on a sampled batch."""
 		step_data = kwargs["step_data"]
 		# Bootstrap through time-limit truncation: only a true termination zeroes the target.
-		terminal = float(step_data.get("terminated", step_data["done"]))
-		self.buffer.store(step_data["state"], step_data["action"], step_data["reward"], step_data["next_state"], terminal)
+		self.buffer.store(*transition(step_data))
 		self.env_steps += 1
 
 		if self.buffer.size >= max(self.batch_size, self.learning_starts) and self.env_steps % self.train_freq == 0:

@@ -10,7 +10,7 @@ import tensorflow as tf
 from keras import Input, Model, layers, optimizers
 
 # App imports
-from .tools.baseline import ABaseline
+from .tools.baseline import ABaseline, transition
 
 # pylint: disable=too-many-instance-attributes
 class ReplayBuffer:
@@ -67,7 +67,10 @@ class SACAgent(ABaseline):
 		tau=0.005,
 		update_frequency=20,
 		gradient_steps=None,
+		learning_starts=0,
 	):
+		"""learning_starts: environment steps of uniform random actions, with no updates, before learning starts
+		(SB3's warm-up; 0 = train as soon as the buffer holds a batch)."""
 		super().__init__(brain, make_env)
 		self.learn = True
 
@@ -77,6 +80,7 @@ class SACAgent(ABaseline):
 		self.tau = tau
 		self.update_frequency = update_frequency
 		self.gradient_steps = gradient_steps if gradient_steps is not None else update_frequency
+		self.learning_starts = learning_starts
 		self.env_steps = 0
 
 		# Infer dims
@@ -126,19 +130,25 @@ class SACAgent(ABaseline):
 	# pylint: disable=too-many-arguments
 	def act(self, env, state):
 		"""Sample action from the policy using Gaussian reprocessing."""
+		if self.learn and self.env_steps < self.learning_starts:
+			# Warm-up: uniform random actions in the tanh range (NumPy, so the replicate's seed governs it).
+			action = np.random.uniform(-1.0, 1.0, size=self.action_dim).astype(np.float32)
+			next_obs, reward, terminated, truncated, _ = env.step(action)
+			return next_obs, reward, terminated, truncated, action
+
 		obs_tensor = tf.convert_to_tensor(state[np.newaxis], dtype=tf.float32)
 		mean, log_standard_deviation = self._get_policy_outputs(obs_tensor)
-		standard_deviation = tf.exp(log_standard_deviation)
+		if self.learn:
+			# Reparameterization trick for sampling. Noise is drawn with NumPy: an eager tf.random call
+			# leaks per-call state under tf.random.set_seed (the ones inside tf.function graphs don't).
+			gaussian_noise = tf.convert_to_tensor(np.random.normal(size=mean.shape), dtype=mean.dtype)
+			action_raw = mean + gaussian_noise * tf.exp(log_standard_deviation)
+		else:
+			# Frozen test: the deterministic policy, tanh of the mean (standard SAC evaluation).
+			action_raw = mean
 
-		# Reparameterization trick for sampling. Noise is drawn with NumPy: an eager tf.random call
-		# leaks per-call state under tf.random.set_seed (the ones inside tf.function graphs don't).
-		gaussian_noise = tf.convert_to_tensor(np.random.normal(size=mean.shape), dtype=mean.dtype)
-		action_raw = mean + gaussian_noise * standard_deviation
-		action_squashed = tf.tanh(action_raw)
-
-		# Scale/Clip action to env space happens within gym if needed,
-		# but HalfCheetah expects [-1, 1] which tanh provides.
-		action = action_squashed.numpy()[0]
+		# HalfCheetah expects actions in [-1, 1], which tanh provides.
+		action = tf.tanh(action_raw).numpy()[0]
 
 		next_obs, reward, terminated, truncated, _ = env.step(action)
 		return next_obs, reward, terminated, truncated, action
@@ -154,17 +164,11 @@ class SACAgent(ABaseline):
 	def train(self, **kwargs):
 		"""Store transition and update networks if buffer has enough data."""
 		step_data = kwargs["step_data"]
-		self.buffer.store(
-			step_data["state"],
-			step_data["action"],
-			step_data["reward"],
-			step_data["next_state"],
-			float(step_data["done"]),
-		)
+		self.buffer.store(*transition(step_data))
 
 		self.env_steps += 1
 
-		if self.buffer.size >= self.batch_size and self.env_steps % self.update_frequency == 0:
+		if self.env_steps > self.learning_starts and self.buffer.size >= self.batch_size and self.env_steps % self.update_frequency == 0:
 			for _ in range(self.gradient_steps):
 				(
 					batch_states,

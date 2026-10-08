@@ -7,6 +7,10 @@ import seaborn as sns
 from matplotlib.lines import Line2D
 
 
+# Episodes before and after the first environment switch compared by the stability gap.
+STABILITY_WINDOW = 20
+
+
 def _qualitative_colors(count: int) -> list:
 	"""Return count visually distinct colors, scaling past any fixed palette size."""
 	cmap = plt.get_cmap("tab20" if count > 10 else "tab10")
@@ -75,9 +79,9 @@ def calculate_paper_metrics(
 		stability_gap = 0
 		if len(switches) > 1:
 			first_switch = switches[1]
-			# Compare average of 20 episodes before vs 20 episodes after switch
-			pre = dataframe.iloc[max(0, first_switch - 20) : first_switch]["score"].mean()
-			post = dataframe.iloc[first_switch : first_switch + 20]["score"].mean()
+			# Compare the average of STABILITY_WINDOW episodes before vs. after the switch
+			pre = dataframe.iloc[max(0, first_switch - STABILITY_WINDOW) : first_switch]["score"].mean()
+			post = dataframe.iloc[first_switch : first_switch + STABILITY_WINDOW]["score"].mean()
 			stability_gap = pre - post
 
 		# 4. Efficiency: Total Score divided by Wall-Clock Time
@@ -173,6 +177,33 @@ def calculate_adaptation(histories: list, names: list, file=None) -> pd.DataFram
 
 
 # pylint: disable=too-many-arguments,too-many-positional-arguments
+def uses_env_detection(dataframe: pd.DataFrame) -> bool:
+	"""Whether a history comes from a real recognizer: one that fired or resolved more than one niche id.
+
+	Agents without one log a constant: the none driver always niche 0, the Random agent always -1.
+	"""
+	if "detected_env_id" not in dataframe.columns:
+		return False
+	fired = "env_shift_detected" in dataframe.columns and dataframe["env_shift_detected"].astype(bool).any()
+	return bool(fired or dataframe["detected_env_id"].nunique() > 1)
+
+
+def _draw_env_detection_overlay(axis, dataframe: pd.DataFrame, ylim: tuple, x_at=None) -> None:
+	"""Confirmed shifts along the bottom of a panel; x_at maps an episode's row position to its x (default: the position)."""
+	span = ylim[1] - ylim[0]
+	shift_positions = [pos for pos, fired in enumerate(dataframe.get("env_shift_detected", [])) if bool(fired)]
+	if shift_positions:
+		axis.plot(
+			[x_at(pos) for pos in shift_positions] if x_at else shift_positions,
+			[ylim[0] + span * 0.03] * len(shift_positions),
+			"^",
+			color="purple",
+			markersize=6,
+			zorder=4,
+			label="Shift confirmed",
+		)
+
+
 def plot_academic_comparison(
 	histories,
 	names,
@@ -180,10 +211,15 @@ def plot_academic_comparison(
 	success_threshold=475.0,
 	ylim=(-10, 550),
 	known_niche_ids_by_history=None,
+	x_axis="episodes",
 ):
 	"""
 	Creates a publication-quality plot with stability ranges (Std Dev)
 	and dynamic environment switch markers.
+
+	x_axis "episodes" (default) plots each agent's episodes in order; "env_steps" plots them at the
+	agent's cumulative environment steps (the live logs' env_steps), so agents compared at an equal
+	step budget span the same range even when they play very different numbers of episodes.
 
 	known_niche_ids_by_history is an optional list, parallel to histories, of niche-id
 	sets already established before this chart's own data begins (e.g. from training,
@@ -198,15 +234,25 @@ def plot_academic_comparison(
 	)
 	axes = axes.flatten()
 	window = 50
+	if x_axis not in ("episodes", "env_steps"):
+		raise ValueError(f"Unknown x_axis {x_axis!r}; expected 'episodes' or 'env_steps'")
+	by_steps = x_axis == "env_steps"
+	steps_right = max(float(dataframe["env_steps"].iloc[-1]) for dataframe in histories) if by_steps else None
 
 	for index, dataframe in enumerate(histories):
 		# Calculate Moving Stats
 		mean_score = dataframe["score"].rolling(window=window, min_periods=1).mean()
 		std_score = dataframe["score"].rolling(window=window, min_periods=1).std()
+		steps = dataframe["env_steps"].to_numpy() if by_steps else None
+		line_x = steps if by_steps else dataframe["episode"]
+
+		def x_at(pos, steps=steps):
+			"""An episode's x: its row position, or its cumulative env-steps on the step axis."""
+			return steps[pos] if steps is not None else pos
 
 		# Shaded area = Reliability / Variance
 		axes[index].fill_between(
-			dataframe["episode"],
+			line_x,
 			mean_score - std_score,
 			mean_score + std_score,
 			alpha=0.2,
@@ -216,7 +262,7 @@ def plot_academic_comparison(
 
 		# Bold line = Average Trend
 		axes[index].plot(
-			dataframe["episode"],
+			line_x,
 			mean_score,
 			color="tab:blue",
 			linewidth=3,
@@ -236,8 +282,10 @@ def plot_academic_comparison(
 		switches = dataframe[dataframe["env_id"].ne(dataframe["env_id"].shift())].index.tolist()
 		for switch_index in switches:
 			if switch_index > 0:
+				# On the step axis a switch sits where the new environment starts: the previous episode's end.
+				switch_x = steps[switch_index - 1] if by_steps else switch_index
 				axes[index].axvline(
-					x=switch_index,
+					x=switch_x,
 					alpha=0.5,
 					color="red",
 					linestyle="--",
@@ -246,7 +294,7 @@ def plot_academic_comparison(
 				if index == 0:
 					y_pos = ylim[0] + (ylim[1] - ylim[0]) * 0.1
 					axes[index].text(
-						switch_index + 5,
+						switch_x + (steps_right * 0.005 if by_steps else 5),
 						y_pos,
 						"ENV SWITCH",
 						color="red",
@@ -254,21 +302,10 @@ def plot_academic_comparison(
 						fontweight="bold",
 					)
 
-		# 2. Real-time shift detection (detect_change() firing) — independent of which
-		# niche the agent resolves to, and meaningful in both train and test charts.
-		if "env_shift_detected" in dataframe.columns:
-			shift_positions = [pos for pos, fired in enumerate(dataframe["env_shift_detected"]) if bool(fired)]
-			if shift_positions:
-				y_pos = ylim[0] + (ylim[1] - ylim[0]) * 0.03
-				axes[index].plot(
-					shift_positions,
-					[y_pos] * len(shift_positions),
-					"^",
-					color="purple",
-					markersize=6,
-					zorder=4,
-					label="Shift Detected",
-				)
+		# 2. Confirmed shifts (detect_change() firing), only for agents with a real recognizer.
+		# In a stationary test phase every one is a false alarm.
+		if uses_env_detection(dataframe):
+			_draw_env_detection_overlay(axes[index], dataframe, ylim, x_at if by_steps else None)
 
 		# 3. Niche identity: "new" (never-seen niche) vs. "switch" (reclassified to a
 		# different, already-known niche). Fixed colors per kind so the legend swatch
@@ -287,7 +324,7 @@ def plot_academic_comparison(
 				elif kind == "switch" and not switch_labeled:
 					label, switch_labeled = "Niche Switch", True
 				axes[index].plot(
-					pos,
+					x_at(pos),
 					mean_score.iloc[pos],
 					"o" if kind == "new" else "x",
 					color=color_by_kind[kind],
@@ -298,6 +335,8 @@ def plot_academic_comparison(
 
 		axes[index].set_ylabel("Score", fontsize=12)
 		axes[index].set_ylim(ylim[0], ylim[1])
+		# The y axis crosses the x axis at episode 0, with no padding before the first episode.
+		axes[index].set_xlim(left=0, right=steps_right if by_steps else len(dataframe))
 		axes[index].set_title(
 			f"Agent: {names[index]}",
 			fontsize=14,
@@ -305,10 +344,11 @@ def plot_academic_comparison(
 			loc="left",
 		)
 		axes[index].grid(True, alpha=0.2)
-		axes[index].legend(loc="upper left")
+		# Outside the panel: inside, it covered the first phase's curve and recognition numbers.
+		axes[index].legend(loc="upper left", bbox_to_anchor=(1.01, 1.0), fontsize=9, borderaxespad=0)
 
 	plt.suptitle("Neuroevolutionary Adaptation\nAcross Gravitational Shifts", fontsize=16)
-	plt.xlabel("Total Episodes", fontsize=12)
+	plt.xlabel("Environment Steps" if by_steps else "Total Episodes", fontsize=12)
 	plt.tight_layout(rect=[0, 0.03, 1, 0.95])
 	if save_path:
 		figure.savefig(save_path, dpi=300)

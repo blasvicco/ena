@@ -36,8 +36,20 @@ class PPOAgent(ABaseline):
 		n_steps=2048,
 		value_coef=0.5,
 		anneal_lr=True,
+		max_grad_norm=0.5,
+		log_std_init=-2.0,
+		reward_scaling="reward",
 	):
-		"""Initialize PPOAgent (anneal_lr: linear learning-rate decay to zero over the training budget, as in the paper)."""
+		"""Initialize PPOAgent.
+
+		anneal_lr: linear learning-rate decay to zero over the training budget, as in the paper.
+		max_grad_norm: global-norm gradient clip, applied to the actor's and the critic's gradients separately.
+		log_std_init: initial state-independent log std of the Gaussian policy (continuous only).
+		reward_scaling (continuous only): "reward" divides each reward by the running std of rewards;
+		"return" by the running std of the discounted return, reset at episode ends (SB3's VecNormalize).
+		"""
+		if reward_scaling not in ("reward", "return"):
+			raise ValueError(f"Unknown reward_scaling {reward_scaling!r}; expected 'reward' or 'return'")
 		super().__init__(brain, make_env)
 		self.learn = True
 		self.best_individual_idx = "PPO"
@@ -53,6 +65,9 @@ class PPOAgent(ABaseline):
 		self.value_coef = value_coef
 		self.initial_lr = learning_rate
 		self.anneal_lr = anneal_lr
+		self.max_grad_norm = max_grad_norm
+		self.reward_scaling = reward_scaling
+		self._discounted_return = 0.0
 
 		# Annealing state
 		self._total_updates = 0
@@ -73,9 +88,9 @@ class PPOAgent(ABaseline):
 
 		# State-independent log_std for Gaussian policy (continuous only)
 		if self.is_continuous:
-			# Initializing log_std to -2.0 (std ~ 0.14) is standard for MuJoCo
+			# log_std_init -2.0 (std ~ 0.14) by default, as in RL Baselines3 Zoo's tuned HalfCheetah PPO
 			self.log_std = tf.Variable(
-				tf.fill([self.action_dim], -2.0),
+				tf.fill([self.action_dim], float(log_std_init)),
 				trainable=True,
 			)
 
@@ -232,9 +247,15 @@ class PPOAgent(ABaseline):
 		self._buf_states.append(self._obs_normalizer.normalize(raw_state))
 		self._buf_actions.append(self._last_unclipped_action)
 
-		# Reward scaling: divide by running std (no mean subtraction)
+		# Reward scaling: divide by a running std (no mean subtraction), of the rewards or of the discounted return.
 		reward = step_data["reward"]
-		self._reward_normalizer.update(np.array([[reward]]))
+		if self.reward_scaling == "return":
+			self._discounted_return = self.gamma * self._discounted_return + reward
+			self._reward_normalizer.update(np.array([[self._discounted_return]]))
+			if step_data.get("done", False):
+				self._discounted_return = 0.0
+		else:
+			self._reward_normalizer.update(np.array([[reward]]))
 		scaled_reward = float(reward / np.sqrt(self._reward_normalizer.var[0] + 1e-8))
 		self._buf_rewards.append(scaled_reward)
 
@@ -357,8 +378,8 @@ class PPOAgent(ABaseline):
 		actor_grads = grads[: len(actor_params)]
 		critic_grads = grads[len(actor_params) :]
 
-		actor_grads, _ = tf.clip_by_global_norm(actor_grads, 0.5)
-		critic_grads, _ = tf.clip_by_global_norm(critic_grads, 0.5)
+		actor_grads, _ = tf.clip_by_global_norm(actor_grads, self.max_grad_norm)
+		critic_grads, _ = tf.clip_by_global_norm(critic_grads, self.max_grad_norm)
 
 		self.optimizer.apply_gradients(zip(actor_grads + critic_grads, all_params))
 

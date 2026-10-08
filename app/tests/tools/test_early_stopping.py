@@ -87,3 +87,14 @@ def test_without_stop_when_solved_checks_end_after_the_first_solve() -> None:
 		assert not rule.due(1_000_000)
 		rule.start_phase()
 		assert rule.due(10)
+
+
+def test_check_after_solve_keeps_checking_to_the_end_of_the_phase() -> None:
+	"""HalfCheetah needs the return at the end of each environment (forgetting), not only the first solve."""
+	with step("Arrange: a fixed-budget rule that keeps checking, solved at the first check."):
+		rule = StoppingRule(check_every=100, solved_score=10.0, stop_when_solved=False, stop_on_plateau=False, check_after_solve=True)
+		rule.start_phase()
+		rule.record(100, 50.0)
+
+	with step("Act/Assert: the next check still falls due."):
+		assert rule.due(200)

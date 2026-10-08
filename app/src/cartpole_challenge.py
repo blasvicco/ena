@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""ENA vs. state-of-the-art RL on non-stationary CartPole — same early-stopping rule for all, frozen test (50 replicates)."""
+"""ENA vs. state-of-the-art RL on non-stationary CartPole — equal step budget for all, frozen test (50 replicates)."""
 
 # General imports
 import argparse
@@ -13,14 +13,12 @@ from keras import Input, Model, initializers
 from keras.layers import Dense
 
 # App imports
-from agents import DQNAgent, ENAgent, PPOAgent, RandomAgent, SACDiscreteAgent
-from cartpole_ena_performance import (
-	PERFORMANCE_VARIANTS,
-	TESTING_EPISODES,
+from agents import DQNAgent, PPOAgent, RandomAgent, SACDiscreteAgent
+from cartpole_ena_ablation import (
+	ABLATION_VARIANTS,
 	TRAINING_EPISODES_ENA,
 	MAX_WORKERS,
-	agent_testing,
-	agent_training,
+	build_seeded,
 	build_ena_agent,
 	make_env,
 	make_training_worlds,
@@ -29,12 +27,15 @@ from cartpole_ena_performance import (
 	run_study,
 	seed_experiment,
 	select_variants,
+	train_and_test,
 )
 from tools.early_stopping import StoppingRule
 from tools.visualization import vprint
 
 # Constants
 NUM_EXPERIMENTS = 50
+# SAC-Discrete target entropy, as a share of the maximum log|A| (see build_agent and tools/sac_discrete_entropy_check.py).
+SAC_DISCRETE_TARGET_ENTROPY = 0.5
 # Anchored to this file's own location (one level up from src/), not the caller's cwd.
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cartpole_challenge_outputs")
 ENA_NAME = "ENA-Combined"
@@ -46,7 +47,7 @@ ENA_NAME = "ENA-Combined"
 # - "first-solve": training on each environment ends at the first solve, a plateau or the
 #   MAX_STEPS_PER_ENV cap (answers "who solves it soonest"; results in cartpole_challenge_first_solve_outputs).
 # Common to both:
-# - ENA is the performance study's ENA-Combined (Plasticity + Hall of Fame + env detection, bpr
+# - ENA is the ablation's ENA-Combined (Plasticity + Hall of Fame + env detection, bpr
 #   selection, linear_ramp plasticity and trust).
 # - Training: every agent trains on each environment under the same StoppingRule — a frozen
 #   evaluation (EVAL_EPISODES episodes, separate env copy, the agent's test-time policy) every
@@ -65,7 +66,7 @@ PLATEAU_CHECKS = 40  # 200k env-steps without a 10-point gain
 PLATEAU_MIN_GAIN = 10.0
 MAX_STEPS_PER_ENV = 3_000_000
 # Per-environment budget for the fixed-budget protocol: about ENA-Combined's own consumption in the
-# performance study (7.68M env-steps over 3 environments, candidate evaluations included).
+# ablation (7.68M env-steps over 3 environments, candidate evaluations included).
 FIXED_BUDGET_PER_ENV = 2_500_000
 PROTOCOLS = ("fixed-budget", "first-solve")
 OUTPUT_DIRS = {
@@ -113,7 +114,7 @@ def ppo_critic_brain(_action_dim: int, state_dim: int, hidden: tuple = (64, 64))
 def build_agent(name: str, max_agent_threads: int):
 	"""One challenge agent by name; its training episodes are set later (or replaced by ENA's step budget)."""
 	if name == ENA_NAME:
-		return build_ena_agent(next(row for row in PERFORMANCE_VARIANTS if row["name"] == ENA_NAME), max_agent_threads)
+		return build_ena_agent(next(row for row in ABLATION_VARIANTS if row["name"] == ENA_NAME), max_agent_threads)
 	if name == "DQN":
 		agent = DQNAgent(brain=mlp_brain, make_env=make_env)
 	elif name == "PPO":
@@ -123,9 +124,9 @@ def build_agent(name: str, max_agent_threads: int):
 	elif name == "SAC-Discrete":
 		# Target entropy 0.5 x log|A| instead of the paper's 0.98: with CartPole's 2 actions, 0.98 is almost
 		# the maximum entropy, the policy can't reach it, and the temperature alpha grows without bound
-		# (measured: alpha 1.9 -> 20,700 and Q 13 -> 130,000 within 150k steps, play collapsing to random).
-		# 0.89 (CleanRL's choice) diverged the same way; 0.5 stayed stable (alpha ~1-3.5, Q bounded).
-		agent = SACDiscreteAgent(brain=mlp_brain, make_env=make_env, target_entropy_ratio=0.5)
+		# and play collapses to random; 0.89, CleanRL's choice, diverges the same way; 0.5 stays bounded
+		# (measured by tools/sac_discrete_entropy_check.py).
+		agent = SACDiscreteAgent(brain=mlp_brain, make_env=make_env, target_entropy_ratio=SAC_DISCRETE_TARGET_ENTROPY)
 	elif name == "Random":
 		agent = RandomAgent(brain=None, make_env=make_env)
 	else:
@@ -167,32 +168,10 @@ def run_experiment(experiment_id: int, output_dir: str, queue, variants: list, i
 
 		worlds = make_training_worlds()
 		max_agent_threads = max(1, os.cpu_count() // MAX_WORKERS)
-		agents = [build_agent(name, max_agent_threads) for name in names + (["Random"] if include_random else [])]
+		agents = [build_seeded(experiment_id, build_agent, name, max_agent_threads) for name in names + (["Random"] if include_random else [])]
 
-		agent_training(
-			agents=agents,
-			experiment_id=experiment_id,
-			output_dir=output_dir,
-			output_file=output_file,
-			queue=queue,
-			worlds=worlds,
-			stopping=make_stopping_rule(protocol),
-			eval_worlds=make_training_worlds(),
-		)
-
-		for agent in agents:
-			agent.set_episodes(TESTING_EPISODES)
-			if isinstance(agent, ENAgent):
-				agent.load_gladiators()
-
-		agent_testing(
-			agents=agents,
-			experiment_id=experiment_id,
-			output_dir=output_dir,
-			output_file=output_file,
-			queue=queue,
-			worlds=worlds,
-		)
+		training = {"stopping": make_stopping_rule(protocol), "eval_worlds": make_training_worlds(), "training_x_axis": "env_steps"}
+		train_and_test(agents, experiment_id, output_dir, output_file, queue, worlds, training=training)
 
 		post_update(experiment_id, queue, status="Done", done=True, progress=2)
 
@@ -205,7 +184,8 @@ def parse_challenge_args(argv: list = None) -> argparse.Namespace:
 	args = parse_args(
 		remaining,
 		variant_table=CHALLENGE_AGENTS,
-		defaults={"output_dir": OUTPUT_DIRS[known.protocol], "num_experiments": NUM_EXPERIMENTS, "include_random": True},
+		# No Random floor by default: it does not learn, so its frozen test is the one the skill ablation already reports.
+		defaults={"output_dir": OUTPUT_DIRS[known.protocol], "num_experiments": NUM_EXPERIMENTS, "include_random": False},
 	)
 	args.protocol = known.protocol
 	return args
@@ -224,4 +204,5 @@ if __name__ == "__main__":
 		f"ENA CHALLENGE ({ARGS.protocol})",
 		experiment_fn=functools.partial(run_experiment, protocol=ARGS.protocol),
 		workers=ARGS.workers,
+		threads_per_worker=ARGS.threads_per_worker,
 	)

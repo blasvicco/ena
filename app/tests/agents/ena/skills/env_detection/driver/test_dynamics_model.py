@@ -128,19 +128,18 @@ def test_reset_forgets_the_current_niche_and_start_episode_re_identifies_it() ->
 
 
 @pytest.mark.parametrize("physics, expected", [(PHYSICS_A, 0), (PHYSICS_B, 1), (PHYSICS_C, -1)], ids=["A", "B", "novel"])
-def test_match_resolves_known_physics_and_rejects_novel_ones(physics, expected) -> None:
-	"""match() returns the niche whose model explains the transitions, or -1 for unseen physics."""
+def test_identification_resolves_known_physics_and_rejects_novel_ones(physics, expected) -> None:
+	"""Identification returns the niche whose model explains the transitions, or -1 for unseen physics."""
 	with step("Arrange: a two-niche recognizer, reset, then one episode under the given physics."):
 		recognizer = _two_niche_recognizer()
 		recognizer.reset()
 		_episode(recognizer, physics, seed=5)
 
-	with step("Act: match."):
-		niche_id, similarity = recognizer.match(memory=None)
+	with step("Act: identify."):
+		niche_id = recognizer._instance._identify()  # pylint: disable=protected-access
 
-	with step("Assert: the expected niche; similarity near 1 only when recognized."):
+	with step("Assert: the expected niche."):
 		assert niche_id == expected
-		assert (similarity > 0.5) == (expected != -1)
 
 
 def test_log_likelihoods_rank_the_true_niche_first() -> None:
@@ -292,14 +291,35 @@ def test_a_niche_recognizes_its_own_nonlinear_physics_on_states_it_saw_little_of
 		_nonlinear(recognizer, PHYSICS_A[0], scale=0.3, seed=1)
 		_induct(recognizer)
 
-	with step("Act: match wide states (std 1.0) under gain A, then under gain B."):
+	with step("Act: identify wide states (std 1.0) under gain A, then under gain B."):
 		recognizer.reset()
 		_nonlinear(recognizer, PHYSICS_A[0], scale=1.0, seed=2)
-		same, _ = recognizer.match(memory=None)
+		same = recognizer._instance._identify()  # pylint: disable=protected-access
 		recognizer.reset()
 		_nonlinear(recognizer, PHYSICS_B[0], scale=1.0, seed=3)
-		other, _ = recognizer.match(memory=None)
+		other = recognizer._instance._identify()  # pylint: disable=protected-access
 
 	with step("Assert: A recognized as niche 0; B rejected as novel."):
 		assert same == 0
 		assert other == -1
+
+
+def test_at_test_time_a_dismissed_alarm_does_not_change_the_niche_models() -> None:
+	"""Review #10: during the frozen test the detector still detects and identifies, but its dynamics
+	models stay as training left them — a dismissed alarm's transitions are not learned from."""
+	with step("Arrange: niche 0 learned on A, and an alarm forced on the next step."):
+		recognizer = _recognizer()
+		_episode(recognizer, PHYSICS_A, seed=1)
+		_induct(recognizer)
+		model = recognizer._instance._models[0]  # pylint: disable=protected-access
+		count_before = model.count
+		_force_one_alarm(recognizer)
+
+	with step("Act: an A episode, then the episode-end check in test mode."):
+		_episode(recognizer, PHYSICS_A, steps=100, seed=2)
+		fired = recognizer.detect_change(memory=None, learn=False)
+
+	with step("Assert: no shift, same niche, and the model unchanged."):
+		assert fired is False
+		assert recognizer.current_niche_id == 0
+		assert model.count == count_before

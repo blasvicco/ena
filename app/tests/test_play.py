@@ -1,4 +1,4 @@
-"""Tests for the shared study runner's play() (cartpole_ena_performance.py, reused by every CartPole study)."""
+"""Tests for the shared study runner's play() (cartpole_ena_ablation.py, reused by every CartPole study)."""
 
 # General imports
 from types import SimpleNamespace
@@ -10,8 +10,8 @@ import pytest
 
 # App imports
 from helpers import step
-import cartpole_ena_performance
-from cartpole_ena_performance import make_eta_reporter, play
+import cartpole_ena_ablation
+from cartpole_ena_ablation import make_eta_reporter, play
 from tools.early_stopping import StoppingRule
 
 
@@ -127,8 +127,8 @@ def test_make_eta_reporter_estimates_and_reports_eta(monkeypatch) -> None:
 		posted = []
 		queue = SimpleNamespace(put=posted.append)
 		times = iter([100.0, 110.0])
-		monkeypatch.setattr(cartpole_ena_performance.time, "time", lambda: next(times))
-		start_time = cartpole_ena_performance.time.time()  # consumes the first scripted value (100.0)
+		monkeypatch.setattr(cartpole_ena_ablation.time, "time", lambda: next(times))
+		start_time = cartpole_ena_ablation.time.time()  # consumes the first scripted value (100.0)
 		reporter = make_eta_reporter(experiment_id=0, queue=queue, label="Training", agent_name="Agent-X", start_time=start_time)
 
 	with step("Act: report at episode 5 of 20 (10s for 5 episodes -> 2s/episode -> 30s remaining)."):
@@ -146,7 +146,7 @@ def test_make_eta_reporter_estimates_and_reports_eta(monkeypatch) -> None:
 def test_format_duration_includes_explicit_units(seconds, expected) -> None:
 	"""ETA must be unambiguous — explicit h/m/s units, not a bare H:MM:SS."""
 	with step("Act/Assert: format_duration renders the expected unit-labeled string."):
-		assert cartpole_ena_performance.format_duration(seconds) == expected
+		assert cartpole_ena_ablation.format_duration(seconds) == expected
 
 
 def test_make_eta_reporter_skips_at_phase_boundaries() -> None:
@@ -297,7 +297,7 @@ def test_evaluate_agent_plays_frozen_without_training_and_restores_the_learn_fla
 		agent.act = _recording_act
 
 	with step("Act: evaluate 3 episodes of 10 steps."):
-		mean, steps = cartpole_ena_performance.evaluate_agent(agent, _StepsEnv(10), episodes=3)
+		mean, steps = cartpole_ena_ablation.evaluate_agent(agent, _StepsEnv(10), episodes=3)
 
 	with step("Assert: frozen during evaluation, learning again afterwards; 30 evaluation steps."):
 		assert set(seen) == {False}
@@ -330,3 +330,77 @@ def test_play_with_a_fixed_budget_never_solved_reports_the_budget() -> None:
 		assert history.attrs["phases"][0]["status"] == "cap"
 		assert history.attrs["phases"][0]["solve_steps"] is None
 		assert history.attrs["phases"][0]["steps"] == 40
+
+
+def _random_returns(env_seed, episodes=5):
+	"""Returns of a Random agent on a fresh CartPole world, with or without environment seeding."""
+	from agents import RandomAgent  # pylint: disable=import-outside-toplevel
+
+	agent = RandomAgent(brain=None, make_env=cartpole_ena_ablation.make_env)
+	agent.set_learning(False)
+	history = play(agent, [cartpole_ena_ablation.make_env(name="Earth")], [episodes], env_seed=env_seed)
+	return history["score"].tolist()
+
+
+def test_play_with_an_env_seed_is_reproducible_and_seed_specific() -> None:
+	"""Seeded environments: the same seed replays the same episodes (initial states and, for Random, its
+	actions); a different seed gives different ones."""
+	with step("Act: two runs with seed 7 on fresh worlds and agents, one with seed 8."):
+		first, second, other = _random_returns(7), _random_returns(7), _random_returns(8)
+
+	with step("Assert: identical for the same seed, different for another."):
+		assert first == second
+		assert first != other
+
+
+def test_training_and_testing_seed_the_environments_per_replicate_and_equally_for_every_agent(monkeypatch, tmp_path) -> None:
+	"""Every agent of a replicate meets the same seeded environment stream (common random numbers);
+	replicates differ; the test phase uses its own seed."""
+	with step("Arrange: capture play()'s env_seed for two agents, in two replicates."):
+		seeds = []
+
+		def _fake_play(agent, _worlds, _episodes, env_seed=None, **_kwargs):
+			seeds.append((agent.get_name(), env_seed))
+			return pd.DataFrame({"env_id": ["Mars"], "env_steps": [1], "score": [1.0]})
+
+		monkeypatch.setattr(cartpole_ena_ablation, "play", _fake_play)
+		for helper in ("calculate_paper_metrics", "calculate_compute_cost", "calculate_adaptation", "plot_academic_comparison"):
+			monkeypatch.setattr(cartpole_ena_ablation, helper, lambda *args, **kwargs: None)
+		agents = [
+			SimpleNamespace(get_name=lambda: "A", get_episodes=lambda: [1] * 5, set_learning=lambda *a, **k: None),
+			SimpleNamespace(get_name=lambda: "B", get_episodes=lambda: [1] * 5, set_learning=lambda *a, **k: None),
+		]
+
+	with step("Act: train and test replicate 0, then train replicate 1."):
+		with open(tmp_path / "outputs.txt", "w", encoding="utf-8") as output_file:
+			cartpole_ena_ablation.agent_training(agents, 0, str(tmp_path), output_file, None, ["W"] * 3)
+			cartpole_ena_ablation.agent_testing(agents, 0, str(tmp_path), output_file, None, ["W"] * 3, test_worlds=["W"] * 5)
+			cartpole_ena_ablation.agent_training(agents, 1, str(tmp_path), output_file, None, ["W"] * 3)
+
+	with step("Assert: same seed for both agents within a phase; distinct across phases and replicates."):
+		(train_a, train_b, test_a, test_b, next_a, next_b) = [seed for _name, seed in seeds]
+		assert train_a is not None
+		assert train_a == train_b
+		assert test_a == test_b
+		assert len({train_a, test_a, next_a}) == 3
+		assert next_a == next_b
+
+
+class _CandidateAgent(_StepsAgent):
+	"""A steps agent that also spends a growing number of candidate-evaluation steps per episode."""
+
+	@property
+	def candidate_env_steps(self):
+		"""Episode n spends 10 * n candidate steps (cumulative counter, like ENAgent's)."""
+		return sum(10 * episode for episode in range(1, self._episodes + 1))
+
+
+def test_play_logs_the_actual_candidate_steps_spent_in_each_episode() -> None:
+	"""The compute column is what the agent actually spent per episode (the delta of its counter),
+	not an upper bound from its search-effort settings."""
+	with step("Act: three 10-step episodes."):
+		history = play(_CandidateAgent(), [_StepsEnv(10)], [3])
+
+	with step("Assert: 10, 20, 30 candidate steps; none logged for an agent without the counter."):
+		assert history["candidate_env_steps"].tolist() == [10, 20, 30]
+		assert play(_StepsAgent(), [_StepsEnv(10)], [1])["candidate_env_steps"].isna().all()

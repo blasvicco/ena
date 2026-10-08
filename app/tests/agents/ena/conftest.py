@@ -32,7 +32,6 @@ def build_agent():
 			"max_threads": 1,
 			"history_size": 20,
 			"max_eval_steps": 20,
-			"recognizer_ema_alpha": 0.5,
 		}
 		kwargs.update(overrides)
 		return ENAgent(**kwargs)

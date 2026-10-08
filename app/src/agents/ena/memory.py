@@ -8,12 +8,19 @@ import numpy as np
 # App imports
 from ..tools.normalizers import _RunningNormalizer
 
+# The return trend read by the fuzzy Plasticity controller (the paper reads these through tools/paper_config.py):
+# the mean of the last TREND_RECENT returns minus the mean of the returns before them, up to TREND_WINDOW in all,
+# and 0 until the history holds TREND_MIN_RETURNS returns.
+TREND_RECENT = 5
+TREND_WINDOW = 50
+TREND_MIN_RETURNS = 20
+
 
 # pylint: disable=too-many-instance-attributes
 class AgentMemory:
 	"""Centralized memory storage for all historical variables and statistics."""
 
-	def __init__(self, history_size, state_dim, max_eval_steps=500, ema_alpha=0.10):
+	def __init__(self, history_size, state_dim, max_eval_steps=500):
 		# 1. Global Statistics
 		self.max_seen = -np.inf
 		self.min_seen = np.inf
@@ -26,67 +33,23 @@ class AgentMemory:
 		self.last_episode_score = 0
 		self.current_episode_reward = 0
 		self.steps_this_episode = 0
-		self.step_rewards = deque(maxlen=100)
 
-		# 3. Recognizer Statistics
-		max_count = int(1.0 / ema_alpha) if ema_alpha > 0 else 1000
-		self.short_term_normalizer = _RunningNormalizer(shape=state_dim, max_count=max_count)
-		self.transition_normalizer = _RunningNormalizer(shape=state_dim, max_count=max_count)
-
-		# 4. Selection Controller Buffers (for REINFORCE)
-		self.contexts = []
-		self.actions = []
-		self.rewards = []
-
-	def update_transition(self, state, next_state):
-		"""Computes and tracks the transition dynamics (physics signature)."""
-		delta_s = next_state - state
-		self.transition_normalizer.update(delta_s[np.newaxis, :])
-
-	def record_step(self, state, next_state, reward):
-		"""Track transition dynamics and accumulate the running episode reward."""
-		self.update_transition(state, next_state)
+	def record_step(self, reward):
+		"""Accumulate the running episode reward."""
 		self.current_episode_reward += reward
-		self.step_rewards.append(reward)
 
 	@property
 	def performance_derivative(self):
 		"""Returns the derivative of the moving average of reward history."""
-		if len(self.reward_history) < 20:
+		if len(self.reward_history) < TREND_MIN_RETURNS:
 			return 0.0
 		history_list = list(self.reward_history)
-		baseline = float(np.mean(history_list[-50:-5]))
-		short_term = float(np.mean(history_list[-5:]))
+		baseline = float(np.mean(history_list[-TREND_WINDOW:-TREND_RECENT]))
+		short_term = float(np.mean(history_list[-TREND_RECENT:]))
 		return short_term - baseline
 
-	@property
-	def recent_plasticity(self):
-		"""Returns the recent average plasticity."""
-		if not self.plasticity_history:
-			return 1.0
-		return float(np.mean(self.plasticity_history[-5:]))
-
-	@property
-	def live_reward_rate(self):
-		"""Returns the moving average of recent step rewards within an episode."""
-		if not self.step_rewards:
-			return 0.0
-		return float(np.mean(self.step_rewards))
-
 	def clear_training_history(self):
-		"""Clears the training history when switching to test mode."""
+		"""Clears the return history on a training-time environment shift, so the new regime's returns don't mix with the old one's."""
 		self.reward_history.clear()
-		self.step_rewards.clear()
 		self.max_seen = -np.inf
 		self.min_seen = np.inf
-
-	def clear_selection_buffers(self):
-		"""Clears the REINFORCE experience buffers."""
-		self.contexts.clear()
-		self.actions.clear()
-		self.rewards.clear()
-
-	def reset_recognizer_statistics(self):
-		"""Flushes the short-term normalizers to cleanly adapt to a new environment."""
-		self.short_term_normalizer.reset()
-		self.transition_normalizer.reset()

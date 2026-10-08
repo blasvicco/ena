@@ -14,7 +14,6 @@ import numpy as np
 
 # App imports
 from agents.ena.skills.env_detection.driver.abstract import ADriver
-from agents.ena.skills.env_detection.driver.live import normalizer_signature, with_distress_signals
 from agents.ena.tools.linear_dynamics import LinearGaussianDynamics
 from agents.ena.tools.pm_cusum import PMCuSum
 
@@ -97,18 +96,6 @@ class Instance(ADriver):
 		"""Niches that own a dynamics model."""
 		return set(self._models.keys())
 
-	def update(self, state, memory) -> None:
-		"""Keep memory's short-term normalizer current (it feeds compute_physical_vector's context only)."""
-		memory.short_term_normalizer.update(state[np.newaxis, :])
-
-	def compute_physical_vector(self, memory) -> np.ndarray:
-		"""Context features for the selection skill's neural driver — not used for detection here."""
-		return normalizer_signature(memory.short_term_normalizer, memory.transition_normalizer)
-
-	def compute_full_vector(self, memory) -> np.ndarray:
-		"""compute_physical_vector plus the distress signals."""
-		return with_distress_signals(self.compute_physical_vector(memory), memory)
-
 	def start_episode(self) -> None:
 		"""Clear the per-episode buffer and re-identify the active niche from recent evidence."""
 		self._episode = []
@@ -140,8 +127,8 @@ class Instance(ADriver):
 			self._alarm_niche_id = self._current_niche_id
 			self._alarm_evidence = [transition]
 
-	def detect_change(self, memory) -> bool:
-		"""Confirm or dismiss a pending PM-CuSum alarm once enough post-alarm evidence exists."""
+	def detect_change(self, memory, learn: bool = True) -> bool:
+		"""Confirm or dismiss a pending PM-CuSum alarm once enough post-alarm evidence exists (models learn only in training)."""
 		if self._alarm_niche_id is None or len(self._alarm_evidence) < self._min_verify_samples:
 			return False
 		alarm_niche_id = self._alarm_niche_id
@@ -150,23 +137,14 @@ class Instance(ADriver):
 		self._alarm_niche_id = None
 		self._alarm_evidence = []
 		if explained:
-			# False alarm: a coverage gap in the model, not new physics — learn from it and restart.
-			self._absorb_pending(alarm_niche_id)
+			# False alarm: a coverage gap in the model, not new physics. Learn from it (training only:
+			# the test phase is frozen) and restart.
+			if learn:
+				self._absorb_pending(alarm_niche_id)
 			self._cusum.reset()
 			return False
 		self._carried_evidence = evidence
 		return True
-
-	def match(self, memory) -> tuple:
-		"""Return (niche_id, similarity) for the recent transitions; similarity 1.0 = as good as a fresh fit."""
-		if len(self._recent) < self._min_verify_samples:
-			return -1, 0.0
-		best_niche_id, gap = self._best_niche_and_gap()
-		if gap > self._novelty_margin:
-			self._current_niche_id = -1
-			return -1, math.exp(-min(gap, 700.0))
-		self._current_niche_id = best_niche_id
-		return best_niche_id, math.exp(-gap)
 
 	def match_niche(self, memory, current_individual: dict, hall_of_fame, population: list = None) -> int:
 		"""Late Identity Binding: resolve the winner's recent transitions to a niche, refining or creating its model."""

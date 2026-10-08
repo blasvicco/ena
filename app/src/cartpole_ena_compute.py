@@ -1,41 +1,28 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""ENA compute study — the Plasticity skill's effect on candidate-evaluation cost (zero / linear_ramp / full)."""
+"""ENA compute study: how much compute the failure-driven control of the search saves, and at what performance cost."""
 
 # General imports
 import os
 
 # App imports
-from cartpole_ena_performance import parse_args, run_study, select_variants
+from cartpole_ena_ablation import ABLATION_VARIANTS, parse_args, run_study, select_variants
 
-# The full agent (Hall of Fame + env detection) with only the plasticity driver varied:
-#   zero       — p = 0 always: 2 candidates x 10 steps per training episode (30,000 in total)
-#   linear_ramp — adaptive: p rises linearly toward 1 as the episode score falls toward the worst seen
-#   full       — p = 1 always: 100 candidates x 500 steps per training episode (~75 million)
-# The zero and full costs are deterministic, so one replicate measures them exactly; linear_ramp's
-# varies with each run's score trajectory, and its distribution comes from the performance
-# study's 50 ENA-Combined replicates (same config as ENA-Combined-PlasticityLinearRamp here). The cost
-# metric is the compute-cost table's total candidate env-steps (training phase).
-COMPUTE_VARIANTS = [
-	{
-		"name": "ENA-Combined-PlasticityZero",
-		"plasticity_algorithm": "zero",
-		"hall_of_fame_driver": "default",
-		"recognizer_strategy": "dynamics_model",
-	},
-	{
-		"name": "ENA-Combined-PlasticityLinearRamp",
-		"plasticity_algorithm": "linear_ramp",
-		"hall_of_fame_driver": "default",
-		"recognizer_strategy": "dynamics_model",
-	},
-	{
-		"name": "ENA-Combined-PlasticityFull",
-		"plasticity_algorithm": "full",
-		"hall_of_fame_driver": "default",
-		"recognizer_strategy": "dynamics_model",
-	},
-]
+# ENA-Combined (Hall of Fame + env detection) at three levels of search effort:
+#   full        — fixed maximum effort: every episode evaluates the whole population, at full depth;
+#   linear_ramp — the failure-driven control the paper proposes: effort scales with how badly the episode went;
+#   zero        — fixed minimum effort: 2 candidates x min_eval_steps per episode.
+# Only "full" runs here. The other two are the ablation's own rows of the same configuration
+# (REFERENCES): every agent of a replicate is reseeded before it is built, trained and tested, so
+# replicate i is the same run in either study, whatever the row is called
+# (test_a_variants_run_is_identical_with_or_without_other_agents_before_it). The cost is the
+# candidate-evaluation env-steps actually spent in training (machine-independent; wall-clock is not
+# comparable, since this run and the ablation ran under different machine load).
+# One replicate, by the author's decision: the cost difference is large, and what the paper reports
+# from this study is that replicate's measurement, not a statistical test.
+_COMBINED = next(row for row in ABLATION_VARIANTS if row["name"] == "ENA-Combined")
+COMPUTE_VARIANTS = [{**_COMBINED, "name": "ENA-Combined-PlasticityFull", "plasticity_algorithm": "full"}]
+REFERENCES = {"zero": "ENA-HoF+EnvDetection", "linear_ramp": "ENA-Combined"}
 NUM_EXPERIMENTS = 1
 # Anchored to this file's own location (one level up from src/), not the caller's cwd.
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cartpole_ena_compute_outputs")
@@ -52,4 +39,5 @@ if __name__ == "__main__":
 		ARGS.include_random,
 		"ENA COMPUTE",
 		workers=ARGS.workers,
+		threads_per_worker=ARGS.threads_per_worker,
 	)

@@ -20,11 +20,15 @@ class Instance(ADriver):
 	# - Z-score based induction with configurable threshold
 	# - Per-niche budget: each recognised niche holds up to max_per_niche gladiators
 	# - Niche protection via cosine similarity (no strategic twins)
-	# - Memory decay so stale records become vulnerable
+	# - Retention: a record is displaced only by a strictly higher-trust candidate of its own niche
 	# - Population injection: round-robin across niches, capped at max_gladiator_ratio * pop_size
 
 	SIMILARITY_THRESHOLD = 0.95
-	MEMORY_DECAY_RATE = 0.999  # Softer decay: 99.9% retention per check
+	# Induction gate: z = (T - mean) / max(std, GATE_SPREAD_FLOOR) >= GATE_Z * (1 - GATE_PLASTICITY_RELIEF * P), or T >= GATE_TRUST.
+	GATE_Z = 1.5
+	GATE_PLASTICITY_RELIEF = 0.5
+	GATE_SPREAD_FLOOR = 0.1
+	GATE_TRUST = 0.5
 
 	def __init__(self, max_per_niche, max_gladiator_ratio, brain, action_dim, state_dim):
 		# max_per_niche:       max gladiators stored per recognised niche
@@ -131,22 +135,18 @@ class Instance(ADriver):
 		# env_name is the environment the winner just succeeded in. It labels a new record
 		# (first induction, or a cross-niche clone) and is never written onto an existing one —
 		# a gladiator's label is fixed at induction.
-		self.__memory_decay()
-
-		current_z_score = self.__performance_gate(current_trust, population, memory.plasticity_history)
-		if current_z_score is None:
+		if not self.__passes_performance_gate(current_trust, population, memory.plasticity_history):
 			return
 
 		# Late Identity Binding: Determine the niche ID for this successful individual
 		recognizer.match_niche(memory, winner, self, population=population)
 
-		if self.__continual_improvement(winner, current_trust, current_z_score, recognizer, obs_normalizer, env_name):
+		if self.__continual_improvement(winner, current_trust, recognizer, obs_normalizer, env_name):
 			return
 
 		if self.__genetic_diversity(
 			winner,
 			current_trust,
-			current_z_score,
 			recognizer,
 			obs_normalizer,
 			population,
@@ -154,13 +154,12 @@ class Instance(ADriver):
 		):
 			return
 
-		if self.__slot_induction(winner, current_trust, current_z_score, recognizer, obs_normalizer, env_name):
+		if self.__slot_induction(winner, current_trust, recognizer, obs_normalizer, env_name):
 			return
 
 		self.__eco_niche_protection(
 			winner,
 			current_trust,
-			current_z_score,
 			recognizer,
 			obs_normalizer,
 			population,
@@ -169,7 +168,7 @@ class Instance(ADriver):
 
 	# Private
 	# pylint: disable=too-many-arguments,too-many-positional-arguments
-	def __continual_improvement(self, winner, current_trust, current_z_score, recognizer, obs_normalizer, env_name):
+	def __continual_improvement(self, winner, current_trust, recognizer, obs_normalizer, env_name):
 		"""STEP 3: CHECK FOR EXISTING ID"""
 		individual_id = winner["individual_id"]
 		if individual_id not in self._records:
@@ -184,7 +183,6 @@ class Instance(ADriver):
 			if current_trust > existing.get("trust", -99):
 				existing["model"].set_weights(winner["model"].get_weights())
 				existing["trust"] = current_trust
-				existing["induction_z_score"] = current_z_score
 				existing["last_mu"] = np.copy(obs_normalizer.mean)
 				existing["last_var"] = np.copy(obs_normalizer.var)
 				winner["internal_env_id"] = current_env_id
@@ -203,7 +201,6 @@ class Instance(ADriver):
 				if current_trust > record.get("trust", -99):
 					record["model"].set_weights(winner["model"].get_weights())
 					record["trust"] = current_trust
-					record["induction_z_score"] = current_z_score
 					record["last_mu"] = np.copy(obs_normalizer.mean)
 					record["last_var"] = np.copy(obs_normalizer.var)
 				return True
@@ -213,7 +210,6 @@ class Instance(ADriver):
 				"model": self._brain(self._action_dim, self._state_dim),
 				"individual_id": clone_id,
 				"trust": current_trust,
-				"induction_z_score": current_z_score,
 				"env_name": env_name,
 				"internal_env_id": current_env_id,
 				"is_gladiator": True,
@@ -225,7 +221,7 @@ class Instance(ADriver):
 		return True
 
 	# pylint: disable=too-many-arguments,too-many-positional-arguments
-	def __eco_niche_protection(self, winner, current_trust, current_z_score, recognizer, obs_normalizer, population, env_name):
+	def __eco_niche_protection(self, winner, current_trust, recognizer, obs_normalizer, population, env_name):
 		"""STEP 6: SAME-NICHE REPLACEMENT — evict weakest in winner's niche if winner is better."""
 		current_niche_id = recognizer.current_niche_id
 		niche_records = [individual for individual in self._records.values() if individual.get("internal_env_id") == current_niche_id]
@@ -234,7 +230,7 @@ class Instance(ADriver):
 		weakest = min(niche_records, key=lambda individual: individual.get("trust"))
 		if current_trust > weakest.get("trust"):
 			self.__evict(weakest["individual_id"], population)
-			self.__save(winner, current_trust, current_z_score, recognizer, obs_normalizer, env_name)
+			self.__save(winner, current_trust, recognizer, obs_normalizer, env_name)
 
 	def __evict(self, individual_id, population):
 		"""Remove a record from the archive and clear its live population member's gladiator tags."""
@@ -250,7 +246,7 @@ class Instance(ADriver):
 				break
 
 	# pylint: disable=too-many-arguments,too-many-positional-arguments
-	def __genetic_diversity(self, winner, current_trust, current_z_score, recognizer, obs_normalizer, population, env_name):
+	def __genetic_diversity(self, winner, current_trust, recognizer, obs_normalizer, population, env_name):
 		"""STEP 4: NICHE PROTECTION (Genetic Similarity)"""
 		current_env_id = recognizer.current_niche_id
 		for hof_id, hof_record in list(self._records.items()):
@@ -263,42 +259,33 @@ class Instance(ADriver):
 				existing_trust = hof_record.get("trust", -99)
 				if current_trust > existing_trust:
 					self.__evict(hof_id, population)
-					self.__save(winner, current_trust, current_z_score, recognizer, obs_normalizer, env_name)
+					self.__save(winner, current_trust, recognizer, obs_normalizer, env_name)
 				# Whether we replaced or not, twin found — exit
 				return True
 		return False
 
-	def __memory_decay(self):
-		"""STEP 1: MEMORY DECAY"""
-		for item in self._records.values():
-			item["induction_z_score"] = item.get("induction_z_score", 0) * self.MEMORY_DECAY_RATE
-
-	def __performance_gate(self, current_trust, population, plasticity_history):
-		"""STEP 2: CALCULATE CONTEXT & METRICS"""
+	def __passes_performance_gate(self, current_trust, population, plasticity_history) -> bool:
+		"""STEP 1: PERFORMANCE GATE — the winner's trust stands out (z-score, bar lowered by plasticity) or is high on its own."""
 		current_trusts = [guy["trust"] for guy in population]
 		avg_trust = np.mean(current_trusts)
 		# std_trust floor prevents Z-score explosions on uniform populations
-		std_trust = max(np.std(current_trusts), 0.1)
+		std_trust = max(np.std(current_trusts), self.GATE_SPREAD_FLOOR)
 
 		current_z_score = (current_trust - avg_trust) / std_trust
 
 		current_plasticity = plasticity_history[-1] if plasticity_history else 1.0
-		z_score_required = 1.5 * (1.0 - (current_plasticity * 0.5))
+		z_score_required = self.GATE_Z * (1.0 - (current_plasticity * self.GATE_PLASTICITY_RELIEF))
 
-		# Early exit: not impressive enough relative to current peers
-		if current_z_score < z_score_required and current_trust < 0.5:
-			return None
-		return current_z_score
+		return current_z_score >= z_score_required or current_trust >= self.GATE_TRUST
 
 	# pylint: disable=too-many-arguments,too-many-positional-arguments
-	def __save(self, individual, trust, z_score, recognizer, obs_normalizer, env_name):
+	def __save(self, individual, trust, recognizer, obs_normalizer, env_name):
 		"""Deep copy of a specialist into the Hall of Fame."""
 		backup = {}
 		backup["model"] = self._brain(self._action_dim, self._state_dim)
 		backup["model"].set_weights(individual["model"].get_weights())
 		backup["individual_id"] = individual["individual_id"]
 		backup["trust"] = trust
-		backup["induction_z_score"] = z_score
 		backup["env_name"] = env_name
 		backup["internal_env_id"] = recognizer.current_niche_id
 		backup["last_mu"] = np.copy(obs_normalizer.mean)
@@ -314,11 +301,11 @@ class Instance(ADriver):
 		individual["last_var"] = np.copy(obs_normalizer.var)
 
 	# pylint: disable=too-many-arguments,too-many-positional-arguments
-	def __slot_induction(self, winner, current_trust, current_z_score, recognizer, obs_normalizer, env_name):
+	def __slot_induction(self, winner, current_trust, recognizer, obs_normalizer, env_name):
 		"""STEP 5: OPEN SLOT INDUCTION — induct if winner's niche is below budget."""
 		current_niche_id = recognizer.current_niche_id
 		niche_count = sum(1 for individual in self._records.values() if individual.get("internal_env_id") == current_niche_id)
 		if niche_count < self.max_per_niche:
-			self.__save(winner, current_trust, current_z_score, recognizer, obs_normalizer, env_name)
+			self.__save(winner, current_trust, recognizer, obs_normalizer, env_name)
 			return True
 		return False

@@ -1,7 +1,7 @@
 """Predictive-Mixture CuSum: quickest detection of a change away from a known pre-change distribution."""
 
 # Algorithm: Predictive-Mixture CuSum (PM-CuSum)
-# Reference: Halme, Poor & Koivunen, "Sequential Change Detection using Mixtures of Predictive Distributions" (2026)
+# Reference: Halme, Poor & Koivunen, "Adaptive Sequential Change Detection using Mixtures of Predictive Distributions" (2026)
 # https://arxiv.org/abs/2606.05072
 
 # General imports

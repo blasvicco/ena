@@ -10,3 +10,10 @@ services:
     command: ["tail", "-f", "/dev/null"]
     container_name: ena-experiment
     working_dir: /home/app
+  paper:
+    image: texlive/texlive:latest
+    volumes:
+      - ./app/latex:/workdir
+    command: ["tail", "-f", "/dev/null"]
+    container_name: ena-paper
+    working_dir: /workdir

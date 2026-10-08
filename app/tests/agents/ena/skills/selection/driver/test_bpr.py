@@ -7,7 +7,7 @@ import pytest
 from helpers import step
 from agents.ena.skills.selection.driver.bpr import Instance
 
-ENV_MAX_STEPS = 500.0
+RETURN_SCALE = 475.0  # CartPole-v1's solved threshold: utility 1 = solved
 
 
 # pylint: disable=too-few-public-methods
@@ -30,7 +30,7 @@ def _population(gladiator_niches=(0, 1, 2)):
 
 
 def _driver(**kwargs):
-	driver = Instance(exploration_rate=0.0, env_max_steps=ENV_MAX_STEPS, **kwargs)
+	driver = Instance(exploration_rate=0.0, return_scale=RETURN_SCALE, **kwargs)
 	driver.evaluate(_population())
 	return driver
 
@@ -38,7 +38,7 @@ def _driver(**kwargs):
 def _episode(driver, score, recognizer=None):
 	"""Select, then report the episode's score; return the population index that played."""
 	played = driver.select_individual(_population(), recognizer, memory=None, learn=False)
-	assert driver.record_episode_result(score, memory=None, recognizer=recognizer) is False
+	driver.record_episode_result(score, memory=None, recognizer=recognizer)
 	return played
 
 
@@ -67,7 +67,7 @@ def test_dynamics_likelihoods_concentrate_the_belief_and_pick_that_niches_gladia
 
 
 def test_returns_alone_move_the_belief_away_from_a_failing_specialist() -> None:
-	"""Without dynamics likelihoods (e.g. the live driver), a specialist scoring ~0 in what the belief
+	"""Without dynamics likelihoods (e.g. the none driver), a specialist scoring ~0 in what the belief
 	thought was its own niche shifts the belief elsewhere and another gladiator gets picked."""
 	with step("Arrange: a driver whose first pick is some niche's own gladiator."):
 		driver = _driver()
@@ -97,7 +97,7 @@ def test_switching_prior_lets_a_changed_environment_win_the_belief_back() -> Non
 		assert picks[-1] == 1
 
 
-def test_training_uses_the_heuristic_epsilon_greedy_trust_selection() -> None:
+def test_training_uses_epsilon_greedy_selection_by_trust() -> None:
 	"""learn=True bypasses the belief entirely: highest trust wins (exploration off)."""
 	with step("Arrange: a population where slot 3 (a non-gladiator) has the highest trust."):
 		driver = _driver()
@@ -111,17 +111,16 @@ def test_training_uses_the_heuristic_epsilon_greedy_trust_selection() -> None:
 def test_with_no_gladiators_it_plays_a_non_gladiator() -> None:
 	"""No niches known yet: fall back to a random non-gladiator, and don't update anything."""
 	with step("Arrange: a driver evaluated on a population without gladiators."):
-		driver = Instance(exploration_rate=0.0, env_max_steps=ENV_MAX_STEPS)
+		driver = Instance(exploration_rate=0.0, return_scale=RETURN_SCALE)
 		population = _population(gladiator_niches=())
 		driver.evaluate(population)
 
 	with step("Act: select and report."):
 		pick = driver.select_individual(population, None, memory=None, learn=False)
-		forced = driver.record_episode_result(100.0, memory=None, recognizer=None)
+		driver.record_episode_result(100.0, memory=None, recognizer=None)
 
-	with step("Assert: a non-gladiator, no forced reset, empty belief."):
+	with step("Assert: a non-gladiator, and an empty belief."):
 		assert population[pick]["is_gladiator"] is False
-		assert forced is False
 		assert not driver.belief
 
 
@@ -136,7 +135,7 @@ def test_a_failing_own_niche_gladiator_is_abandoned_even_when_the_niche_is_certa
 			{"individual_id": "mars-b", "trust": 2.0, "is_gladiator": True, "internal_env_id": 0},
 			{"individual_id": "jupiter", "trust": 1.0, "is_gladiator": True, "internal_env_id": 1},
 		]
-		driver = Instance(exploration_rate=0.0, env_max_steps=ENV_MAX_STEPS)
+		driver = Instance(exploration_rate=0.0, return_scale=RETURN_SCALE)
 		driver.evaluate(population)
 		recognizer = _FakeRecognizer({0: 0.0, 1: -5000.0})
 
@@ -150,3 +149,21 @@ def test_a_failing_own_niche_gladiator_is_abandoned_even_when_the_niche_is_certa
 	with step("Assert: starts with the higher-trust slot 1, abandons it, and settles on the working niche-0 gladiator."):
 		assert picks[0] == 1
 		assert picks[-1] == 0
+
+
+def test_a_gladiator_solving_its_own_niche_strengthens_the_belief_in_that_niche() -> None:
+	"""Review #7/#8 regression: utility is return / solved return, so solving the environment (utility 1)
+	matches the own-niche prior and is evidence FOR the gladiator's niche. With the old step-count
+	scale (CartPole 1000), a perfect 475-500 read as utility ~0.5 — the cross-niche prior — and moved
+	the belief away from the right niche."""
+	with step("Arrange: three niches, uniform belief, no dynamics evidence."):
+		driver = _driver()
+		population = _population()
+
+	with step("Act: the chosen gladiator scores exactly the solved return."):
+		played = driver.select_individual(population, None, memory=None, learn=False)
+		driver.record_episode_result(RETURN_SCALE, memory=None, recognizer=None)
+
+	with step("Assert: its home niche gained belief."):
+		home = population[played]["internal_env_id"]
+		assert driver.belief[home] > 1 / 3

@@ -1,0 +1,68 @@
+\section{Experimental Setup}
+\label{sec:setup}
+
+We evaluate ENA in two non-stationary domains built on Gymnasium~\cite{towers2024gymnasium}: the discrete-action \texttt{CartPole-v1}~\cite{barto1983neuronlike} and the continuous-control MuJoCo~\cite{todorov2012mujoco} \texttt{HalfCheetah-v5}. In both, the agent trains on three environments in sequence, without being told when the environment changes, and is then tested, frozen, on five environments, two of which it has never seen.
+
+\subsection{Environments}
+
+\subsubsection{CartPole}
+Each environment changes the gravity $g$, the pole mass $m_p$ and the pole half-length $\ell$ (Table~\ref{tab:cartpole_worlds}). The training sequence is Mars, Jupiter, Earth. The test sequence interleaves them with two unseen environments: Mars, Neptune, Jupiter, Brown-dwarf, Earth. Neptune is close to Earth; Brown-dwarf extrapolates beyond Jupiter's gravity. An episode ends when the pole falls or after \Res{cfg/cartpole/maxsteps} steps; a return of \Res{cfg/cartpole/solved} or more counts as a success, the threshold at which Gymnasium considers \texttt{CartPole-v1} solved.
+
+\input{generated/table_cartpole_envs}
+
+\subsubsection{HalfCheetah}
+Each environment changes the gravity, the ground friction (applied to every contact surface, since MuJoCo uses the larger friction of two touching bodies) and the wind (Table~\ref{tab:cheetah_worlds}). The training sequence is Mars-Slippery, Jupiter-Rough, Earth; the test sequence adds the unseen Ice-Floor and High-Wind, which keep Earth's gravity and change only the ground or the air. \todo{Success threshold for HalfCheetah (Stage 2 decision: 4800, Gymnasium's registered threshold, or another value).}
+
+\input{generated/table_cheetah_envs}
+
+\subsection{Protocols}
+
+\subsubsection{Skill ablation (CartPole)}
+Each ENA variant trains for \Res{cfg/cartpole/train} episodes per environment and is then tested for \Res{cfg/cartpole/test} episodes per environment. We run \Res{ablation/n} independent replicates. Replicate $i$ seeds Python's, NumPy's and TensorFlow's random number generators with $\Res{cfg/cartpole/seedoffsetraw} + i$ before each agent is built, trained and tested, and seeds every environment from the same number, so all the agents of a replicate start from the same random state and meet the same initial states: they differ only in what they are.
+
+\subsubsection{Comparison with gradient-based agents}
+Comparing a population method with single-policy agents is only fair at equal interaction. Every agent therefore trains on each environment for the same budget of environment steps: \Res{cfg/challenge/budget} in CartPole. \todo{HalfCheetah budget: Stage 2 decision.} ENA's budget includes every step it spends evaluating candidates~\eqref{eq:plasticity}, not only the episodes it plays. Because ENA spends \Res{challenge/ENA-Combined/candshare/mean}\% of its training steps evaluating candidates, it plays far fewer episodes within the same budget: about \Res{challenge/ENA-Combined/episodes/perenv} per environment, against \Res{challenge/DQN/episodes/perenv} for DQN, \Res{challenge/PPO/episodes/perenv} for PPO and \Res{challenge/SAC-Discrete/episodes/perenv} for SAC-Discrete. Training is therefore compared and plotted against environment steps, not episodes, so every agent spans the same budget and a point on a training curve marks how much of the budget had been spent. The frozen test needs no such normalization, since every agent plays the same number of test episodes. No agent observes the physical parameters or is told when the environment changes; Appendix~\ref{app:information} lists what each agent receives. Every \Res{cfg/challenge/checkevery} training steps (CartPole), the agent is evaluated, frozen, for \Res{cfg/challenge/evalepisodes} episodes on a separate copy of the current environment. \todo{HalfCheetah check interval: Stage 2 decision.} These checks never stop or alter training and their steps are not counted as training; they record the \textit{first solve}, the number of training steps into an environment at which the evaluation mean first reaches the success threshold. After training, all agents are tested frozen, exactly as in the ablation. The comparison runs \Res{challenge/n} replicates. Its \Res{challenge/family} comparisons, ENA-Combined against each baseline on test reliability, form one family, corrected with Holm's method. \todo{HalfCheetah replicates: Stage 2 decision.}
+
+\subsection{Agents}
+
+\subsubsection{ENA variants}
+The three skills under study are switched on and off as in Table~\ref{tab:variants}; every other setting is shared. ``Plasticity off'' means the zero controller (Section~\ref{sec:controllers}): $\mathcal{P} = 0$, the minimum search. ``Plasticity on'' means the linear ramp. Environment detection only acts through the Hall of Fame, whose archive it organizes into niches, so it is never tested without it. A random agent gives the floor. The full configuration is listed in Appendix~\ref{app:hyperparameters}.
+
+\begin{table}[htbp]
+\caption{ENA Variants in the Skill Ablation}
+\begin{center}
+\begin{tabular}{|l|c|c|c|}
+\hline
+\textbf{Variant} & \textbf{Plasticity} & \textbf{HoF} & \textbf{Detection} \\
+\hline
+ENA-NoSkill & -- & -- & -- \\
+ENA-Plasticity & \checkmark & -- & -- \\
+ENA-HoF & -- & \checkmark & -- \\
+ENA-HoF+EnvDetection & -- & \checkmark & \checkmark \\
+ENA-Plasticity+HoF & \checkmark & \checkmark & -- \\
+ENA-Combined & \checkmark & \checkmark & \checkmark \\
+\hline
+\end{tabular}
+\label{tab:variants}
+\end{center}
+\end{table}
+
+\subsubsection{Gradient-based baselines}
+On CartPole we compare ENA-Combined with DQN~\cite{mnih2015human}, PPO~\cite{schulman2017proximal} and the discrete-action variant of SAC~\cite{christodoulou2019soft}; on HalfCheetah with PPO and SAC~\cite{haarnoja2018soft}. All are our own implementations, with common hyperparameters for these benchmarks (Appendix~\ref{app:hyperparameters}) and two changes that the non-stationary stream made necessary, both found in full-length runs before the reported study:
+\begin{itemize}
+\item \textit{PPO uses a constant learning rate.} With the usual linear annealing to zero over the training budget, PPO reaches its last environment with almost no learning rate left; a learner in a non-stationary stream has no reason to learn less in a later environment than in an earlier one.
+\item \textit{SAC-Discrete uses a target entropy of $\Res{cfg/challenge/sacdratio}\log|\mathcal{A}|$} instead of $\Res{cfg/sacd/paperratio}\log|\mathcal{A}|$. With CartPole's two actions, $\Res{cfg/sacd/paperratio}\log 2$ is nearly the maximum entropy; the policy cannot reach it, and the temperature grows without bound, collapsing the agent to random play. Over \Res{sacd/0.98/steps} steps of the first training environment (median of \Res{sacd/0.98/seeds} seeds), the temperature rose from \Res{sacd/0.98/alphastart} to \Res{sacd/0.98/alphamax}, and the critics' values to \Res{sacd/0.98/valuemax}. A ratio of $\Res{cfg/sacd/cleanrlratio}$ diverged in the same way (temperature \Res{sacd/0.89/alphamax}, values \Res{sacd/0.89/valuemax}). At $\Res{cfg/challenge/sacdratio}$ the temperature peaked at \Res{sacd/0.5/alphamax} and the values at \Res{sacd/0.5/valuemax}.
+\end{itemize}
+During the frozen test, the baselines act greedily, and ENA plays with its weights frozen and Plasticity at zero, adapting only through its choice of gladiator.
+
+\subsection{Metrics}
+\begin{itemize}
+\item \textit{Reliability}: the percentage of test episodes whose return reaches the success threshold, over all five test environments.
+\item \textit{Mean return} per environment.
+\item \textit{Stability gap}: the mean return of the \Res{cfg/metrics/stabilitywindow} episodes before the first environment switch minus that of the \Res{cfg/metrics/stabilitywindow} episodes after it; values near zero mean the switch costs nothing.
+\item \textit{Steps to first solve} per training environment (comparison only), at the \Res{cfg/challenge/checkevery}-step resolution of the evaluation checks.
+\item \textit{Compute}: training environment steps, ENA's candidate-evaluation steps among them, and wall-clock training time.
+\end{itemize}
+Every metric is computed per replicate and reported as mean and standard deviation over replicates. Each difference between two agents is reported in three ways: the difference of means with its \Res{stats/ci}\% confidence interval, the effect size $d$ (the difference over the average of the two standard deviations), and a Welch's $t$-test at $\alpha = \Res{stats/alpha}$.
+
+The skill ablation makes \Res{ablation/family} planned comparisons: each skill added on its own and on top of the others. We treat them as one family and correct their $p$-values with Holm's method. The number of replicates was fixed before the runs by a power analysis. With \Res{ablation/n} replicates per variant, a two-sided test at the family's most stringent level ($\Res{stats/alpha}/\Res{ablation/family}$) has \Res{stats/power}\% power for effects of $d \ge \Res{ablation/mde}$. Replicates were not added after the results were seen, since adding them in response to a result inflates the false-positive rate.

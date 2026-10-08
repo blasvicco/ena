@@ -195,9 +195,7 @@ def test_plot_academic_comparison_niche_markers_match_their_legend_swatch(tmp_pa
 	with step("Act: render the comparison chart."):
 		plot_academic_comparison([dataframe], ["Agent"], save_path=str(tmp_path / "chart.png"))
 
-	with step(
-		"Assert: every 'new'-kind marker and every 'switch'-kind marker uses one " "fixed color each, matching what the legend actually shows."
-	):
+	with step("Assert: every 'new'-kind marker and every 'switch'-kind marker uses one fixed color each, matching what the legend actually shows."):
 		axis = plt.gcf().axes[0]
 		new_lines = [line for line in axis.lines if line.get_marker() == "o" and line.get_linestyle() == "None"]
 		switch_lines = [line for line in axis.lines if line.get_marker() == "x"]
@@ -217,9 +215,7 @@ def test_plot_academic_comparison_seeds_known_niches_to_avoid_spurious_new_niche
 	"""A test-phase chart must not show 'New Niche' for a niche that was actually
 	established during training — known_niche_ids_by_history seeds each history's
 	already-known niches, so their first appearance here classifies as a 'switch'."""
-	with step(
-		"Arrange: the same history as above, but with every niche it contains " "pre-declared as already known (as if all came from training)."
-	):
+	with step("Arrange: the same history as above, but with every niche it contains pre-declared as already known (as if all came from training)."):
 		monkeypatch.setattr(plt, "close", lambda *args, **kwargs: None)
 		dataframe = pd.DataFrame(
 			{
@@ -298,3 +294,94 @@ def test_plot_specialist_transitions_omits_ring_legend_entry_without_niche_data(
 		legend_labels = [text.get_text() for text in axis.get_legend().get_texts()]
 		assert not any("Recognized niche id" in label for label in legend_labels)
 		plt.close(axis.figure)
+
+
+def _detection_history():
+	"""Two 4-episode phases: A recognized as niche 0; B (unseen physics) mostly unrecognized (-1), with 2 confirmed shifts."""
+	return pd.DataFrame(
+		{
+			"episode": range(8),
+			"score": [500.0] * 8,
+			"env_id": ["Env-A"] * 4 + ["Env-B"] * 4,
+			"detected_env_id": [0, 0, 0, 0, -1, 2, -1, -1],
+			"env_shift_detected": [False, False, False, False, True, False, True, False],
+		}
+	)
+
+
+def test_plot_academic_comparison_marks_confirmed_shifts_and_starts_at_episode_zero(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+	"""A recognizer's confirmed shifts are labelled as such, and the y axis crosses the x axis at episode 0."""
+	with step("Arrange: the two-phase detection history; keep the figure open for inspection."):
+		monkeypatch.setattr(plt, "close", lambda *args, **kwargs: None)
+
+	with step("Act: render the comparison chart."):
+		plot_academic_comparison([_detection_history()], ["ENA-Combined"], save_path=str(tmp_path / "chart.png"))
+
+	with step("Assert: 'Shift confirmed' (not 'Shift Detected'), two triangles, and the x axis starting at 0."):
+		axis = plt.gcf().axes[0]
+		legend_labels = [text.get_text() for text in axis.get_legend().get_texts()]
+		assert "Shift confirmed" in legend_labels
+		assert "Shift Detected" not in legend_labels
+		shifts = [line for line in axis.lines if line.get_marker() == "^"]
+		assert list(shifts[0].get_xdata()) == [4, 6]
+		assert axis.get_xlim()[0] == 0
+		plt.close(axis.figure)
+
+
+@pytest.mark.parametrize("constant_niche", [0, -1], ids=["none-driver", "random-agent"])
+def test_plot_academic_comparison_adds_no_detection_overlay_for_agents_without_env_detection(
+	constant_niche, tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+	"""No recognizer, no shift markers: the none driver always logs niche 0 and the Random agent always -1, and neither fires."""
+	with step("Arrange: a history from an agent without env detection."):
+		monkeypatch.setattr(plt, "close", lambda *args, **kwargs: None)
+		history = _detection_history().assign(detected_env_id=constant_niche, env_shift_detected=False)
+
+	with step("Act: render the comparison chart."):
+		plot_academic_comparison([history], ["ENA-HoF"], save_path=str(tmp_path / "chart.png"))
+
+	with step("Assert: no shift legend entry."):
+		axis = plt.gcf().axes[0]
+		legend_labels = [text.get_text() for text in axis.get_legend().get_texts()]
+		assert "Shift confirmed" not in legend_labels
+		plt.close(axis.figure)
+
+
+def _budget_history(episodes_per_env, steps_per_episode):
+	"""Two environments, each played for episodes_per_env episodes of steps_per_episode env-steps (cumulative env_steps)."""
+	rows = []
+	for env_id in ("Env-A", "Env-B"):
+		rows += [{"env_id": env_id, "score": 100.0} for _ in range(episodes_per_env)]
+	frame = pd.DataFrame(rows)
+	frame["episode"] = range(1, len(frame) + 1)
+	frame["env_steps"] = [steps_per_episode * (index + 1) for index in range(len(frame))]
+	return frame
+
+
+def test_plot_academic_comparison_can_put_agents_with_different_episode_lengths_on_one_step_axis(tmp_path, monkeypatch) -> None:
+	"""Under an equal step budget, an agent that spends most steps on candidate evaluation plays far fewer episodes;
+	on an environment-step axis both agents span the same range and their switches line up."""
+	with step("Arrange: a slow agent (4 episodes/env of 1000 steps) and a fast one (40 of 100); keep the figure open."):
+		monkeypatch.setattr(plt, "close", lambda *args, **kwargs: None)
+		slow, fast = _budget_history(4, 1000), _budget_history(40, 100)
+
+	with step("Act: plot on the env-step axis."):
+		plot_academic_comparison([slow, fast], ["Slow", "Fast"], save_path=str(tmp_path / "chart.png"), x_axis="env_steps")
+
+	with step("Assert: both curves end at 8000 steps, both switches at 4000, the x label names steps."):
+		figure = plt.gcf()
+		for axis in figure.axes[:2]:
+			curve = next(line for line in axis.lines if line.get_label() == "Mean Performance")
+			assert curve.get_xdata()[-1] == 8000
+			switch_lines = [line for line in axis.lines if line.get_linestyle() == "--"]
+			assert [line.get_xdata()[0] for line in switch_lines] == [4000]
+			assert axis.get_xlim() == (0.0, 8000.0)
+		assert figure.axes[1].get_xlabel() == "Environment Steps"
+		plt.close(figure)
+
+
+def test_plot_academic_comparison_rejects_an_unknown_x_axis(tmp_path) -> None:
+	"""Only episodes (default) and env_steps exist."""
+	with step("Act/Assert: ValueError."):
+		with pytest.raises(ValueError):
+			plot_academic_comparison([_budget_history(2, 10)], ["A"], save_path=str(tmp_path / "chart.png"), x_axis="seconds")

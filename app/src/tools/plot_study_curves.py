@@ -24,8 +24,9 @@ import matplotlib.pyplot as plt  # pylint: disable=wrong-import-position
 import pandas as pd  # pylint: disable=wrong-import-position
 
 # Anchored to this file's own location (app/src/tools/ -> app/), not the caller's cwd.
-DEFAULT_OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "cartpole_ena_performance_outputs")
+DEFAULT_OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "cartpole_ena_ablation_outputs")
 MASTERY_SCORE = 475.0
+Y_LIM = (-10, 560)
 SMOOTHING_WINDOW = 10
 SERIES_COLOR = "#2a78d6"
 TEXT_PRIMARY = "#0b0b0b"
@@ -76,9 +77,11 @@ def _style_axis(axis, title: str, replicate_count: int) -> None:
 	axis.set_ylabel("Score", color=TEXT_SECONDARY, fontsize=9)
 
 
-# pylint: disable=too-many-locals
-def plot(output_dir: str, phase: str, agents: list, save_path: str) -> str:
-	"""Draw one panel per agent and save the figure; return the path written."""
+# pylint: disable=too-many-locals,too-many-arguments,too-many-positional-arguments
+def plot(output_dir: str, phase: str, agents: list, save_path: str, mastery_score: float = MASTERY_SCORE, ylim: tuple = Y_LIM) -> str:
+	"""Draw one panel per agent and save the figure; return the path written (CartPole's bar and range by default)."""
+	# Environment names sit near the top of the range (515 on CartPole's default range).
+	label_y = ylim[1] - (ylim[1] - ylim[0]) * 45 / 570
 	figure, axes = plt.subplots(len(agents), 1, figsize=(12, 2.1 * len(agents) + 1.0), sharex=True, sharey=True, squeeze=False)
 	figure.patch.set_facecolor("white")
 	for axis, agent in zip(axes[:, 0], agents):
@@ -86,12 +89,12 @@ def plot(output_dir: str, phase: str, agents: list, save_path: str) -> str:
 		summary = summarize(matrix)
 		axis.fill_between(summary.index, summary["low"], summary["high"], color=SERIES_COLOR, alpha=0.18, linewidth=0, label="Middle 50% of runs")
 		axis.plot(summary.index, summary["mean"], color=SERIES_COLOR, linewidth=2, label="Mean over runs")
-		axis.axhline(MASTERY_SCORE, color=GUIDE_COLOR, linestyle=":", linewidth=1, label=f"Mastery ({MASTERY_SCORE:.0f})")
+		axis.axhline(mastery_score, color=GUIDE_COLOR, linestyle=":", linewidth=1, label=f"Mastery ({mastery_score:.0f})")
 		for index, (episode, env_name) in enumerate(phase_boundaries(matrix.attrs["env_ids"])):
 			if index:
 				axis.axvline(episode - 0.5, color=GUIDE_COLOR, linestyle="--", linewidth=1)
-			axis.text(episode + 4, 515, env_name, color=TEXT_SECONDARY, fontsize=8, va="bottom")
-		axis.set_ylim(-10, 560)
+			axis.text(episode + 4, label_y, env_name, color=TEXT_SECONDARY, fontsize=8, va="bottom")
+		axis.set_ylim(*ylim)
 		_style_axis(axis, agent, matrix.shape[1])
 	handles, labels = axes[0, 0].get_legend_handles_labels()
 	figure.legend(handles, labels, loc="upper right", fontsize=8, frameon=False, ncol=3, labelcolor=TEXT_SECONDARY)
@@ -118,10 +121,12 @@ def main() -> None:
 	parser.add_argument("--phase", choices=["testing", "training"], default="testing")
 	parser.add_argument("--agents", nargs="+", default=None, help="Agents to plot, top to bottom (default: all found, Random first).")
 	parser.add_argument("--save", default=None, help="Output image path (default: <output-dir>/<phase>_curves.png).")
+	parser.add_argument("--mastery-score", type=float, default=MASTERY_SCORE, help="Dotted 'solved' line (HalfCheetah: its SOLVED_SCORE).")
+	parser.add_argument("--ylim", type=float, nargs=2, default=Y_LIM, metavar=("LOW", "HIGH"), help="Score axis range.")
 	args = parser.parse_args()
 	agents = args.agents or discover_agents(args.output_dir, args.phase)
 	save_path = args.save or os.path.join(args.output_dir, f"{args.phase}_curves.png")
-	print(f"Wrote {plot(args.output_dir, args.phase, agents, save_path)}")
+	print(f"Wrote {plot(args.output_dir, args.phase, agents, save_path, mastery_score=args.mastery_score, ylim=tuple(args.ylim))}")
 
 
 if __name__ == "__main__":

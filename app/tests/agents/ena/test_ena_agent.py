@@ -4,8 +4,11 @@
 from typing import Any, Callable
 
 # Libs imports
+import gymnasium as gym
 import numpy as np
 import pytest
+from keras import Input, Sequential, initializers
+from keras.layers import Dense
 
 # App imports
 from helpers import step
@@ -33,42 +36,12 @@ def test_known_niche_ids_delegates_to_the_recognizer(agent: ENAgent) -> None:
 	with step("Arrange: no niches known yet on a freshly built agent."):
 		assert agent.known_niche_ids == set()
 
-	with step("Act: register a physical prototype directly on the recognizer instance."):
+	with step("Act: give the recognizer a dynamics model for niche 7 directly."):
 		# pylint: disable=protected-access
-		agent._skills["env_detection"]._instance._physical_prototypes[7] = np.zeros(4)
+		agent._skills["env_detection"]._instance._models[7] = object()
 
 	with step("Assert: the agent-level property reflects it."):
 		assert agent.known_niche_ids == {7}
-
-
-def test_recognizer_confirmation_window_default_flows_through_from_enagent(agent: ENAgent) -> None:
-	"""S5 composability: ENAgent's own recognizer_confirmation_window default (3) must reach
-	the constructed recognizer strategy instance, regardless of which strategy is chosen —
-	confirmation_window is a knob on the shared live-driver base, not a separate strategy."""
-	with step("Assert: the default agent's recognizer instance has confirmation_window=3."):
-		# pylint: disable=protected-access
-		assert agent._skills["env_detection"]._instance._confirmation_window == 3
-
-
-def test_set_learning_false_resets_recognizer_statistics(agent: ENAgent) -> None:
-	"""S1: entering test mode must not leak training-time recognizer statistics."""
-	with step("Arrange: feed training-time statistics into the recognizer's normalizers."):
-		batch = np.ones((5, agent.state_dim), dtype=np.float32) * 3.0
-		agent.memory.short_term_normalizer.update(batch)
-		agent.memory.transition_normalizer.update(batch)
-		assert agent.memory.short_term_normalizer.count > 1e-4
-		assert agent.memory.transition_normalizer.count > 1e-4
-
-	with step("Act: switch the agent into test mode."):
-		agent.set_learning(False)
-
-	with step("Assert: both normalizers are reset to their identity statistics."):
-		assert agent.memory.short_term_normalizer.count == 1e-4
-		assert agent.memory.transition_normalizer.count == 1e-4
-		assert np.allclose(agent.memory.short_term_normalizer.mean, 0.0)
-		assert np.allclose(agent.memory.transition_normalizer.mean, 0.0)
-		assert np.allclose(agent.memory.short_term_normalizer.var, 1.0)
-		assert np.allclose(agent.memory.transition_normalizer.var, 1.0)
 
 
 @pytest.mark.parametrize("is_training", [True, False], ids=["training-time", "test-time"])
@@ -82,31 +55,29 @@ def test_env_shift_reward_history_clearing(agent: ENAgent, monkeypatch: pytest.M
 			agent.set_learning(False)
 		agent.memory.reward_history.extend([1.0, 2.0, 3.0])
 		# pylint: disable=protected-access
-		monkeypatch.setattr(agent._skills["env_detection"], "detect_change", lambda memory: True)
+		monkeypatch.setattr(agent._skills["env_detection"], "detect_change", lambda memory, learn=True: True)
 
 	with step("Act: run one episode, triggering the scripted shift."):
 		env = agent.make_env()
 		_run_one_episode(agent, env)
 		env.close()
 
-	with step("Assert: training-time shifts clear the history; test-time shifts append instead."):
+	with step("Assert: training-time shifts clear the history; test-time shifts leave it untouched."):
 		history = list(agent.memory.reward_history)
 		if is_training:
 			assert not history
 		else:
-			# Test mode always appends the just-finished episode's score itself (existing
-			# behavior) — the fix must not additionally wipe the history via clear_training_history.
-			assert history[:3] == [1.0, 2.0, 3.0]
-			assert len(history) == 4
+			# The return history only feeds training (Trust, Plasticity, reward normalization), so
+			# test mode neither records into it nor clears it.
+			assert history == [1.0, 2.0, 3.0]
 
 
 def test_detect_change_calls_recognizer_reset_alongside_memory_reset(agent: ENAgent, monkeypatch: pytest.MonkeyPatch) -> None:
 	"""A detected shift must flush driver-owned recognizer state (e.g. dynamics_model's recent-transition
-	buffers), not just AgentMemory's — memory.reset_recognizer_statistics() alone can't reach state
-	that lives on the driver instance instead of memory."""
+	buffers), which lives on the driver instance, not in the agent's memory."""
 	with step("Arrange: script a detected shift and spy on the recognizer's reset()."):
 		# pylint: disable=protected-access
-		monkeypatch.setattr(agent._skills["env_detection"], "detect_change", lambda memory: True)
+		monkeypatch.setattr(agent._skills["env_detection"], "detect_change", lambda memory, learn=True: True)
 		reset_calls = []
 		monkeypatch.setattr(agent._skills["env_detection"], "reset", lambda: reset_calls.append(True))
 
@@ -139,7 +110,7 @@ def test_last_env_shift_detected_reflects_detect_change(agent: ENAgent, monkeypa
 	"""C1: expose detect_change()'s real result, independent of niche resolution."""
 	with step("Arrange: script the recognizer's detect_change() to return a fixed result."):
 		# pylint: disable=protected-access
-		monkeypatch.setattr(agent._skills["env_detection"], "detect_change", lambda memory: detect_change_result)
+		monkeypatch.setattr(agent._skills["env_detection"], "detect_change", lambda memory, learn=True: detect_change_result)
 
 	with step("Act: run one episode."):
 		env = agent.make_env()
@@ -247,9 +218,9 @@ def test_evaluate_individual_performance_respects_max_steps(agent: ENAgent, max_
 		# pylint: disable=protected-access
 		score = agent._ENAgent__evaluate_individual_performance(individual, env, seed=0, max_steps=max_steps_override)
 
-	with step("Assert: the loop stopped at the expected cap, rescaled to env_max_steps."):
+	with step("Assert: the loop stopped at the expected cap, rescaled to the episode length."):
 		assert env.steps_taken == expected
-		assert score == pytest.approx(agent.env_max_steps)
+		assert score == pytest.approx(agent.max_episode_steps)
 
 
 def test_train_handles_zero_plasticity_without_degenerate_eval_cap(
@@ -508,3 +479,88 @@ def test_evaluation_episode_plays_the_highest_trust_individual_without_side_effe
 		assert [individual["trust"] for individual in agent.population] == trusts
 		assert (agent.played_env_steps, agent.candidate_env_steps) == counters
 		assert list(agent.memory.reward_history) == history
+
+
+def test_episode_length_and_return_scale_come_from_the_environment_spec(build_agent) -> None:
+	"""Review #7/#8: ENA reads the episode length and the 'solved' return from the environment's spec
+	(CartPole-v1: 500 steps, solved at 475) instead of a hand-set value that can be wrong."""
+	with step("Act: a default agent, and one with explicit values."):
+		default = build_agent()
+		explicit = build_agent(max_episode_steps=200, return_scale=100.0)
+
+	with step("Assert: the spec's values by default; explicit values override them."):
+		assert (default.max_episode_steps, default.return_scale) == (500, 475.0)
+		assert (explicit.max_episode_steps, explicit.return_scale) == (200, 100.0)
+
+
+def test_an_environment_without_a_spec_needs_explicit_values(build_agent) -> None:
+	"""No silent default: without a spec (e.g. a synthetic env), both values must be given."""
+
+	class _NoSpecEnv(gym.Env):  # pylint: disable=abstract-method
+		"""CartPole's spaces, no registered spec."""
+
+		observation_space = gym.make("CartPole-v1").observation_space
+		action_space = gym.make("CartPole-v1").action_space
+		spec = None
+
+	with step("Act/Assert: building without the values fails; with them it works."):
+		with pytest.raises(ValueError):
+			build_agent(make_env=lambda **_kwargs: _NoSpecEnv())
+		agent = build_agent(make_env=lambda **_kwargs: _NoSpecEnv(), max_episode_steps=500, return_scale=475.0)
+		assert agent.max_episode_steps == 500
+
+
+def test_a_candidate_surviving_a_short_evaluation_never_outscores_a_full_episode(agent: ENAgent) -> None:
+	"""Review #7 regression: a truncated evaluation is rescaled to the real episode length (CartPole 500),
+	so a barely tested survivor can at most tie a perfect episode, never beat it (it used to score 1000)."""
+	with step("Act: evaluate the whole population with a 10-step cap on real CartPole."):
+		env = agent.make_env()
+		# pylint: disable-next=protected-access
+		scores = [agent._ENAgent__evaluate_individual_performance(individual, env, seed=1, max_steps=10) for individual in agent.population]
+
+	with step("Assert: no score above CartPole's maximum return."):
+		assert max(scores) <= 500.0
+
+
+def test_fresh_individuals_use_the_brains_own_initializers(build_agent) -> None:
+	"""Review #11: a fresh individual created by evolution is drawn like the initial population — from
+	the brain's own initializers — not from a hard-coded orthogonal scheme."""
+
+	def _constant_brain(action_dim, state_dim):
+		return Sequential(
+			[
+				Input(shape=(state_dim,)),
+				Dense(action_dim, kernel_initializer=initializers.Constant(0.25), bias_initializer=initializers.Constant(0.5)),
+			]
+		)
+
+	with step("Arrange: an agent whose brain initializes every weight to a constant; scramble one individual."):
+		agent = build_agent(brain=_constant_brain)
+		individual = agent.population[0]
+		individual["model"].set_weights([np.full_like(weights, 9.0) for weights in individual["model"].get_weights()])
+
+	with step("Act: rebuild it in place, as evolution does for a fresh individual."):
+		# pylint: disable-next=protected-access
+		agent._ENAgent__build_individual(model=individual["model"], existing_fast_call=individual["fast_call"])
+
+	with step("Assert: the brain's constants, not an orthogonal draw."):
+		kernel, bias = individual["model"].get_weights()
+		assert np.allclose(kernel, 0.25) and np.allclose(bias, 0.5)
+
+
+def test_every_detector_setting_is_a_constructor_argument_with_the_cartpole_default(build_agent) -> None:
+	"""Domain calibration (e.g. HalfCheetah) passes detector settings to ENAgent; the defaults are CartPole's."""
+	# pylint: disable=protected-access
+	with step("Act: one agent with defaults, one with HalfCheetah-style overrides."):
+		overrides = {
+			"recognizer_var_floor": 1e-4,
+			"recognizer_min_samples": 300,
+			"recognizer_min_verify_samples": 120,
+			"recognizer_recent_size": 2000,
+		}
+		default = build_agent()._skills["env_detection"]._instance
+		tuned = build_agent(**overrides)._skills["env_detection"]._instance
+
+	with step("Assert: defaults unchanged, overrides reach the driver."):
+		assert (default._var_floor, default._min_samples, default._min_verify_samples, default._recent.maxlen) == (1e-6, 100, 50, 500)
+		assert (tuned._var_floor, tuned._min_samples, tuned._min_verify_samples, tuned._recent.maxlen) == (1e-4, 300, 120, 2000)

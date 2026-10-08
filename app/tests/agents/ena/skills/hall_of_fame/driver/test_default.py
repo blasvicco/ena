@@ -12,7 +12,7 @@ from keras.layers import Dense
 from helpers import step
 from agents.ena.skills.hall_of_fame.driver.default import Instance
 
-# pylint: disable=protected-access
+# pylint: disable=protected-access,duplicate-code
 
 
 def _brain(action_dim, state_dim):
@@ -105,7 +105,6 @@ def test_eco_niche_protection_evicts_the_weakest_and_clears_its_zombie_tags() ->
 		hall_of_fame._Instance__eco_niche_protection(
 			winner,
 			current_trust=5.0,
-			current_z_score=3.0,
 			recognizer=_FakeRecognizer(),
 			obs_normalizer=obs_normalizer,
 			population=population,
@@ -143,7 +142,6 @@ def _archived_gladiator(hall_of_fame, individual_id="mars-gladiator", niche_id=0
 		"individual_id": individual_id,
 		"model": _brain(2, 2),
 		"trust": trust,
-		"induction_z_score": 2.0,
 		"internal_env_id": niche_id,
 		"env_name": env_name,
 		"is_gladiator": True,

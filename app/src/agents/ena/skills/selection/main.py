@@ -7,7 +7,7 @@ import importlib
 class SelectionController:
 	"""Resolves and delegates all selection logic to a pluggable driver."""
 
-	# Usage: SelectionController("heuristic", exploration_rate=0.15).select_individual(population, recognizer, memory, learn=True)
+	# Usage: SelectionController("bpr", exploration_rate=0.2, return_scale=475.0).select_individual(population, recognizer, memory, learn=True)
 
 	def __init__(self, driver: str, **kwargs) -> None:
 		"""Instantiate the appropriate driver based on the driver name."""
@@ -21,51 +21,19 @@ class SelectionController:
 	# Delegated public API
 	# ---------------------------------------------------------------
 
-	def reset_episode(self) -> None:
-		"""Called at episode start."""
-		self._instance.reset_episode()
-
 	def select_individual(self, population: list, recognizer, memory, learn: bool) -> int:
 		"""Returns population index of the selected individual."""
 		return self._instance.select_individual(population, recognizer, memory, learn)
 
-	def on_step(self, memory, env_detection, learn: bool) -> None:
-		"""Delegate mid-episode bookkeeping to the active driver."""
-		self._instance.on_step(memory, env_detection, learn)
+	def on_episode_end(self, memory, learn: bool, env_detection) -> None:
+		"""Test time only: let the driver learn from the episode's result."""
+		if not learn:
+			self.record_episode_result(memory.last_episode_score, memory, recognizer=env_detection)
 
-	# pylint: disable=too-many-arguments,too-many-positional-arguments
-	def on_episode_end(self, memory, learn: bool, population: list, env_detection, env_max_steps: float) -> bool:
-		"""Finalize the episode; returns True if test mode forced a re-evaluation reset."""
-		if learn:
-			self._instance.on_learn_episode_end(memory, env_detection, env_max_steps)
-			return False
-
-		memory.reward_history.append(memory.last_episode_score)
-		memory.max_seen = max(memory.max_seen, memory.last_episode_score)
-		memory.min_seen = min(memory.min_seen, memory.last_episode_score)
-
-		force_reset = self.record_episode_result(memory.last_episode_score, memory, recognizer=env_detection)
-		if force_reset:
-			memory.reward_history.clear()
-			self.evaluate(population)
-		return force_reset
-
-	def record_episode_result(self, score: float, memory, recognizer=None) -> bool:
-		"""Called at episode end during testing. Returns True if env reset needed."""
-		return self._instance.record_episode_result(score, memory, recognizer=recognizer)
+	def record_episode_result(self, score: float, memory, recognizer=None) -> None:
+		"""Called at episode end during testing."""
+		self._instance.record_episode_result(score, memory, recognizer=recognizer)
 
 	def evaluate(self, population: list) -> None:
-		"""Build evaluation queue from population's gladiator niches."""
+		"""Rebuild the driver's test-time candidates from the population's gladiators."""
 		self._instance.evaluate(population)
-
-	def set_mode(self, memory, mode: bool) -> None:
-		"""Switch between train (mode=True) and test (mode=False)."""
-		self._instance.set_mode(memory, mode)
-
-	def record(self, memory, context_vector, niche_id: int, reward: float) -> None:
-		"""Store a (context, niche, reward) experience for training."""
-		self._instance.record(memory, context_vector, niche_id, reward)
-
-	def update(self, memory) -> None:
-		"""Run driver-specific update from buffered experiences."""
-		self._instance.update(memory)

@@ -3,9 +3,6 @@
 # General imports
 from abc import ABC, abstractmethod
 
-# Libs imports
-import numpy as np
-
 
 class ADriver(ABC):
 	"""Detects environment shifts and identifies which recurring niche is currently active."""
@@ -21,24 +18,8 @@ class ADriver(ABC):
 		"""Set of niche IDs that have physical prototypes."""
 
 	@abstractmethod
-	def update(self, state, memory) -> None:
-		"""Track observation distribution purely for environment physics recognition."""
-
-	@abstractmethod
-	def compute_physical_vector(self, memory) -> np.ndarray:
-		"""Build context from strictly static state and transition dynamics."""
-
-	@abstractmethod
-	def compute_full_vector(self, memory) -> np.ndarray:
-		"""Build context including distress signals for change detection."""
-
-	@abstractmethod
-	def detect_change(self, memory) -> bool:
+	def detect_change(self, memory, learn: bool = True) -> bool:
 		"""Check if the environment has significantly shifted from the baseline."""
-
-	@abstractmethod
-	def match(self, memory) -> tuple:
-		"""Return (niche_id, similarity) of the best matching physical prototype (Test Mode)."""
 
 	@abstractmethod
 	def match_niche(self, memory, current_individual: dict, hall_of_fame, population: list = None) -> int:
@@ -58,4 +39,4 @@ class ADriver(ABC):
 
 	@abstractmethod
 	def reset(self) -> None:
-		"""Flush any driver-owned physical-fingerprint state on a detected environment shift."""
+		"""Flush the driver's evidence about the old regime on a detected environment shift."""

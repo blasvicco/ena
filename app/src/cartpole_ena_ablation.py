@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""ENA performance study — each skill's contribution to ENA's non-stationary-RL performance (50-replicate ablation)."""
+"""ENA skill ablation — each skill's contribution to ENA's performance in non-stationary CartPole (30 replicates)."""
 
 # General imports
 import argparse
@@ -38,16 +38,19 @@ from tools.metrics import (
 from tools.visualization import vprint, ProgressReporter
 
 # Constants
-NUM_EXPERIMENTS = 50
+NUM_EXPERIMENTS = 30
 MAX_WORKERS = os.cpu_count() - 2
 GPUS = tf.config.list_physical_devices("GPU")
 TESTING_EPISODES = [200, 200, 200, 200, 200]
 TRAINING_EPISODES_ENA = [500, 500, 500]
 # Anchored to this file's own location (one level up from src/), not the caller's cwd.
-OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cartpole_ena_performance_outputs")
+OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cartpole_ena_ablation_outputs")
 # Per-experiment seed = SEED_OFFSET + experiment index (Python, NumPy and TensorFlow RNGs).
 SEED_OFFSET = 1000
 INCLUDE_RANDOM_FLOOR = True
+# CartPole-v1's "solved" bar and the charts' score range; other domains pass their own to agent_training/agent_testing.
+SUCCESS_THRESHOLD = 475.0
+Y_LIM = (-10, 550)
 # Trust driver for every row that doesn't set its own "trust_algorithm" (Trust is held constant, not ablated).
 TRUST_ALGORITHM = "linear_ramp"
 
@@ -60,7 +63,7 @@ TRUST_ALGORITHM = "linear_ramp"
 #   env detection: HoF+EnvDetection vs. HoF, and Combined vs. Plasticity+HoF
 #   Hall of Fame:  HoF vs. NoSkill, and Plasticity+HoF vs. Plasticity
 #   Plasticity:    Plasticity vs. NoSkill, Plasticity+HoF vs. HoF, and Combined vs. HoF+EnvDetection
-PERFORMANCE_VARIANTS = [
+ABLATION_VARIANTS = [
 	{"name": "ENA-NoSkill", "plasticity_algorithm": "zero", "hall_of_fame_driver": "none", "recognizer_strategy": "none"},
 	{"name": "ENA-Plasticity", "plasticity_algorithm": "linear_ramp", "hall_of_fame_driver": "none", "recognizer_strategy": "none"},
 	{"name": "ENA-HoF", "plasticity_algorithm": "zero", "hall_of_fame_driver": "default", "recognizer_strategy": "none"},
@@ -102,13 +105,22 @@ def post_update(experiment_id: int, queue, status: str = None, progress: int = 0
 
 
 # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
-def agent_testing(agents: list, experiment_id: int, output_dir: str, output_file, queue, worlds: list) -> None:
-	"""Test agents on worlds."""
+def agent_testing(
+	agents: list,
+	experiment_id: int,
+	output_dir: str,
+	output_file,
+	queue,
+	worlds: list,
+	test_worlds: list = None,
+	success_threshold: float = SUCCESS_THRESHOLD,
+	ylim: tuple = Y_LIM,
+) -> None:
+	"""Test agents on worlds (default: CartPole's 5 test worlds; another domain passes its own test_worlds)."""
 	# Neural weights are frozen; only the archive selector updates Trust at test time.
 	post_update(experiment_id, queue, status="Phase 2: Testing Setup", progress=8)
-	mystery_env = make_env(gravity=11.15, name="Neptune")
-	extrap_env = make_env(gravity=50.0, name="Brown-dwarf")
-	test_worlds = [worlds[0], mystery_env, worlds[1], extrap_env, worlds[2]]
+	if test_worlds is None:
+		test_worlds = make_test_worlds(worlds)
 
 	agent_ids = []
 	execution_times = {}
@@ -124,6 +136,7 @@ def agent_testing(agents: list, experiment_id: int, output_dir: str, output_file
 		# spurious "new niche" (no niche can genuinely be created once train() stops running).
 		known_niche_ids_by_history.append(getattr(agent, "known_niche_ids", None))
 		agent.set_learning(False, output_dir=output_dir)
+		seed_experiment(experiment_id)  # common random numbers: every agent's test starts from the same state
 		start_time = time.time()
 		history_testing[agent_name] = play(
 			agent,
@@ -131,6 +144,7 @@ def agent_testing(agents: list, experiment_id: int, output_dir: str, output_file
 			episodes,
 			live_log_path=os.path.join(output_dir, f"live_testing_{agent_name}.csv"),
 			on_episode=make_eta_reporter(experiment_id, queue, "Testing", agent_name, start_time),
+			env_seed=env_seed_for(experiment_id, "testing"),
 		)
 		execution_times[agent_name] = time.time() - start_time
 
@@ -140,7 +154,7 @@ def agent_testing(agents: list, experiment_id: int, output_dir: str, output_file
 		history_testing.values(),
 		agent_ids,
 		file=output_file,
-		success_threshold=475.0,
+		success_threshold=success_threshold,
 		times=execution_times,
 	)
 
@@ -150,6 +164,8 @@ def agent_testing(agents: list, experiment_id: int, output_dir: str, output_file
 		history_testing.values(),
 		agent_ids,
 		save_path=os.path.join(output_dir, "test.png"),
+		success_threshold=success_threshold,
+		ylim=ylim,
 		known_niche_ids_by_history=known_niche_ids_by_history,
 	)
 
@@ -185,8 +201,15 @@ def agent_training(
 	match_steps_of: str = None,
 	stopping=None,
 	eval_worlds: list = None,
+	success_threshold: float = SUCCESS_THRESHOLD,
+	ylim: tuple = Y_LIM,
+	training_x_axis: str = "episodes",
 ) -> None:
-	"""Train agents on worlds — by episode count, matched to a reference agent's env-steps, or early-stopped."""
+	"""Train agents on worlds — by episode count, matched to a reference agent's env-steps, or early-stopped.
+
+	training_x_axis is the training chart's axis: "env_steps" for studies at an equal step budget, where agents
+	play very different numbers of episodes (ENA's candidate evaluations count against its budget).
+	"""
 	# stopping (tools.early_stopping.StoppingRule) with eval_worlds (separate copies of worlds) trains
 	# every agent on each environment until solved/plateau/cap, writes each agent's checks to
 	# live_evaluation_{agent}.csv and adds the ADAPTATION SUMMARY table to outputs.txt.
@@ -209,6 +232,7 @@ def agent_training(
 				agent.set_total_steps(sum(step_budget))
 			elif stopping is not None:
 				agent.set_total_steps(stopping.max_steps * len(worlds))
+		seed_experiment(experiment_id)  # common random numbers: every agent's training starts from the same state
 		start_time = time.time()
 		live_log_path = os.path.join(output_dir, f"live_training_{agent_name}.csv")
 		history_training[agent_name] = play(
@@ -220,6 +244,7 @@ def agent_training(
 			steps_per_env=step_budget,
 			stopping=stopping,
 			eval_environments=eval_worlds,
+			env_seed=env_seed_for(experiment_id, "training"),
 		)
 		execution_times[agent_name] = time.time() - start_time
 		evaluations = history_training[agent_name].attrs.get("evaluations")
@@ -240,7 +265,7 @@ def agent_training(
 		history_training.values(),
 		agent_ids,
 		file=output_file,
-		success_threshold=475.0,
+		success_threshold=success_threshold,
 		times=execution_times,
 	)
 	calculate_compute_cost(history_training.values(), agent_ids, file=output_file)
@@ -252,6 +277,9 @@ def agent_training(
 		history_training.values(),
 		agent_ids,
 		save_path=os.path.join(output_dir, "training.png"),
+		success_threshold=success_threshold,
+		ylim=ylim,
+		x_axis=training_x_axis,
 	)
 
 	for agent in agents:
@@ -361,23 +389,23 @@ def evaluate_agent(agent, env, episodes: int) -> tuple:
 	return float(np.mean(scores)), total_steps
 
 
-def _episode_row(agent, env, env_idx: int, episode: int, score: float, env_steps: int) -> dict:
+# pylint: disable=too-many-arguments,too-many-positional-arguments
+def _episode_row(agent, env, env_idx: int, episode: int, score: float, env_steps: int, candidate_steps: int = None) -> dict:
 	"""The per-episode history/CSV row for the episode the agent just finished."""
 	current_individual = agent.population[getattr(agent, "best_individual_idx", 0)] if hasattr(agent, "population") else {}
 	plasticity_history = getattr(agent, "plasticity_history", None)
 	plasticity_value = plasticity_history[-1] if plasticity_history else None
 
-	# Compute-cost columns: derived from the same plasticity value, mirroring
-	# ena.py train()'s own num_to_eval/eval_step_cap formula (estimate_eval_cost's
-	# docstring notes the duplication) — None for agents without these attributes
-	# and for any episode before plasticity has a value yet.
-	num_to_eval, eval_step_cap, candidate_env_steps = None, None, None
+	# Search-effort columns: the candidates and depth the plasticity value asks for, mirroring
+	# ena.py train()'s num_to_eval/eval_step_cap formula (estimate_eval_cost's docstring notes the
+	# duplication) — None for agents without these attributes and before plasticity has a value.
+	# candidate_env_steps is what the agent actually spent evaluating candidates this episode.
+	num_to_eval, eval_step_cap = None, None
 	pop_size = getattr(agent, "pop_size", None)
 	min_eval_steps = getattr(agent, "min_eval_steps", None)
 	max_eval_steps = getattr(agent, "max_eval_steps", None)
 	if plasticity_value is not None and pop_size and min_eval_steps is not None and max_eval_steps:
 		num_to_eval, eval_step_cap = estimate_eval_cost(plasticity_value, pop_size, min_eval_steps, max_eval_steps)
-		candidate_env_steps = num_to_eval * eval_step_cap
 
 	return {
 		"env_id": getattr(env.unwrapped, "name", env_idx),
@@ -392,7 +420,7 @@ def _episode_row(agent, env, env_idx: int, episode: int, score: float, env_steps
 		"plasticity": plasticity_value,
 		"num_to_eval": num_to_eval,
 		"eval_step_cap": eval_step_cap,
-		"candidate_env_steps": candidate_env_steps,
+		"candidate_env_steps": candidate_steps,
 		"env_steps": env_steps,
 	}
 
@@ -407,8 +435,15 @@ def play(
 	steps_per_env: list = None,
 	stopping=None,
 	eval_environments: list = None,
+	env_seed: int = None,
 ) -> pd.DataFrame:
 	"""Play the game, optionally live-logging each episode's row and reporting progress."""
+	# env_seed seeds every environment (and evaluation copy) before the first episode, so the
+	# initial states — and a random agent's actions — are reproducible and identical for every
+	# agent played with the same seed.
+	if env_seed is not None:
+		seed_environments(environments, env_seed)
+		seed_environments(eval_environments or [], env_seed + len(environments))
 	# If live_log_path is given, each episode's row is also appended to that CSV, flushed
 	# immediately — lets a separate process (e.g. tools/live_dashboard.py) watch convergence
 	# while this run is still in progress, without changing the returned DataFrame or any
@@ -446,10 +481,12 @@ def play(
 			if stopping is not None:
 				stopping.start_phase()
 			while _phase_continues(stopping, steps_per_env, episodes_per_env, env_idx, consumed() - phase_start, phase_episodes):
+				candidates_before = getattr(agent, "candidate_env_steps", None)
 				episode_score, steps = _play_episode(agent, env)
 				played_steps += steps
 				phase_episodes += 1
-				row = _episode_row(agent, env, env_idx, len(history) + 1, episode_score, consumed())
+				candidate_steps = agent.candidate_env_steps - candidates_before if candidates_before is not None else None
+				row = _episode_row(agent, env, env_idx, len(history) + 1, episode_score, consumed(), candidate_steps)
 				history.append(row)
 
 				if on_episode is not None:
@@ -582,20 +619,28 @@ def make_training_worlds() -> list:
 	]
 
 
+def make_unseen_worlds() -> list:
+	"""The two never-trained test environments: Neptune, close to Earth, and Brown-dwarf, beyond Jupiter's gravity."""
+	return [make_env(gravity=11.15, name="Neptune"), make_env(gravity=50.0, name="Brown-dwarf")]
+
+
+def make_test_worlds(worlds: list) -> list:
+	"""The frozen test sequence: the training environments interleaved with the never-trained ones."""
+	neptune, brown_dwarf = make_unseen_worlds()
+	return [worlds[0], neptune, worlds[1], brown_dwarf, worlds[2]]
+
+
 def build_ena_agent(variant: dict, max_agent_threads: int) -> ENAgent:
 	"""An ENAgent for one variant row, every non-studied argument held at the study-wide value."""
 	agent = ENAgent(
 		brain=ena_brain,
 		make_env=make_env,
-		controller_episode_rate=0.15,
 		max_per_niche=5,
 		max_gladiator_ratio=0.5,
 		max_threads=max_agent_threads,
 		mutation_rate=0.05,
 		physics=["gravity", "masspole", "length"],
 		pop_size=100,
-		recognizer_threshold=0.90,
-		recognizer_ema_alpha=0.05,
 		selection_driver="bpr",
 		trust_algorithm=variant.get("trust_algorithm", TRUST_ALGORITHM),
 		plasticity_algorithm=variant["plasticity_algorithm"],
@@ -605,6 +650,24 @@ def build_ena_agent(variant: dict, max_agent_threads: int) -> ENAgent:
 	agent.set_name(variant["name"])
 	agent.set_episodes(TRAINING_EPISODES_ENA)
 	return agent
+
+
+def seed_environments(environments: list, base_seed: int) -> None:
+	"""Seed each environment's own RNGs (initial states, action-space sampling) with base_seed + its index."""
+	for index, env in enumerate(environments):
+		env.reset(seed=base_seed + index)
+		env.action_space.seed(base_seed + index)
+
+
+def env_seed_for(experiment_id: int, phase: str) -> int:
+	"""Environment seed of a replicate's training or testing phase: shared by every agent of the replicate."""
+	return (SEED_OFFSET + experiment_id) * 1000 + (0 if phase == "training" else 500)
+
+
+def build_seeded(experiment_id: int, build, *args):
+	"""build(*args) right after seeding the replicate's RNGs, so every agent of a replicate starts from the same random state."""
+	seed_experiment(experiment_id)
+	return build(*args)
 
 
 def seed_experiment(experiment_id: int) -> int:
@@ -637,45 +700,79 @@ def run_experiment(experiment_id: int, output_dir: str, queue, variants: list, i
 		# 2. Initialize Agents — optionally the random floor, plus one ENAgent per studied variant
 		agents = []
 		if include_random:
-			random_agent = RandomAgent(brain=None, make_env=make_env)
+			random_agent = build_seeded(experiment_id, RandomAgent, None, make_env)
 			random_agent.set_name("Random")
 			random_agent.set_episodes(TRAINING_EPISODES_ENA)
 			agents.append(random_agent)
 
 		for variant in variants:
-			agents.append(build_ena_agent(variant, max_agent_threads))
+			agents.append(build_seeded(experiment_id, build_ena_agent, variant, max_agent_threads))
 
-		# 3. Training Phase
-		agent_training(
-			agents=agents,
-			experiment_id=experiment_id,
-			output_dir=output_dir,
-			output_file=output_file,
-			queue=queue,
-			worlds=worlds,
-		)
-
-		# 4. Testing Phase
-		for agent in agents:
-			agent.set_episodes(TESTING_EPISODES)
-			if isinstance(agent, ENAgent):
-				agent.load_gladiators()
-
-		agent_testing(
-			agents=agents,
-			experiment_id=experiment_id,
-			output_dir=output_dir,
-			output_file=output_file,
-			queue=queue,
-			worlds=worlds,
-		)
+		# 3. Train, then test frozen
+		train_and_test(agents, experiment_id, output_dir, output_file, queue, worlds)
 
 		post_update(experiment_id, queue, status="Done", done=True, progress=2)
 
 
 # pylint: disable=too-many-arguments,too-many-positional-arguments
-def run_experiment_worker(experiment_id: int, reporting_queue, study_dir: str, variants: list, include_random: bool, experiment_fn=None) -> None:
+def train_and_test(
+	agents: list, experiment_id: int, output_dir: str, output_file, queue, worlds: list, testing_episodes: list = None, training=None, testing=None
+) -> None:
+	"""Train every agent on the worlds, then test them all frozen with their Hall of Fame restored (every study's lifecycle).
+
+	training / testing are extra keyword arguments for agent_training / agent_testing (a domain's
+	stopping rule, test worlds, threshold, chart range); testing_episodes defaults to CartPole's.
+	"""
+	common = {
+		"agents": agents,
+		"experiment_id": experiment_id,
+		"output_dir": output_dir,
+		"output_file": output_file,
+		"queue": queue,
+		"worlds": worlds,
+	}
+	agent_training(**common, **(training or {}))
+	for agent in agents:
+		agent.set_episodes(TESTING_EPISODES if testing_episodes is None else testing_episodes)
+		if isinstance(agent, ENAgent):
+			agent.load_gladiators()
+	agent_testing(**common, **(testing or {}))
+
+
+def launch_summary(num_experiments: int, pending: int, workers: int, title: str) -> str:
+	"""What a launch will actually run: the replicates still to do, those already complete, and how many at once."""
+	done = num_experiments - pending
+	return (
+		f"LAUNCHING {pending} OF {num_experiments} {title} REPLICATES"
+		+ (f" ({done} already complete)" if done else "")
+		+ f", {min(workers, pending)} at a time"
+	)
+
+
+def replicate_complete(exp_dir: str) -> bool:
+	"""Whether a replicate finished: its outputs.txt has the test results (the header alone is written at start)."""
+	try:
+		with open(os.path.join(exp_dir, "outputs.txt"), encoding="utf-8") as outputs:
+			return "Test Results ---" in outputs.read()
+	except FileNotFoundError:
+		return False
+
+
+def configure_worker_threads(threads: int = None) -> None:
+	"""Cap this process's TensorFlow thread pools (None: TensorFlow's default, every core)."""
+	# Must run before the process's first TensorFlow op; workers call it first thing.
+	if threads is None:
+		return
+	tf.config.threading.set_intra_op_parallelism_threads(threads)
+	tf.config.threading.set_inter_op_parallelism_threads(1)
+
+
+# pylint: disable=too-many-arguments,too-many-positional-arguments
+def run_experiment_worker(
+	experiment_id: int, reporting_queue, study_dir: str, variants: list, include_random: bool, experiment_fn=None, threads: int = None
+) -> None:
 	"""Wrapper that runs a single experiment in an isolated process."""
+	configure_worker_threads(threads)
 	# Everything the worker needs is passed explicitly rather than read from module globals, so
 	# command-line overrides reach it under any multiprocessing start method (spawn re-imports).
 	output_dir = os.path.join(study_dir, f"exp_{experiment_id + 1}")
@@ -733,7 +830,7 @@ def select_variants(variant_table: list, names: list) -> list:
 
 def parse_args(argv: list = None, variant_table: list = None, defaults: dict = None) -> argparse.Namespace:
 	"""Command-line overrides for which rows to run, how many replicates, and where they go."""
-	variant_table = PERFORMANCE_VARIANTS if variant_table is None else variant_table
+	variant_table = ABLATION_VARIANTS if variant_table is None else variant_table
 	defaults = {"output_dir": OUTPUT_DIR, "num_experiments": NUM_EXPERIMENTS, "include_random": INCLUDE_RANDOM_FLOOR, **(defaults or {})}
 	names = [row["name"] for row in variant_table]
 	parser = argparse.ArgumentParser(description=__doc__)
@@ -744,12 +841,25 @@ def parse_args(argv: list = None, variant_table: list = None, defaults: dict = N
 		"--include-random", action=argparse.BooleanOptionalAction, default=defaults["include_random"], help="Also run the Random floor."
 	)
 	parser.add_argument("--workers", type=_positive_int, default=MAX_WORKERS, help="Replicates run in parallel (one process each).")
+	parser.add_argument(
+		"--threads-per-worker",
+		type=_positive_int,
+		default=None,
+		help="Cap each worker's TensorFlow threads (default: uncapped; set it on many-core machines).",
+	)
 	return parser.parse_args(argv)
 
 
 # pylint: disable=too-many-arguments,too-many-positional-arguments
 def run_study(
-	num_experiments: int, output_dir: str, variants: list, include_random: bool, title: str, experiment_fn=None, workers: int = None
+	num_experiments: int,
+	output_dir: str,
+	variants: list,
+	include_random: bool,
+	title: str,
+	experiment_fn=None,
+	workers: int = None,
+	threads_per_worker: int = None,
 ) -> None:
 	"""Run num_experiments independent replicates in parallel worker processes, skipping any already complete."""
 	# experiment_fn(experiment_id, output_dir, queue, variants, include_random) runs one replicate —
@@ -771,18 +881,17 @@ def run_study(
 		reporter_thread.start()
 
 		vprint(f"\n[bold green]{'='*60}[/bold green]")
-		vprint(f"[bold]LAUNCHING {num_experiments} INDEPENDENT {title} EXPERIMENTS[/bold]")
+		pending = [exp_id for exp_id in range(num_experiments) if not replicate_complete(os.path.join(output_dir, f"exp_{exp_id + 1}"))]
+		vprint(f"[bold]{launch_summary(num_experiments, len(pending), workers, title)}[/bold]")
 		vprint(f"Agents: {(['Random'] if include_random else []) + [row['name'] if isinstance(row, dict) else row for row in variants]}")
-		vprint(f"Running [cyan]{workers}[/cyan] replicates in parallel.")
 		vprint(f"[bold green]{'='*60}[/bold green]\n")
 
 		# 3. Launch each experiment in isolated processes
-		with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as executor:
+		with concurrent.futures.ProcessPoolExecutor(max_workers=max(1, min(workers, len(pending)))) as executor:
 			futures = {}
 			for exp_id in range(num_experiments):
 				exp_dir = os.path.join(output_dir, f"exp_{exp_id + 1}")
-				analyzed = os.path.exists(os.path.join(exp_dir, "outputs.txt")) and os.path.getsize(os.path.join(exp_dir, "outputs.txt")) > 0
-				if analyzed:
+				if replicate_complete(exp_dir):
 					reporting_queue.put(
 						{
 							"exp_id": exp_id,
@@ -792,7 +901,9 @@ def run_study(
 					)
 					continue
 
-				future = executor.submit(run_experiment_worker, exp_id, reporting_queue, output_dir, variants, include_random, experiment_fn)
+				future = executor.submit(
+					run_experiment_worker, exp_id, reporting_queue, output_dir, variants, include_random, experiment_fn, threads_per_worker
+				)
 				futures[future] = exp_id
 
 			for future in concurrent.futures.as_completed(futures):
@@ -824,8 +935,9 @@ if __name__ == "__main__":
 	run_study(
 		ARGS.num_experiments,
 		ARGS.output_dir,
-		select_variants(PERFORMANCE_VARIANTS, ARGS.variants),
+		select_variants(ABLATION_VARIANTS, ARGS.variants),
 		ARGS.include_random,
-		"ENA PERFORMANCE",
+		"ENA ABLATION",
 		workers=ARGS.workers,
+		threads_per_worker=ARGS.threads_per_worker,
 	)

@@ -14,7 +14,7 @@ import tensorflow as tf
 from keras import optimizers
 
 # App imports
-from .tools.baseline import ABaseline
+from .tools.baseline import ABaseline, transition
 
 # pylint: disable=too-many-instance-attributes
 class DQNAgent(ABaseline):
@@ -100,15 +100,7 @@ class DQNAgent(ABaseline):
 	def train(self, **kwargs):
 		"""Store transition and run a gradient step on schedule."""
 		step_data = kwargs["step_data"]
-		self.replay_buffer.append(
-			(
-				step_data["state"],
-				step_data["action"],
-				step_data["reward"],
-				step_data["next_state"],
-				float(step_data["done"]),
-			)
-		)
+		self.replay_buffer.append(transition(step_data))
 
 		self.current_step += 1
 

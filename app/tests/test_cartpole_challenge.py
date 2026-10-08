@@ -7,8 +7,9 @@ import pytest
 # App imports
 from helpers import step
 import cartpole_challenge
+import cartpole_ena_ablation
 from agents import DQNAgent, ENAgent, PPOAgent, RandomAgent, SACDiscreteAgent
-from cartpole_ena_performance import PERFORMANCE_VARIANTS, parse_args
+from cartpole_ena_ablation import ABLATION_VARIANTS
 from tools.early_stopping import StoppingRule
 
 
@@ -25,11 +26,11 @@ def test_build_agent_returns_the_named_agent(name, agent_type) -> None:
 
 
 def test_the_challenge_ena_is_the_performance_studys_combined_agent() -> None:
-	"""The ENA under test is exactly ENA-Combined from the performance study (same skill drivers)."""
+	"""The ENA under test is exactly ENA-Combined from the ablation (same skill drivers)."""
 	with step("Act: build it and read its skill drivers' modules."):
 		agent = cartpole_challenge.build_agent("ENA-Combined", max_agent_threads=1)
 		skills = agent._skills  # pylint: disable=protected-access
-		combined = next(row for row in PERFORMANCE_VARIANTS if row["name"] == "ENA-Combined")
+		combined = next(row for row in ABLATION_VARIANTS if row["name"] == "ENA-Combined")
 
 	with step("Assert: same plasticity, Hall of Fame and env-detection drivers, bpr selection."):
 		assert type(skills["plasticity"]._instance).__module__.endswith(combined["plasticity_algorithm"])  # pylint: disable=protected-access
@@ -49,8 +50,8 @@ def test_first_solve_protocol_trains_every_agent_under_the_same_stopping_rule(mo
 	"""Fairness: one StoppingRule for all agents, evaluations on separate copies of the training environments."""
 	with step("Arrange: capture agent_training's arguments; skip testing."):
 		captured = {}
-		monkeypatch.setattr(cartpole_challenge, "agent_training", lambda **kwargs: captured.update(kwargs))
-		monkeypatch.setattr(cartpole_challenge, "agent_testing", lambda **_kwargs: None)
+		monkeypatch.setattr(cartpole_ena_ablation, "agent_training", lambda **kwargs: captured.update(kwargs))
+		monkeypatch.setattr(cartpole_ena_ablation, "agent_testing", lambda **_kwargs: None)
 
 	with step("Act: one replicate with two baselines and Random."):
 		cartpole_challenge.run_experiment(
@@ -72,20 +73,18 @@ def test_first_solve_protocol_trains_every_agent_under_the_same_stopping_rule(mo
 		names = [world.unwrapped.name for world in captured["worlds"]]
 		assert [world.unwrapped.name for world in captured["eval_worlds"]] == names
 		assert all(evaluation is not training for evaluation, training in zip(captured["eval_worlds"], captured["worlds"]))
+		# Equal step budget: the training chart is drawn against env steps, so every agent spans the same range.
+		assert captured["training_x_axis"] == "env_steps"
 
 
-def test_defaults_run_all_agents_plus_random_for_50_replicates() -> None:
-	"""No flags: ENA, DQN, PPO, SAC-Discrete and the Random floor, 50 replicates, challenge output dir."""
+def test_defaults_run_ena_and_the_three_baselines_without_random_for_50_replicates() -> None:
+	"""No flags: ENA, DQN, PPO, SAC-Discrete, 50 replicates, challenge output dir. No Random floor: the ablation reports it."""
 	with step("Act: parse the challenge's defaults."):
-		args = parse_args(
-			[],
-			variant_table=cartpole_challenge.CHALLENGE_AGENTS,
-			defaults={"output_dir": cartpole_challenge.OUTPUT_DIR, "num_experiments": cartpole_challenge.NUM_EXPERIMENTS, "include_random": True},
-		)
+		args = cartpole_challenge.parse_challenge_args([])
 
-	with step("Assert: the full challenge."):
+	with step("Assert: the full challenge, without Random."):
 		assert args.variants == ["ENA-Combined", "DQN", "PPO", "SAC-Discrete"]
-		assert args.include_random is True
+		assert args.include_random is False
 		assert args.num_experiments == 50
 		assert args.output_dir.endswith("cartpole_challenge_outputs")
 
@@ -94,8 +93,8 @@ def test_fixed_budget_protocol_trains_everyone_to_the_same_budget_without_stoppi
 	"""Option 3 (default): first solve recorded, no stop on solve or plateau, the same per-environment budget for all."""
 	with step("Arrange: capture agent_training's arguments; skip testing."):
 		captured = {}
-		monkeypatch.setattr(cartpole_challenge, "agent_training", lambda **kwargs: captured.update(kwargs))
-		monkeypatch.setattr(cartpole_challenge, "agent_testing", lambda **_kwargs: None)
+		monkeypatch.setattr(cartpole_ena_ablation, "agent_training", lambda **kwargs: captured.update(kwargs))
+		monkeypatch.setattr(cartpole_ena_ablation, "agent_testing", lambda **_kwargs: None)
 
 	with step("Act: one fixed-budget replicate."):
 		cartpole_challenge.run_experiment(0, str(tmp_path), None, [{"name": "PPO"}], include_random=False, protocol="fixed-budget")

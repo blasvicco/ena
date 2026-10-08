@@ -10,6 +10,10 @@ import numpy as np
 from agents.ena.skills.mutation.driver.abstract import ADriver
 
 
+# Mutation-noise standard deviation at zero Plasticity (it grows linearly to mutation_noise at full Plasticity).
+MIN_NOISE = 0.01
+
+
 class Instance(ADriver):  # pylint: disable=too-few-public-methods
 	"""Clones a parent's weights, flipping each with probability mutation_rate, adding Gaussian noise scaled by mutation_noise and plasticity."""
 
@@ -24,8 +28,10 @@ class Instance(ADriver):  # pylint: disable=too-few-public-methods
 		target["individual_id"] = str(uuid.uuid4())
 		target["trust"] = default_trust
 		target["is_gladiator"] = False
+		target["internal_env_id"] = -1
+		target["env_name"] = "Unknown"
 
-		noise_mag = 0.01 + ((self._mutation_noise - 0.01) * plasticity)
+		noise_mag = MIN_NOISE + ((self._mutation_noise - MIN_NOISE) * plasticity)
 
 		# USP: Inherit the parent's alignment state. The child's weights are still
 		# in the parent's space until explicitly projected during evaluation.

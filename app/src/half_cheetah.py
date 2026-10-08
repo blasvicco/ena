@@ -1,243 +1,73 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""ENA Experiments: HalfCheetah"""
+"""ENA vs. PPO / SAC on non-stationary HalfCheetah — same evaluation/stopping rule for all, frozen test (continuous control)."""
+
+# Structurally parallel to cartpole_challenge.py by design (CLAUDE.md: same experiment lifecycle per domain).
+# pylint: disable=duplicate-code
 
 # General imports
-import csv
+import argparse
+import functools
 import os
-import threading
-import time
-import traceback
-import faulthandler
-import concurrent.futures
-from multiprocessing import Manager
 
 # Libs imports
 import gymnasium as gym
-import numpy as np
-import pandas as pd
-import tensorflow as tf
-from keras import Model, Input, initializers, Sequential
+from keras import Input, Model, Sequential, initializers
 from keras.layers import Dense
 
 # App imports
-from agents import ENAgent, PPOAgent, SACAgent
-from tools.metrics import (
-	calculate_paper_metrics,
-	plot_academic_comparison,
-	plot_plasticity_analysis,
-	plot_specialist_transitions,
+from agents import ENAgent, PPOAgent, RandomAgent, SACAgent
+from cartpole_ena_ablation import (
+	MAX_WORKERS,
+	ABLATION_VARIANTS,
+	build_seeded,
+	parse_args,
+	post_update,
+	run_study,
+	seed_experiment,
+	select_variants,
+	train_and_test,
 )
-from tools.visualization import vprint, ProgressReporter
+from tools.early_stopping import StoppingRule
+from tools.visualization import vprint
 
 # Constants
-NUM_EXPERIMENTS = 1
-MAX_WORKERS = os.cpu_count() - 2
-GPUS = tf.config.list_physical_devices("GPU")
+NUM_EXPERIMENTS = 50
+# Anchored to this file's own location (one level up from src/), not the caller's cwd.
+OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "half_cheetah_outputs")
+ENA_NAME = "ENA-Combined"
 
-# HalfCheetah specific constants
-SUCCESS_THRESHOLD = 8000.0
+# Same two protocols and lifecycle as cartpole_challenge.py (see its header): "fixed-budget" (default)
+# trains every agent FIXED_BUDGET_PER_ENV env-steps per environment and records the first solve;
+# "first-solve" ends an environment at the first solve, a plateau or MAX_STEPS_PER_ENV. Then a frozen
+# test on 5 worlds, 2 of them never trained (Ice-Floor, High-Wind).
+#
+# PROVISIONAL (docs/PLAN_half_cheetah.md, Stage 2): the solved bar, check interval, budgets, test
+# episodes and ENA's configuration below are placeholders until the calibration and speed runs
+# (Stages 3-5) and the author's decision. Do not launch a study before then.
+SOLVED_SCORE = 4800.0  # gymnasium's registered reward_threshold for HalfCheetah-v5
+CHECK_EVERY = 25_000  # an evaluation episode is 1000 steps; 5 per check = 5,000 steps
+EVAL_EPISODES = 5
+PLATEAU_CHECKS = 20  # 500k env-steps without a PLATEAU_MIN_GAIN gain
+PLATEAU_MIN_GAIN = 100.0
+MAX_STEPS_PER_ENV = 1_500_000
+FIXED_BUDGET_PER_ENV = 1_000_000
+TESTING_EPISODES = [50, 50, 50, 50, 50]
+# Ignored under a stopping rule (training length is the step budget); one entry per training world.
+TRAINING_EPISODES = [500, 500, 500]
 Y_LIM = (-1000, 12000)
+AIR_DENSITY = 1.2  # kg/m^3, sea-level air; only windy worlds have a medium
 
-TESTING_EPISODES = [200, 200, 200, 200, 200]
-TRAINING_EPISODES_BASELINE = [1000, 1000, 1000]
-TRAINING_EPISODES_ENA = [500, 500, 500]
+PROTOCOLS = ("fixed-budget", "first-solve")
+OUTPUT_DIRS = {
+	"fixed-budget": OUTPUT_DIR,
+	"first-solve": os.path.join(os.path.dirname(OUTPUT_DIR), "half_cheetah_first_solve_outputs"),
+}
+# DQN and SAC-Discrete are discrete-action agents and have no place in this continuous domain.
+CHALLENGE_AGENTS = [{"name": ENA_NAME}, {"name": "PPO"}, {"name": "SAC"}]
+
 
 # Helper methods
-def ena_brain(action_dim, state_dim):
-	"""Build a ENA-NN for continuous control."""
-	init_hidden = initializers.Orthogonal(gain=1.0)
-	init_output = initializers.Orthogonal(gain=0.1)
-	return Sequential(
-		[
-			Input(shape=(state_dim,)),
-			Dense(8, activation="relu", kernel_initializer=init_hidden),
-			Dense(8, activation="relu", kernel_initializer=init_hidden),
-			Dense(
-				action_dim,
-				activation="tanh",
-				kernel_initializer=init_output,
-			),
-		]
-	)
-
-
-def ppo_actor_brain(action_output_dim, state_dim, hidden=(256, 256)):
-	"""Factory for PPO actor network."""
-	init_hidden = initializers.Orthogonal(gain=np.sqrt(2))
-	init_output = initializers.Orthogonal(gain=0.01)
-	inputs = Input(shape=(state_dim,))
-	_x_ = inputs
-	for units in hidden:
-		_x_ = Dense(units, activation="relu", kernel_initializer=init_hidden)(_x_)
-	outputs = Dense(action_output_dim, kernel_initializer=init_output)(_x_)
-	return Model(inputs, outputs)
-
-
-def ppo_critic_brain(action_output_dim, state_dim, hidden=(256, 256)):
-	"""Factory for PPO critic network."""
-	init_hidden = initializers.Orthogonal(gain=np.sqrt(2))
-	init_output = initializers.Orthogonal(gain=1.0)
-	inputs = Input(shape=(state_dim,))
-	_x_ = inputs
-	for units in hidden:
-		_x_ = Dense(units, activation="relu", kernel_initializer=init_hidden)(_x_)
-	outputs = Dense(action_output_dim, kernel_initializer=init_output)(_x_)
-	return Model(inputs, outputs)
-
-
-def sac_brain(action_output_dim, state_dim, hidden=(64, 64)):
-	"""Builds the actor network for SAC."""
-	inputs = Input(shape=(state_dim,))
-	unimportant_tensor = inputs
-	for units in hidden:
-		unimportant_tensor = Dense(units, activation="relu")(unimportant_tensor)
-	outputs = Dense(action_output_dim)(unimportant_tensor)
-	return Model(inputs, outputs)
-
-
-# pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
-def agent_testing(agents, experiment_id, output_dir, output_file, queue, worlds):
-	"""Test agents on worlds"""
-	post_update(experiment_id, queue, status="Phase 2: Testing Setup", progress=8)
-
-	# Testing worlds with varying physics (Generalization Test)
-	test_worlds = [
-		worlds[0],  # Mars-Light
-		make_env(gravity=-9.8, friction=0.05, name="Ice-Floor"),
-		worlds[1],  # Jupiter-Heavy
-		make_env(gravity=-9.8, friction=0.4, wind=(-20, 0, 0), name="High-Wind"),
-		worlds[2],  # Earth-Standard
-	]
-
-	agent_ids = []
-	execution_times = {}
-	history_testing = {}
-	known_niche_ids_by_history = []
-	for agent in agents:
-		agent_name = agent.get_name()
-		episodes = agent.get_episodes()
-		agent_ids.append(agent_name)
-		post_update(experiment_id, queue, status=f"Testing {agent_name}", progress=8)
-		# Niches already established by the end of training — so the test chart's niche
-		# events classify a niche's first test-phase appearance as a "switch", not a
-		# spurious "new niche" (no niche can genuinely be created once train() stops running).
-		known_niche_ids_by_history.append(getattr(agent, "known_niche_ids", None))
-		agent.set_learning(False, output_dir=output_dir)
-		start_time = time.time()
-		history_testing[agent_name] = play(
-			agent,
-			test_worlds,
-			episodes,
-			live_log_path=os.path.join(output_dir, f"live_testing_{agent_name}.csv"),
-			on_episode=make_eta_reporter(experiment_id, queue, "Testing", agent_name, start_time),
-		)
-		execution_times[agent_name] = time.time() - start_time
-
-	# Calculate and print metrics for this experiment
-	print(f"\n  --- Experiment {experiment_id + 1} Test Results ---", file=output_file)
-	calculate_paper_metrics(
-		history_testing.values(),
-		agent_ids,
-		file=output_file,
-		success_threshold=SUCCESS_THRESHOLD,
-		times=execution_times,
-	)
-
-	# Testing Plots
-	post_update(experiment_id, queue, status="Generating Testing Plots", progress=8)
-	plot_academic_comparison(
-		history_testing.values(),
-		agent_ids,
-		save_path=os.path.join(output_dir, "test.png"),
-		success_threshold=SUCCESS_THRESHOLD,
-		ylim=Y_LIM,
-		known_niche_ids_by_history=known_niche_ids_by_history,
-	)
-
-	for agent in agents:
-		is_ena = isinstance(agent, ENAgent)
-		if is_ena:
-			agent_name = agent.get_name()
-			plot_specialist_transitions(
-				history_testing[agent_name],
-				pop_size=agent.pop_size,
-				save_path=os.path.join(
-					output_dir,
-					f"specialist_transitions_TESTING_{agent_name}.png",
-				),
-			)
-
-
-def agent_training(agents, experiment_id, output_dir, output_file, queue, worlds):
-	"""Train agents on worlds"""
-	agent_ids = []
-	execution_times = {}
-	history_training = {}
-	for agent in agents:
-		agent_name = agent.get_name()
-		episodes = agent.get_episodes()
-		agent_ids.append(agent_name)
-		post_update(experiment_id, queue, status=f"Training {agent_name}", progress=8)
-		agent.set_learning(True)
-		start_time = time.time()
-		live_log_path = os.path.join(output_dir, f"live_training_{agent_name}.csv")
-		history_training[agent_name] = play(
-			agent,
-			worlds,
-			episodes,
-			live_log_path=live_log_path,
-			on_episode=make_eta_reporter(experiment_id, queue, "Training", agent_name, start_time),
-		)
-		execution_times[agent_name] = time.time() - start_time
-
-	# Training Summary
-	print("\n  --- Training Performance vs Time ---", file=output_file)
-	for agent_name, duration in execution_times.items():
-		print(f"  {agent_name}: {duration:.2f} seconds", file=output_file)
-
-	# Training Metrics
-	print("\nTraining:", file=output_file)
-	calculate_paper_metrics(
-		history_training.values(),
-		agent_ids,
-		success_threshold=SUCCESS_THRESHOLD,
-		times=execution_times,
-		file=output_file,
-	)
-
-	# Training Plots
-	post_update(experiment_id, queue, status="Generating Training Plots", progress=8)
-	plot_academic_comparison(
-		history_training.values(),
-		agent_ids,
-		save_path=os.path.join(output_dir, "training.png"),
-		success_threshold=SUCCESS_THRESHOLD,
-		ylim=Y_LIM,
-	)
-
-	for agent in agents:
-		is_ena = isinstance(agent, ENAgent)
-		if is_ena:
-			agent_name = agent.get_name()
-			plot_plasticity_analysis(
-				agent,
-				history_training[agent_name],
-				save_path=os.path.join(
-					output_dir,
-					f"plasticity_{agent_name}.png",
-				),
-			)
-			plot_specialist_transitions(
-				history_training[agent_name],
-				pop_size=agent.pop_size,
-				save_path=os.path.join(
-					output_dir,
-					f"specialist_transitions_TRAINING_{agent_name}.png",
-				),
-			)
-
-
 def make_env(
 	friction=0.4,
 	gravity=-9.8,
@@ -245,334 +75,276 @@ def make_env(
 	render_mode=None,
 	wind=(0, 0, 0),
 ):
-	"""Create the environment with custom physics"""
+	"""Create a HalfCheetah-v5 world with custom physics (gravity, ground friction, wind)."""
 	env = gym.make("HalfCheetah-v5", render_mode=render_mode)
+	model = env.unwrapped.model
 
 	# 1. Gravity (Z-axis) - Negative pulls DOWN
-	env.unwrapped.model.opt.gravity[2] = gravity
+	model.opt.gravity[2] = gravity
 	env.unwrapped.gravity = gravity  # Expose for ENAgent
 
-	# 2. Friction (modify the floor geom friction)
-	env.unwrapped.model.geom_friction[0, 0] = friction
+	# 2. Friction: MuJoCo uses the larger of the two contacting geoms' sliding frictions, and every geom
+	# of the stock model is at 0.4, so the friction is set on every geom (floor and cheetah alike).
+	model.geom_friction[:, 0] = friction
 	env.unwrapped.friction = friction  # Expose for ENAgent
 
-	# 3. Wind (3D vector)
-	env.unwrapped.model.opt.wind[:] = wind
+	# 3. Wind (3D vector): it only acts through fluid forces, which need a medium; windy worlds get air
+	# density, calm worlds stay vacuum like the stock model.
+	model.opt.wind[:] = wind
+	model.opt.density = AIR_DENSITY if any(wind) else 0.0
+	env.unwrapped.wind = tuple(float(component) for component in wind)  # Expose for ENAgent (it re-creates worlds from these)
 
 	env.unwrapped.name = name
 	return env
 
 
-def play(agent, envs, episodes_per_env, live_log_path=None, on_episode=None):
-	"""Play the game.
-
-	If live_log_path is given, each episode's row is also appended to that CSV,
-	flushed immediately — lets a separate process (e.g. tools/live_monitor.py) watch
-	convergence while this run is still in progress, without changing the returned
-	DataFrame or any existing chart in any way.
-
-	If on_episode is given, it's called after every episode as on_episode(episode_num,
-	total_episodes) — e.g. to report a live ETA.
-	"""
-	history = []
-	total_episodes = sum(episodes_per_env)
-	live_log_file = None
-	live_log_writer = None
-	if live_log_path:
-		# pylint: disable=consider-using-with
-		live_log_file = open(live_log_path, "w", newline="", encoding="utf-8")
-
-	try:
-		for env_idx, env in enumerate(envs):
-			for _ in range(episodes_per_env[env_idx]):
-				state, _ = env.reset()
-				state = np.array(state, dtype=np.float32)
-				episode_score = 0
-				is_done = False
-
-				while not is_done:
-					# 1. Agent performs the step internally
-					next_state, reward, terminated, truncated, action = agent.act(env, state)
-					is_done = terminated or truncated
-
-					# 2. Collect data for training
-					if agent.learn:
-						agent.train(
-							env=env,
-							step_data={
-								"action": action,
-								"done": is_done,
-								"terminated": terminated,  # True only on genuine terminal state
-								"next_state": next_state,
-								"reward": reward,
-								"state": state,
-							},
-						)
-
-					episode_score += reward
-					state = next_state
-
-				current_individual = agent.population[getattr(agent, "best_individual_idx", 0)] if hasattr(agent, "population") else {}
-				plasticity_history = getattr(agent, "plasticity_history", None)
-				row = {
-					"env_id": getattr(env.unwrapped, "name", env_idx),
-					"episode": len(history) + 1,
-					"score": episode_score,
-					"specialist_id": getattr(agent, "best_individual_idx", 0),
-					"is_gladiator": current_individual.get("is_gladiator", False),
-					"gladiator_env": current_individual.get("env_name", None),
-					"detected_env_id": getattr(agent, "current_env_id", -1),
-					"internal_env_id": current_individual.get("internal_env_id", -1),
-					"env_shift_detected": getattr(agent, "last_env_shift_detected", False),
-					"plasticity": plasticity_history[-1] if plasticity_history else None,
-				}
-				history.append(row)
-
-				if on_episode is not None:
-					on_episode(len(history), total_episodes)
-
-				if live_log_file is not None:
-					if live_log_writer is None:
-						live_log_writer = csv.DictWriter(live_log_file, fieldnames=list(row.keys()))
-						live_log_writer.writeheader()
-					live_log_writer.writerow(row)
-					live_log_file.flush()
-	finally:
-		if live_log_file is not None:
-			live_log_file.close()
-
-	return pd.DataFrame(history)
+def make_training_worlds() -> list:
+	"""The 3 training worlds, in training order."""
+	return [
+		make_env(friction=0.1, gravity=-3.7, name="Mars-Slippery"),
+		make_env(friction=1.5, gravity=-24.8, name="Jupiter-Rough"),
+		make_env(friction=0.4, gravity=-9.8, name="Earth-Standard"),
+	]
 
 
-def post_update(experiment_id, queue, status=None, progress=0, done=False):
-	"""Post update to the reporting queue."""
-	if queue:
-		queue.put(
-			{
-				"done": done,
-				"exp_id": experiment_id,
-				"progress": progress,
-				"status": status,
-			}
-		)
+def make_unseen_worlds() -> list:
+	"""The 2 never-trained test worlds: Earth gravity with an icy floor, and Earth with a strong head wind."""
+	return [
+		make_env(friction=0.05, gravity=-9.8, name="Ice-Floor"),
+		make_env(friction=0.4, gravity=-9.8, wind=(-20, 0, 0), name="High-Wind"),
+	]
 
 
-def format_duration(seconds):
-	"""Format a duration in seconds as e.g. '1h 55m 31s', '6m 22s', or '42s'."""
-	hours, remainder = divmod(int(seconds), 3600)
-	minutes, secs = divmod(remainder, 60)
-	if hours:
-		return f"{hours}h {minutes}m {secs}s"
-	if minutes:
-		return f"{minutes}m {secs}s"
-	return f"{secs}s"
+def make_test_worlds(worlds: list) -> list:
+	"""The frozen test sequence: the training worlds interleaved with the never-trained ones."""
+	ice_floor, high_wind = make_unseen_worlds()
+	return [worlds[0], ice_floor, worlds[1], high_wind, worlds[2]]
 
 
-def make_eta_reporter(experiment_id, queue, label, agent_name, start_time):
-	"""Build a play() on_episode callback that reports a live ETA via the status queue,
-	estimated from the average time per episode elapsed so far this phase."""
+def ena_brain(action_dim: int, state_dim: int, hidden: int = 8, activation: str = "relu") -> Sequential:
+	"""Build a ENA-NN for continuous control (tanh outputs in the [-1, 1] action range); hidden units and activation per layer."""
+	init_hidden = initializers.Orthogonal(gain=1.0)
+	init_output = initializers.Orthogonal(gain=0.1)
+	return Sequential(
+		[
+			Input(shape=(state_dim,)),
+			Dense(hidden, activation=activation, kernel_initializer=init_hidden),
+			Dense(hidden, activation=activation, kernel_initializer=init_hidden),
+			Dense(action_dim, activation="tanh", kernel_initializer=init_output),
+		]
+	)
 
-	def _report(episode_num, total_episodes):
-		if episode_num <= 0 or episode_num >= total_episodes:
-			return
-		elapsed = time.time() - start_time
-		remaining = (elapsed / episode_num) * (total_episodes - episode_num)
-		eta_str = format_duration(remaining)
-		post_update(experiment_id, queue, status=f"{label} {agent_name} (ETA {eta_str})")
 
-	return _report
+# Baseline settings: validated published configurations, never tuned by us.
+#
+# Source for both baselines: RL Baselines3 Zoo (Raffin, 2020), the tuned hyperparameters for
+# Stable-Baselines3 (Raffin et al., JMLR 2021). Its benchmark (benchmark.md, HalfCheetah-v3, 1M steps,
+# 150 evaluation episodes) reports a mean return of 5,819 +/- 664 for PPO and 9,535 +/- 100 for SAC with
+# exactly these settings. We take them unchanged, so a reader can check that each baseline is
+# competitive on HalfCheetah, and any advantage of ENA cannot come from a weakened baseline. The
+# deviations, all forced by the non-stationary protocol or by the shared runner, are listed per agent.
+#
+# PPO (rl-baselines3-zoo hyperparams/ppo.yml, entry HalfCheetah):
+#   - policy and value networks 256x256 ReLU, separate, without orthogonal initialization;
+#   - n_steps 512, batch 64, 20 epochs, gamma 0.98, GAE lambda 0.92, clip 0.1;
+#   - learning rate 2.0633e-5, entropy coefficient 4.01762e-4, value coefficient 0.58096;
+#   - max gradient norm 0.8, initial log std -2;
+#   - observations and rewards normalized (VecNormalize: reward scaled by the std of the discounted return).
+#   Deviation: constant learning rate (the zoo's schedule is also constant), and no annealing to zero
+#   at the end of the budget, which in a non-stationary stream would freeze PPO in its last environment.
+#
+# SAC (Stable-Baselines3 defaults, as used by the zoo's HalfCheetah entry, hyperparams/sac.yml):
+#   - actor and twin critics 256x256 ReLU (Haarnoja et al., 2018);
+#   - learning rate 3e-4, batch 256, buffer 1M, tau 0.005, gamma 0.99;
+#   - automatic entropy tuning toward -dim(A) = -6;
+#   - one gradient step per environment step, after 10,000 steps of uniform random actions.
+#   Deviation: the gradient steps are applied in groups of 20 every 20 environment steps (same update
+#   ratio), for speed. At test, every baseline acts deterministically (SAC: tanh of the policy mean).
+PPO_SETTINGS = {
+	"n_steps": 512,
+	"batch_size": 64,
+	"n_epochs": 20,
+	"gamma": 0.98,
+	"gae_lambda": 0.92,
+	"clip_ratio": 0.1,
+	"learning_rate": 2.0633e-5,
+	"entropy_coef": 4.01762e-4,
+	"value_coef": 0.58096,
+	"max_grad_norm": 0.8,
+	"log_std_init": -2.0,
+	"reward_scaling": "return",
+	"anneal_lr": False,
+}
+SAC_SETTINGS = {
+	"batch_size": 256,
+	"buffer_capacity": 1_000_000,
+	"gamma": 0.99,
+	"learning_rate": 3e-4,
+	"tau": 0.005,
+	"learning_starts": 10_000,
+	"update_frequency": 20,
+	"gradient_steps": 20,
+}
 
 
-def run_experiment(experiment_id, output_dir, queue=None):
-	"""Run a single experiment."""
+def mlp_brain(action_dim: int, state_dim: int, hidden: tuple = (256, 256)) -> Model:
+	"""256x256 ReLU MLP with Keras' default (Glorot) initialization: SAC's actor and critics, and PPO's policy and
+	value networks (the zoo's PPO disables orthogonal initialization)."""
+	inputs = Input(shape=(state_dim,))
+	hidden_tensor = inputs
+	for units in hidden:
+		hidden_tensor = Dense(units, activation="relu")(hidden_tensor)
+	outputs = Dense(action_dim)(hidden_tensor)
+	return Model(inputs, outputs)
+
+
+# ENA's environment detection, calibrated on HalfCheetah's training environments with
+# tools/detection_calibration.py (output in half_cheetah_probe_outputs/detection_calibration/): each
+# environment's linear-Gaussian model fitted on pooled calibration policies, tested on a held-out policy.
+#   - Verification window 1,000 transitions (CartPole: 50). With 24 features and 17 outputs, a model fitted
+#     fresh on 50 transitions nearly interpolates them, so it beat every niche's model and every alarm became a
+#     new niche (47 niches for 3 environments in the first probe). At 1,000 the own-environment gap is <= 1.5
+#     nats/step, so alarms caused by a new policy are absorbed instead.
+#   - Novelty margin 3 nats/step (CartPole: 2): headroom over that 1.5, far below Jupiter's separation (13.6).
+#   - Recent window 3,000 and niche maturity 1,000 transitions: identification and comparison need well over a
+#     verification window of data.
+#   - Tolerance 3 and CuSum gamma 1e8 are CartPole's: the larger tolerances removed the separation.
+#   - Known limit: the linear model does not separate Mars-Slippery from Earth-Standard (gaps 1.4 and 0.35), so
+#     they share a niche; Jupiter-Rough, the environment no other policy transfers to, separates clearly.
+ENA_DETECTION = {
+	"recognizer_residual_tolerance": 3.0,
+	"recognizer_novelty_margin": 3.0,
+	"recognizer_cusum_false_alarm_steps": 1e8,
+	"recognizer_min_verify_samples": 1_000,
+	"recognizer_recent_size": 3_000,
+	"recognizer_min_samples": 1_000,
+}
+
+
+# ENA's search on HalfCheetah (no prior paper: set by the calibration recorded in docs/PLAN_half_cheetah.md).
+ENA_SETTINGS = {
+	"exploration_rate": 0.2,
+	"max_per_niche": 10,
+	"max_gladiator_ratio": 0.5,
+	"max_eval_steps": 250,
+	"mutation_rate": 0.1,
+	"mutation_noise": 0.3,
+	"pop_size": 200,
+	"selection_driver": "bpr",
+	"trust_algorithm": "linear_ramp",
+}
+
+
+def build_ena_agent(max_agent_threads: int, brain_hidden: int = 8, brain_activation: str = "relu", **overrides) -> ENAgent:
+	"""ENA-Combined (the ablation's skill set) with HalfCheetah's physics context, calibrated detection and search settings;
+	overrides replace any ENAgent argument (the calibration probes use them)."""
+	skills = next(row for row in ABLATION_VARIANTS if row["name"] == ENA_NAME)
+	settings = {
+		**ENA_SETTINGS,
+		"plasticity_algorithm": skills["plasticity_algorithm"],
+		"hall_of_fame_driver": skills["hall_of_fame_driver"],
+		"recognizer_strategy": skills["recognizer_strategy"],
+		**ENA_DETECTION,
+		**overrides,
+	}
+	brain = functools.partial(ena_brain, hidden=brain_hidden, activation=brain_activation)
+	return ENAgent(brain=brain, make_env=make_env, max_threads=max_agent_threads, physics=["gravity", "friction", "wind"], **settings)
+
+
+def build_agent(name: str, max_agent_threads: int, **ena_overrides):
+	"""One challenge agent by name; its training length comes from the stopping rule (ena_overrides: calibration only)."""
+	if name == ENA_NAME:
+		agent = build_ena_agent(max_agent_threads, **ena_overrides)
+	elif name == "PPO":
+		agent = PPOAgent(brain=mlp_brain, critic_brain=mlp_brain, make_env=make_env, **PPO_SETTINGS)
+	elif name == "SAC":
+		agent = SACAgent(brain=mlp_brain, make_env=make_env, **SAC_SETTINGS)
+	elif name == "Random":
+		agent = RandomAgent(brain=None, make_env=make_env)
+	else:
+		raise ValueError(f"Unknown HalfCheetah challenge agent: {name!r}")
+	agent.set_name(name)
+	agent.set_episodes(TRAINING_EPISODES)
+	return agent
+
+
+def make_stopping_rule(protocol: str = "fixed-budget") -> StoppingRule:
+	"""The challenge's evaluation/stopping rule for a protocol, identical for every agent."""
+	if protocol not in PROTOCOLS:
+		raise ValueError(f"Unknown protocol {protocol!r}; expected one of {PROTOCOLS}")
+	fixed_budget = protocol == "fixed-budget"
+	return StoppingRule(
+		check_every=CHECK_EVERY,
+		eval_episodes=EVAL_EPISODES,
+		solved_score=SOLVED_SCORE,
+		plateau_checks=PLATEAU_CHECKS,
+		plateau_min_gain=PLATEAU_MIN_GAIN,
+		max_steps=FIXED_BUDGET_PER_ENV if fixed_budget else MAX_STEPS_PER_ENV,
+		stop_when_solved=not fixed_budget,
+		stop_on_plateau=not fixed_budget,
+		# Keep checking after a solve: the return at the end of each environment measures forgetting.
+		check_after_solve=True,
+	)
+
+
+# pylint: disable=too-many-arguments,too-many-positional-arguments
+def run_experiment(experiment_id: int, output_dir: str, queue, variants: list, include_random: bool, protocol: str = "fixed-budget") -> None:
+	"""Run one replicate: every agent trained under the same evaluation/stopping rule, then a frozen test."""
+	names = [row["name"] for row in variants]
 	post_update(experiment_id, queue, status="Initializing Agents...", progress=2)
+	seed_experiment(experiment_id)
 
-	# 0. Prepare Experiment Directory
 	os.makedirs(output_dir, exist_ok=True)
-	outputs_path = os.path.join(output_dir, "outputs.txt")
-	with open(outputs_path, "w", encoding="utf-8") as output_file:
+	with open(os.path.join(output_dir, "outputs.txt"), "w", encoding="utf-8") as output_file:
 		vprint(f"Experiment {experiment_id + 1} Log", file=output_file)
 		vprint("=" * 30, file=output_file)
 
-		# 1. Prepare Environments
-		worlds = [
-			make_env(friction=0.1, gravity=-3.7, name="Mars-Slippery"),
-			make_env(friction=1.5, gravity=-24.8, name="Jupiter-Rough"),
-			make_env(friction=0.4, gravity=-9.8, name="Earth-Standard"),
-		]
+		worlds = make_training_worlds()
+		max_agent_threads = max(1, os.cpu_count() // MAX_WORKERS)
+		agents = [build_seeded(experiment_id, build_agent, name, max_agent_threads) for name in names + (["Random"] if include_random else [])]
 
-		active_experiments = min(NUM_EXPERIMENTS, MAX_WORKERS)
-		max_agent_threads = max(1, os.cpu_count() // active_experiments)
-
-		# 2. Initialize Agents
-		ena_agent_01 = ENAgent(
-			brain=ena_brain,
-			make_env=make_env,
-			env_max_steps=1000.0,
-			max_per_niche=10,
-			max_gladiator_ratio=0.5,
-			max_eval_steps=250,
-			max_threads=max_agent_threads,
-			exploration_rate=0.2,
-			mutation_rate=0.1,
-			physics=["gravity", "friction"],
-			plasticity_algorithm="linear_ramp",
-			pop_size=200,
-			recognizer_threshold=0.90,
-			recognizer_ema_alpha=0.05,
-			selection_driver="heuristic",
-			trust_algorithm="linear_ramp",
-			mutation_noise=0.3,
-			controller_max_niches=32,
-		)
-		ena_agent_01.set_name("ENA-01 LinearRamp-LinearRamp")
-		ena_agent_01.set_episodes(TRAINING_EPISODES_ENA)
-
-		# 		ena_agent_02 = ENAgent(
-		# 			brain=ena_brain,
-		# 			make_env=make_env,
-		# 			gladiator_amounts=15,
-		# 			max_eval_steps=1000,  # HalfCheetah episodes are 1000 steps
-		# 			max_threads=max_agent_threads,
-		# 			mutation_rate=0.05,
-		# 			physics=["gravity", "friction"],
-		# 			plasticity_algorithm="quadratic",
-		# 			pop_size=50,
-		# 			trust_algorithm="quadratic",
-		# 			max_score=SUCCESS_THRESHOLD,
-		# 		)
-		# 		ena_agent_02.set_name("ENA-02 Quadratic-Quadratic")
-		# 		ena_agent_02.set_episodes(TRAINING_EPISODES_ENA)
-
-		# 		ppo_agent = PPOAgent(
-		# 			brain=ppo_actor_brain, critic_brain=ppo_critic_brain, make_env=make_env
-		# 		)
-		# 		ppo_agent.set_name("PPO Baseline")
-		# 		ppo_agent.set_episodes(TRAINING_EPISODES_BASELINE)
-
-		# 		sac_agent = SACAgent(brain=sac_brain, make_env=make_env, update_frequency=20, gradient_steps=5)
-		# 		sac_agent.set_name("SAC Baseline")
-		# 		sac_agent.set_episodes(TRAINING_EPISODES_BASELINE)
-
-		# 3. Training Phase
-		agent_training(
-			agents=[
-				ena_agent_01,
-				# ena_agent_02,
-				# ppo_agent,
-				# sac_agent,
-			],
-			experiment_id=experiment_id,
-			output_dir=output_dir,
-			output_file=output_file,
-			queue=queue,
-			worlds=worlds,
-		)
-
-		# 4. Testing Phase
-		ena_agent_01.set_episodes(TESTING_EPISODES)
-		# ena_agent_02.set_episodes(TESTING_EPISODES)
-		# ppo_agent.set_episodes(TESTING_EPISODES)
-		# sac_agent.set_episodes(TESTING_EPISODES)
-
-		ena_agent_01.load_gladiators()
-		# ena_agent_02.load_gladiators()
-
-		agent_testing(
-			agents=[
-				ena_agent_01,
-				# ena_agent_02,
-				# ppo_agent,
-				# sac_agent,
-			],
-			experiment_id=experiment_id,
-			output_dir=output_dir,
-			output_file=output_file,
-			queue=queue,
-			worlds=worlds,
+		domain = {"success_threshold": SOLVED_SCORE, "ylim": Y_LIM}
+		train_and_test(
+			agents,
+			experiment_id,
+			output_dir,
+			output_file,
+			queue,
+			worlds,
+			testing_episodes=TESTING_EPISODES,
+			training={"stopping": make_stopping_rule(protocol), "eval_worlds": make_training_worlds(), "training_x_axis": "env_steps", **domain},
+			testing={"test_worlds": make_test_worlds(worlds), **domain},
 		)
 
 		post_update(experiment_id, queue, status="Done", done=True, progress=2)
 
 
-def run_experiment_worker(experiment_id, reporting_queue):
-	"""Wrapper that runs a single experiment in an isolated process."""
-	output_dir = os.path.join("cheetah_outputs", f"exp_{experiment_id + 1}")
-	os.makedirs(output_dir, exist_ok=True)
-	crash_log_path = os.path.join(output_dir, "crash.log")
-
-	crash_file = None
-	try:
-		# pylint: disable=consider-using-with
-		crash_file = open(crash_log_path, "w", encoding="utf-8")
-		faulthandler.enable(file=crash_file)
-	except Exception:  # pylint: disable=broad-except
-		pass
-
-	try:
-		run_experiment(experiment_id, output_dir, reporting_queue)
-	except Exception:  # pylint: disable=broad-except
-		tb_str = traceback.format_exc()
-		if crash_file and not crash_file.closed:
-			crash_file.write(tb_str)
-			crash_file.flush()
-		reporting_queue.put(
-			{
-				"done": True,
-				"exp_id": experiment_id,
-				"status": f"[bold red]Error: {tb_str}[/bold red]",
-			}
-		)
-	finally:
-		if crash_file:
-			crash_file.close()
-
-
-if __name__ == "__main__":
-	vprint(
-		f"[green]Hardware:[/green] GPU detection successful: {GPUS}." if GPUS else "[yellow]Hardware:[/yellow] No GPU detected. Defaulting to CPU."
+def parse_challenge_args(argv: list = None) -> argparse.Namespace:
+	"""The shared study flags plus --protocol; the default output directory follows the protocol."""
+	protocol_parser = argparse.ArgumentParser(add_help=False)
+	protocol_parser.add_argument("--protocol", choices=PROTOCOLS, default="fixed-budget")
+	known, remaining = protocol_parser.parse_known_args(argv)
+	args = parse_args(
+		remaining,
+		variant_table=CHALLENGE_AGENTS,
+		defaults={"output_dir": OUTPUT_DIRS[known.protocol], "num_experiments": NUM_EXPERIMENTS, "include_random": True},
 	)
+	args.protocol = known.protocol
+	return args
 
-	with Manager() as manager:
-		REPORTING_QUEUE = manager.Queue()
-		REPORTER = ProgressReporter(REPORTING_QUEUE, NUM_EXPERIMENTS)
-		REPORTER_THREAD = threading.Thread(target=REPORTER.run, daemon=True)
-		REPORTER_THREAD.start()
 
-		vprint(f"\n[bold green]{'='*60}[/bold green]")
-		vprint(f"[bold]HALFCHEETAH: LAUNCHING {NUM_EXPERIMENTS} INDEPENDENT EXPERIMENTS[/bold]")
-		vprint(f"Utilizing [cyan]{MAX_WORKERS}[/cyan] CPU cores.")
-		vprint(f"[bold green]{'='*60}[/bold green]\n")
-
-		with concurrent.futures.ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
-			futures = {}
-			for exp_id in range(NUM_EXPERIMENTS):
-				exp_dir = os.path.join("cheetah_outputs", f"exp_{exp_id + 1}")
-				analyzed = os.path.exists(os.path.join(exp_dir, "outputs.txt")) and os.path.getsize(os.path.join(exp_dir, "outputs.txt")) > 0
-				if analyzed:
-					REPORTING_QUEUE.put(
-						{
-							"exp_id": exp_id,
-							"status": "[yellow]Skipping (already exists)[/yellow]",
-							"done": True,
-						}
-					)
-					continue
-
-				future = executor.submit(run_experiment_worker, exp_id, REPORTING_QUEUE)
-				futures[future] = exp_id
-
-			for future in concurrent.futures.as_completed(futures):
-				exp_id = futures[future]
-				try:
-					future.result()
-				except Exception as error:  # pylint: disable=broad-except
-					vprint(f"[bold red]Experiment {exp_id + 1} crashed: {error}[/bold red]")
-
-		REPORTING_QUEUE.put(None)
-		REPORTER_THREAD.join(timeout=2.0)
-
-	vprint("\n[bold green]" + "=" * 60 + "[/bold green]")
-	vprint(f"[bold]ALL {NUM_EXPERIMENTS} EXPERIMENTS COMPLETE[/bold]")
-	vprint("Check the [cyan]outputs_cheetah/[/cyan] directory for detailed logs and plots.")
-	vprint("[bold green]" + "=" * 60 + "[/bold green]")
+# =============================================================================
+# MAIN: Run N independent experiments to produce statistically valid results
+# =============================================================================
+if __name__ == "__main__":
+	ARGS = parse_challenge_args()
+	run_study(
+		ARGS.num_experiments,
+		ARGS.output_dir,
+		select_variants(CHALLENGE_AGENTS, ARGS.variants),
+		ARGS.include_random,
+		f"HALFCHEETAH CHALLENGE ({ARGS.protocol})",
+		experiment_fn=functools.partial(run_experiment, protocol=ARGS.protocol),
+		workers=ARGS.workers,
+		threads_per_worker=ARGS.threads_per_worker,
+	)

@@ -10,7 +10,7 @@ import pytest
 # App imports
 from helpers import step
 
-RUNNERS = ["cartpole_ena_performance", "half_cheetah"]  # cartpole_challenge reuses cartpole_ena_performance.agent_testing
+RUNNERS = ["cartpole_ena_ablation"]  # cartpole_challenge and half_cheetah reuse cartpole_ena_ablation.agent_testing
 
 
 class _FakeAgent:
@@ -39,7 +39,7 @@ def test_agent_testing_live_logs_each_agent_to_its_own_testing_csv(runner_name, 
 		runner = importlib.import_module(runner_name)
 		captured = {}
 
-		def _fake_play(agent, _environments, _episodes_per_env, live_log_path=None, on_episode=None):  # pylint: disable=unused-argument
+		def _fake_play(agent, _environments, _episodes_per_env, live_log_path=None, on_episode=None, **_kwargs):  # pylint: disable=unused-argument
 			captured[agent.get_name()] = live_log_path
 			return pd.DataFrame([{"episode": 1, "score": 1.0, "env_id": "Earth"}])
 

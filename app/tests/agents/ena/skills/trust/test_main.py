@@ -15,7 +15,7 @@ def test_reference_returns_minus_one_below_five_samples() -> None:
 		memory = SimpleNamespace(reward_history=[1.0, 2.0])
 
 	with step("Assert: reference() returns -1.0, ranking a fresh slot above any evaluated mutant."):
-		assert trust.reference(memory, env_max_steps=1000.0) == -1.0
+		assert trust.reference(memory, return_scale=475.0) == -1.0
 
 
 def test_reset_population_leaves_gladiator_trust_untouched() -> None:
@@ -32,7 +32,7 @@ def test_reset_population_leaves_gladiator_trust_untouched() -> None:
 		]
 
 	with step("Act: reset trust with a large blend factor."):
-		trust.reset_population(population, memory, env_max_steps=1000.0, factor=1.0)
+		trust.reset_population(population, memory, return_scale=475.0, factor=1.0)
 
 	with step("Assert: the gladiator's trust is unchanged; the non-gladiator's was blended toward the reference."):
 		assert population[0]["trust"] == 5.0

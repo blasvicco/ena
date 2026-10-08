@@ -3,6 +3,7 @@
 # Libs imports
 import numpy as np
 
+
 class _IdentityNormalizer:
 	"""No-op normalizer for discrete environments."""
 
@@ -21,6 +22,7 @@ class _IdentityNormalizer:
 
 	def update(self, batch):
 		"""No-op — discrete environments don't need normalization."""
+
 
 class _RunningNormalizer:
 	"""Welford's online algorithm for running mean/variance normalization."""
@@ -66,11 +68,7 @@ class _RunningNormalizer:
 
 		new_mean = self.mean + delta * alpha
 		# Exponential moving average
-		new_var = (
-			(1.0 - alpha) * self.var
-			+ alpha * batch_var
-			+ alpha * (1.0 - alpha) * np.square(delta)
-		)
+		new_var = (1.0 - alpha) * self.var + alpha * batch_var + alpha * (1.0 - alpha) * np.square(delta)
 
 		self.mean = new_mean
 		self.var = new_var
@@ -78,6 +76,4 @@ class _RunningNormalizer:
 
 	def normalize(self, _x_):
 		"""Normalize to zero mean, unit variance, clipped."""
-		return np.clip(
-			(_x_ - self.mean) / np.sqrt(self.var + 1e-8), -self.clip, self.clip
-		)
+		return np.clip((_x_ - self.mean) / np.sqrt(self.var + 1e-8), -self.clip, self.clip)

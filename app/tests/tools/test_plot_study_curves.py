@@ -64,3 +64,22 @@ def test_plot_writes_an_image_and_rejects_a_missing_agent(tmp_path) -> None:
 		assert (tmp_path / "curves.png").stat().st_size > 0 and path.endswith("curves.png")
 		with pytest.raises(FileNotFoundError):
 			plot(str(tmp_path), "testing", ["Agent-Missing"], str(tmp_path / "other.png"))
+
+
+@pytest.mark.parametrize(
+	"kwargs, mastery, ylim", [({}, 475.0, (-10, 560)), ({"mastery_score": 4800.0, "ylim": (-1000, 12000)}, 4800.0, (-1000, 12000))]
+)
+def test_plot_uses_the_domains_mastery_bar_and_range(tmp_path, monkeypatch, kwargs, mastery, ylim) -> None:
+	"""CartPole's 475 bar and range by default; another domain (HalfCheetah) passes its own."""
+	with step("Arrange: one replicate, and keep the figure instead of closing it."):
+		_write_replicate(tmp_path, "exp_1", "Agent-X", [10, 20], ["Mars", "Mars"])
+		figures = []
+		monkeypatch.setattr("tools.plot_study_curves.plt.close", figures.append)
+
+	with step("Act: plot it."):
+		plot(str(tmp_path), "testing", ["Agent-X"], str(tmp_path / "curves.png"), **kwargs)
+
+	with step("Assert: the axis range and the dotted mastery line."):
+		axis = figures[0].axes[0]
+		assert axis.get_ylim() == ylim
+		assert [line.get_ydata()[0] for line in axis.get_lines() if line.get_linestyle() == ":"] == [mastery]

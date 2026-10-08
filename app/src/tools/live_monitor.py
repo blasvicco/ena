@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """Live convergence monitor: tails a live_training_*.csv written by cartpole_challenge.py/
-half_cheetah.py/cartpole_ena_performance.py/cartpole_ena_compute.py's play() and re-renders a score/plasticity chart while a run
+half_cheetah.py/cartpole_ena_ablation.py/cartpole_ena_compute.py's play() and re-renders a score/plasticity chart while a run
 is still in progress.
 
 Run this as a separate process from the training run itself — it only reads the CSV, never
@@ -8,7 +8,7 @@ touches the training process. Since app/ is bind-mounted into the container, it 
 inside `docker compose exec` or directly on the host (where a real display is available).
 
 Usage:
-	python tools/live_monitor.py cartpole_ena_performance_outputs/exp_1/live_training_ENA-Combined.csv
+	python tools/live_monitor.py cartpole_ena_ablation_outputs/exp_1/live_training_ENA-Combined.csv
 	python tools/live_monitor.py <path/to/live_training.csv> --interval 5 --window 50
 """
 

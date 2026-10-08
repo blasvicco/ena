@@ -16,7 +16,8 @@ class StoppingRule:  # pylint: disable=too-many-instance-attributes
 	# With stop_when_solved=False / stop_on_plateau=False (the fixed-budget protocol) the outcomes
 	# are still reported but don't end the environment: training continues to max_steps, and no
 	# further checks fall due in an environment once it has been solved (only the first solve is
-	# needed, and checks cost evaluation time).
+	# needed, and checks cost evaluation time) unless check_after_solve is set, which keeps checking
+	# to the end of the phase so the return at the end of each environment is known (forgetting).
 
 	# pylint: disable=too-many-arguments,too-many-positional-arguments
 	def __init__(
@@ -29,6 +30,7 @@ class StoppingRule:  # pylint: disable=too-many-instance-attributes
 		max_steps: int = 3_000_000,
 		stop_when_solved: bool = True,
 		stop_on_plateau: bool = True,
+		check_after_solve: bool = False,
 	) -> None:
 		for name, value in (
 			("check_every", check_every),
@@ -46,6 +48,7 @@ class StoppingRule:  # pylint: disable=too-many-instance-attributes
 		self.max_steps = max_steps
 		self.stop_when_solved = stop_when_solved
 		self.stop_on_plateau = stop_on_plateau
+		self.check_after_solve = check_after_solve
 		self._means = []
 		self._next_check = check_every
 		self._solved = False
@@ -58,7 +61,7 @@ class StoppingRule:  # pylint: disable=too-many-instance-attributes
 
 	def due(self, phase_steps: int) -> bool:
 		"""Whether a check is due after phase_steps env-steps in this environment."""
-		if self._solved and not self.stop_when_solved:
+		if self._solved and not self.stop_when_solved and not self.check_after_solve:
 			return False
 		return phase_steps >= self._next_check
 

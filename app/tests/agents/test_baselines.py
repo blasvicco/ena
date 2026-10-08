@@ -10,8 +10,8 @@ from keras.layers import Dense
 
 # App imports
 from helpers import step
-from agents import PPOAgent, SACAgent
-from agents.tools.baseline import ABaseline
+from agents import DQNAgent, PPOAgent, SACAgent
+from agents.tools.baseline import ABaseline, transition
 
 
 def _brain(output_dim, input_dim):
@@ -195,3 +195,139 @@ def test_ppo_annealing_raises_instead_of_silently_freezing_when_its_schedule_run
 		assert rates[0] > rates[1] > rates[2] > 0
 		with pytest.raises(RuntimeError):
 			agent._scheduled_learning_rate()  # pylint: disable=protected-access
+
+
+def _step_data(terminated: bool, truncated: bool) -> dict:
+	"""One transition as the study runner's play() hands it to train()."""
+	return {
+		"state": np.array([0.5, -0.5], dtype=np.float32),
+		"action": 1,
+		"reward": 1.0,
+		"next_state": np.array([0.4, -0.4], dtype=np.float32),
+		"done": terminated or truncated,
+		"terminated": terminated,
+	}
+
+
+@pytest.mark.parametrize("terminated, truncated, terminal", [(True, False, 1.0), (False, True, 0.0), (False, False, 0.0)])
+def test_transition_marks_only_a_true_termination_as_terminal(terminated, truncated, terminal) -> None:
+	"""A time-limit truncation is not terminal: the next state still has value, so the target must bootstrap through it."""
+	with step("Act/Assert: the stored terminal flag follows terminated, not done."):
+		assert transition(_step_data(terminated, truncated))[4] == terminal
+
+
+def test_transition_refuses_step_data_without_terminated() -> None:
+	"""Falling back to done would silently treat truncation as termination again."""
+	with step("Act/Assert: KeyError without the terminated field."):
+		with pytest.raises(KeyError):
+			transition({"state": 0, "action": 0, "reward": 0.0, "next_state": 0, "done": True})
+
+
+def test_dqn_bootstraps_through_a_time_limit_truncation() -> None:
+	"""DQN stores a truncated step as non-terminal and a terminated one as terminal."""
+	with step("Arrange: a DQN agent that never reaches a gradient step."):
+		agent = DQNAgent(brain=_brain, make_env=_DiscreteEnv, learning_starts=10_000)
+
+	with step("Act: one truncated, one terminated transition."):
+		agent.train(step_data=_step_data(terminated=False, truncated=True))
+		agent.train(step_data=_step_data(terminated=True, truncated=False))
+
+	with step("Assert: terminal flags 0 then 1."):
+		assert [entry[4] for entry in agent.replay_buffer] == [0.0, 1.0]
+
+
+def test_sac_bootstraps_through_a_time_limit_truncation() -> None:
+	"""SAC (HalfCheetah, where every episode ends by the time limit) stores truncation as non-terminal."""
+	with step("Arrange: a SAC agent whose buffer never fills a batch."):
+		agent = SACAgent(brain=_brain, make_env=_BoxEnv)
+
+	with step("Act: one truncated, one terminated transition."):
+		agent.train(step_data={**_step_data(terminated=False, truncated=True), "action": np.array([0.2], dtype=np.float32)})
+		agent.train(step_data={**_step_data(terminated=True, truncated=False), "action": np.array([0.2], dtype=np.float32)})
+
+	with step("Assert: terminal flags 0 then 1."):
+		assert agent.buffer.dones[:2, 0].tolist() == [0.0, 1.0]
+
+
+def test_ppo_defaults_keep_the_previous_gradient_clip_log_std_and_reward_scaling() -> None:
+	"""CartPole and existing runs keep their behavior: clip 0.5, log std -2, per-step reward scaling."""
+	with step("Act: a continuous PPO with defaults."):
+		agent = PPOAgent(brain=_brain, critic_brain=_brain, make_env=_BoxEnv)
+
+	with step("Assert: the previous values."):
+		assert agent.max_grad_norm == 0.5
+		assert np.allclose(agent.log_std.numpy(), -2.0)
+		assert agent.reward_scaling == "reward"
+
+
+def test_ppo_takes_the_zoo_halfcheetah_options() -> None:
+	"""max_grad_norm, log_std_init and return-based reward scaling are constructor arguments."""
+	with step("Act: PPO with the zoo's HalfCheetah values."):
+		agent = PPOAgent(brain=_brain, critic_brain=_brain, make_env=_BoxEnv, max_grad_norm=0.8, log_std_init=0.0, reward_scaling="return")
+
+	with step("Assert: stored and applied."):
+		assert agent.max_grad_norm == 0.8
+		assert np.allclose(agent.log_std.numpy(), 0.0)
+		assert agent.reward_scaling == "return"
+
+
+def test_ppo_return_scaling_divides_rewards_by_the_std_of_the_discounted_return() -> None:
+	"""VecNormalize-style: rewards are scaled by the running std of the discounted return, reset at episode ends."""
+	with step("Arrange: return scaling with gamma 0.5; three steps of reward 1, the last one ending the episode."):
+		agent = PPOAgent(brain=_brain, critic_brain=_brain, make_env=_BoxEnv, gamma=0.5, reward_scaling="return", n_steps=100)
+		env = _BoxEnv()
+		state, _ = env.reset()
+
+	with step("Act: buffer the three steps."):
+		for done in (False, False, True):
+			action = agent.act(env, state)[4]
+			agent.train(step_data={"state": state, "action": action, "reward": 1.0, "next_state": state, "done": done, "terminated": done})
+
+	with step("Assert: the running discounted returns were 1, 1.5, 1.75, and the return restarts after the episode."):
+		# pylint: disable=protected-access
+		normalizer = agent._reward_normalizer
+		assert normalizer.mean[0] == pytest.approx(np.mean([1.0, 1.5, 1.75]), rel=1e-3)  # fed returns, not rewards (mean 1)
+		assert agent._buf_rewards[-1] == pytest.approx(1.0 / np.sqrt(normalizer.var[0] + 1e-8))
+		assert agent._discounted_return == 0.0
+
+
+def test_ppo_rejects_an_unknown_reward_scaling() -> None:
+	"""Only per-step reward and discounted-return scaling exist."""
+	with step("Act/Assert: ValueError."):
+		with pytest.raises(ValueError):
+			PPOAgent(brain=_brain, critic_brain=_brain, make_env=_BoxEnv, reward_scaling="advantage")
+
+
+def test_sac_plays_uniform_random_actions_during_its_warm_up_and_does_not_update() -> None:
+	"""learning_starts: the first steps act uniformly at random in [-1, 1] (SB3's warm-up) and train nothing."""
+	with step("Arrange: SAC with a 5-step warm-up and a tiny batch, so updates would otherwise start at once."):
+		agent = SACAgent(brain=_brain, make_env=_BoxEnv, batch_size=2, update_frequency=1, learning_starts=5)
+		env = _BoxEnv()
+		state, _ = env.reset()
+		before = [weight.copy() for weight in agent.actor.get_weights()]
+
+	with step("Act: four steps, all inside the warm-up."):
+		for _ in range(4):
+			action = agent.act(env, state)[4]
+			agent.train(step_data={"state": state, "action": action, "reward": 0.0, "next_state": state, "done": True, "terminated": True})
+
+	with step("Assert: actions in range, the actor untouched."):
+		assert np.all(np.abs(action) <= 1.0)
+		assert all(np.array_equal(old, new) for old, new in zip(before, agent.actor.get_weights()))
+
+
+def test_sac_acts_with_the_deterministic_policy_mean_when_not_learning() -> None:
+	"""Frozen test: tanh of the policy mean, as standard SAC evaluation and the paper's frozen test require."""
+	with step("Arrange: a SAC agent switched to evaluation."):
+		agent = SACAgent(brain=_brain, make_env=_BoxEnv)
+		agent.set_learning(False)
+		env = _BoxEnv()
+		state, _ = env.reset()
+
+	with step("Act: two actions on the same state."):
+		first, second = agent.act(env, state)[4], agent.act(env, state)[4]
+
+	with step("Assert: identical, and equal to tanh of the mean."):
+		mean, _log_std = agent._get_policy_outputs(tf.convert_to_tensor(state[np.newaxis], dtype=tf.float32))  # pylint: disable=protected-access
+		assert np.array_equal(first, second)
+		assert np.allclose(first, np.tanh(mean.numpy()[0]))

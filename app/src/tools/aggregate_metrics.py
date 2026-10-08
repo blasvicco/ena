@@ -5,9 +5,16 @@
 import argparse
 import os
 import re
+import sys
 
 # Libs imports
 import pandas as pd
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# App imports
+# pylint: disable=wrong-import-position
+from tools.detection_stats import write_detection_report
 
 PERFORMANCE_MARKER = "--- ACADEMIC PERFORMANCE & RELIABILITY SUMMARY ---"
 COMPUTE_COST_MARKER = "--- COMPUTE-COST SUMMARY (candidate evaluation, training phase) ---"
@@ -15,7 +22,7 @@ ADAPTATION_MARKER = "--- ADAPTATION SUMMARY (training, early-stopped per environ
 PHASES = ["Training", "Compute Cost", "Adaptation", "Test"]
 # Anchored to this file's own location (app/src/tools/ -> app/), not the caller's cwd, so the
 # default target is found regardless of where this script is invoked from.
-DEFAULT_OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "cartpole_ena_performance_outputs")
+DEFAULT_OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "cartpole_ena_ablation_outputs")
 
 
 # pylint: disable=too-many-locals
@@ -217,9 +224,9 @@ def write_summary_report(all_results: dict, output_path: str, experiment_count: 
 
 def compute_significance(values_a: pd.Series, values_b: pd.Series) -> dict:
 	"""Mean/diff/SEM/~95% significance between two independent samples, via the normal approximation."""
-	# Same convention already used conversationally this session and in benchmark_ena.py's own
-	# _describe_paired_significance: SEM = sqrt(std_a^2/n_a + std_b^2/n_b), flagged significant
-	# once |diff| exceeds 1.96*SEM (~95%) — close enough to a t-test once n is in the 10s-100s.
+	# A quick screen for the text reports: SEM = sqrt(std_a^2/n_a + std_b^2/n_b), flagged significant
+	# once |diff| exceeds 1.96*SEM (~95%). The paper's statistics (Welch t-test, confidence intervals,
+	# Holm) come from paper_results.py, not from this.
 	mean_a, mean_b = values_a.mean(), values_b.mean()
 	n_a, n_b = len(values_a), len(values_b)
 	sem = ((values_a.std() ** 2) / n_a + (values_b.std() ** 2) / n_b) ** 0.5 if n_a > 1 and n_b > 1 else float("nan")
@@ -277,7 +284,6 @@ def _drop_agents(dataframe, agent_names: set):
 	return dataframe[~dataframe["Agent"].isin(agent_names)]
 
 
-# pylint: disable=too-many-locals,too-many-branches,too-many-statements
 def aggregate(output_dirs: list, compare: list = None, exclude: list = None) -> None:
 	"""Aggregate every exp_* replicate's metrics found under one or more output_dirs into one report."""
 	# Pooling more than one study's directory (e.g. an older ablation study plus a newer one
@@ -285,9 +291,30 @@ def aggregate(output_dirs: list, compare: list = None, exclude: list = None) -> 
 	# accepting a list here — results still land in the first directory given. exclude
 	# ("DIR:AGENT" entries) drops an agent from one directory only — e.g. an older study's row
 	# that a newer study re-ran with a changed config.
-	exclusions = parse_exclusions(exclude)
 	primary_dir = output_dirs[0]
 	report_path = os.path.join(primary_dir, "aggregate_summary.txt")
+	all_results, parsed_count, total_dirs_found = collect_results(output_dirs, exclude)
+
+	if not parsed_count:
+		print("No valid experiment data parsed.")
+		return
+
+	write_summary_report(all_results, report_path, parsed_count)
+	print(f"Successfully aggregated {parsed_count}/{total_dirs_found} experiments into {report_path}")
+	detection_path = write_detection_report(primary_dir)
+	if detection_path:
+		print(f"Environment recognition summarized into {detection_path}")
+
+	if compare:
+		agent_a, agent_b = compare
+		compare_path = os.path.join(primary_dir, f"compare_{agent_a}_vs_{agent_b}.txt")
+		write_comparison_report(all_results, agent_a, agent_b, compare_path)
+
+
+# pylint: disable=too-many-locals,too-many-branches
+def collect_results(output_dirs: list, exclude: list = None) -> tuple:
+	"""Parse every complete exp_* replicate under output_dirs: ({phase: [per-replicate DataFrames]}, parsed, found)."""
+	exclusions = parse_exclusions(exclude)
 	multi_source = len(output_dirs) > 1
 
 	all_results = {phase: [] for phase in PHASES}
@@ -342,17 +369,7 @@ def aggregate(output_dirs: list, compare: list = None, exclude: list = None) -> 
 			except Exception as error:  # pylint: disable=broad-except
 				print(f"Warning: Failed to parse {file_path}: {error}")
 
-	if not parsed_count:
-		print("No valid experiment data parsed.")
-		return
-
-	write_summary_report(all_results, report_path, parsed_count)
-	print(f"Successfully aggregated {parsed_count}/{total_dirs_found} experiments into {report_path}")
-
-	if compare:
-		agent_a, agent_b = compare
-		compare_path = os.path.join(primary_dir, f"compare_{agent_a}_vs_{agent_b}.txt")
-		write_comparison_report(all_results, agent_a, agent_b, compare_path)
+	return all_results, parsed_count, total_dirs_found
 
 
 def main() -> None:

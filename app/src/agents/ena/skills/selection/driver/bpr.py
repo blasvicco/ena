@@ -7,15 +7,15 @@ import math
 import numpy as np
 
 # App imports
-from agents.ena.skills.selection.driver.heuristic import Instance as HeuristicInstance
+from agents.ena.skills.selection.driver.abstract import ADriver
 
 
 # Algorithm: Bayesian Policy Reuse (BPR)
 # Reference: Rosman, Hawasly & Ramamoorthy, "Bayesian Policy Reuse", Machine Learning 104 (2016)
 # https://doi.org/10.1007/s10994-016-5547-y
 # pylint: disable=too-many-instance-attributes
-class Instance(HeuristicInstance):
-	"""Test time: Bayesian belief over which niche is active; training: the heuristic driver's epsilon-greedy trust selection."""
+class Instance(ADriver):
+	"""Test time: Bayesian belief over which niche is active; training: epsilon-greedy selection by trust."""
 
 	# Types are the niches with a gladiator in the population; the policy library is every
 	# gladiator in the population. After every test episode the belief is updated by Bayes'
@@ -27,7 +27,8 @@ class Instance(HeuristicInstance):
 	# Fixed-Share switching prior mixes switch_rate of uniform mass back in after every update,
 	# so a changed environment can win the belief back instead of being locked out.
 	#
-	# Utility is score / env_max_steps. The paper builds the performance model offline, by playing
+	# Utility is score / return_scale (the solved return): solving the task reads as utility 1.
+	# The paper builds the performance model offline, by playing
 	# every policy on every type; here it is learned online. Its prior says a gladiator reaches
 	# utility 1 in its own niche and an uncertain cross_prior elsewhere, worth prior_strength
 	# observations; each observed utility is credited to every niche in proportion to its
@@ -36,11 +37,11 @@ class Instance(HeuristicInstance):
 	# other policy can look better without first being tried. Ties go to the higher-trust gladiator.
 
 	# pylint: disable=too-many-arguments,too-many-positional-arguments
-	def __init__(
-		self, exploration_rate=0.1, env_max_steps=1000.0, switch_rate=0.05, return_noise=0.2, prior_strength=1.0, cross_prior=0.5, **_kwargs
-	):
-		super().__init__(exploration_rate=exploration_rate)
-		self._env_max_steps = float(env_max_steps)
+	OWN_PRIOR = 1.0  # prior utility of a gladiator in its own niche: it was archived for solving it
+
+	def __init__(self, exploration_rate=0.1, return_scale=475.0, switch_rate=0.05, return_noise=0.2, prior_strength=1.0, cross_prior=0.5, **_kwargs):
+		self._exploration_rate = exploration_rate
+		self._return_scale = float(return_scale)
 		self._switch_rate = switch_rate
 		self._return_noise = return_noise
 		self._prior_strength = prior_strength
@@ -69,10 +70,10 @@ class Instance(HeuristicInstance):
 		return self._played[0]
 
 	def record_episode_result(self, score, memory, recognizer=None):
-		"""Bayes-update the belief from this episode's utility (and dynamics likelihoods, if any); never forces a reset."""
+		"""Bayes-update the belief from this episode's utility (and dynamics likelihoods, if any)."""
 		if self._played is None:
-			return False
-		utility = score / self._env_max_steps
+			return
+		utility = score / self._return_scale
 		log_evidence = np.array([self._log_utility_likelihood(utility, niche_id, self._played) for niche_id in self._niches])
 		dynamics = recognizer.log_likelihoods(memory) if recognizer is not None else {}
 		if all(niche_id in dynamics for niche_id in self._niches):
@@ -88,7 +89,6 @@ class Instance(HeuristicInstance):
 			self._utility_weight[key] = self._utility_weight.get(key, 0.0) + weight
 
 		self._belief = (1.0 - self._switch_rate) * posterior + self._switch_rate / len(self._niches)
-		return False
 
 	def evaluate(self, population):
 		"""(Re)build the types and policy library from the population's gladiators and reset the belief to uniform."""
@@ -105,10 +105,25 @@ class Instance(HeuristicInstance):
 	# Private
 	# ---------------------------------------------------------------
 
+	def _select_train(self, population):
+		"""Training: epsilon-greedy — a random non-gladiator with probability exploration_rate, else the highest trust."""
+		if np.random.rand() < self._exploration_rate:
+			non_gladiators = [index for index, ind in enumerate(population) if not ind.get("is_gladiator", False)]
+			if non_gladiators:
+				return int(np.random.choice(non_gladiators))
+		trust_scores = [ind["trust"] for ind in population]
+		return int(np.argmax(trust_scores))
+
+	@staticmethod
+	def _select_desperate(population):
+		"""Test time without any gladiator: a random non-gladiator."""
+		non_gladiators = [index for index, ind in enumerate(population) if not ind.get("is_gladiator", False)]
+		return int(np.random.choice(non_gladiators)) if non_gladiators else 0
+
 	def _mean_utility(self, niche_id, policy) -> float:
 		"""Posterior mean utility of the policy (a gladiator) when niche_id is active."""
 		_index, individual_id, home_niche_id, _trust = policy
-		prior_mean = 1.0 if niche_id == home_niche_id else self._cross_prior
+		prior_mean = self.OWN_PRIOR if niche_id == home_niche_id else self._cross_prior
 		key = (niche_id, individual_id)
 		weight = self._utility_weight.get(key, 0.0)
 		return (self._prior_strength * prior_mean + self._utility_sum.get(key, 0.0)) / (self._prior_strength + weight)

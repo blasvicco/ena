@@ -3,14 +3,11 @@
 # General imports
 import importlib
 
-# Libs imports
-import numpy as np
-
 
 class EnvironmentRecognizer:
 	"""Resolves and delegates every call to the configured environment-detection driver."""
 
-	# Usage: EnvironmentRecognizer("live", state_dim, similarity_threshold=0.90).match(memory) -> (niche_id, similarity)
+	# Usage: EnvironmentRecognizer("dynamics_model", state_dim, action_dim=2).log_likelihoods(memory) -> {niche_id: log-likelihood}
 
 	def __init__(self, driver: str, state_dim: int, **kwargs) -> None:
 		"""Instantiate the appropriate driver based on the driver name."""
@@ -30,27 +27,14 @@ class EnvironmentRecognizer:
 		"""Set of niche IDs that have physical prototypes."""
 		return self._instance.known_niche_ids
 
-	def update(self, state, memory) -> None:
-		"""Track observation distribution purely for environment physics recognition."""
-		self._instance.update(state, memory)
-
-	def compute_physical_vector(self, memory) -> np.ndarray:
-		"""Build context from strictly static state and transition dynamics."""
-		return self._instance.compute_physical_vector(memory)
-
-	def compute_full_vector(self, memory) -> np.ndarray:
-		"""Build context including distress signals for change detection."""
-		return self._instance.compute_full_vector(memory)
-
-	def detect_change(self, memory) -> bool:
-		"""Check if the environment has significantly shifted from the baseline."""
-		return self._instance.detect_change(memory)
+	def detect_change(self, memory, learn: bool = True) -> bool:
+		"""Check if the environment has significantly shifted from the baseline (the driver learns only when learn)."""
+		return self._instance.detect_change(memory, learn)
 
 	def evaluate(self, memory, learn: bool) -> bool:
 		"""Check for an environment shift and, if found, flush stale physics/observation state."""
-		shifted = self.detect_change(memory)
+		shifted = self.detect_change(memory, learn)
 		if shifted:
-			memory.reset_recognizer_statistics()
 			self.reset()
 			memory.obs_normalizer.reset()
 			if learn:
@@ -59,10 +43,6 @@ class EnvironmentRecognizer:
 				# old- and new-phase scores for ~100 episodes after every switch.
 				memory.clear_training_history()
 		return shifted
-
-	def match(self, memory) -> tuple:
-		"""Return (niche_id, similarity) of the best matching physical prototype (Test Mode)."""
-		return self._instance.match(memory)
 
 	def match_niche(self, memory, current_individual: dict, hall_of_fame, population: list = None) -> int:
 		"""Late Identity Binding: called only when a gladiator is being inducted."""
@@ -81,8 +61,7 @@ class EnvironmentRecognizer:
 		return self._instance.log_likelihoods(memory)
 
 	def reset(self) -> None:
-		"""Flush any driver-owned physical-fingerprint state on a detected environment shift."""
-		# No-op unless the driver keeps state outside of AgentMemory (e.g. dynamics_model's own
-		# transition buffers) — memory.reset_recognizer_statistics() already handles
-		# memory-owned state (short_term_normalizer/transition_normalizer).
+		"""Flush the driver's evidence about the old regime on a detected environment shift."""
+		# dynamics_model drops the old regime's transition buffers (keeping a confirmed shift's
+		# post-alarm evidence); none has nothing to flush.
 		self._instance.reset()

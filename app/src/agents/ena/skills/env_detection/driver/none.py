@@ -1,8 +1,5 @@
 """No-op environment-detection driver — collapses everything into a single universal niche (0)."""
 
-# Libs imports
-import numpy as np
-
 # App imports
 from agents.ena.skills.env_detection.driver.abstract import ADriver
 
@@ -26,24 +23,9 @@ class Instance(ADriver):
 		"""Always {0} — there is only ever one niche."""
 		return {0}
 
-	def update(self, state, memory) -> None:
-		"""No-op: this driver tracks no physics signature."""
-
-	def compute_physical_vector(self, memory) -> np.ndarray:
-		"""A fixed-shape zero vector (4 * state_dim), matching the other drivers' shape so context_dim stays consistent."""
-		return np.zeros(4 * self._state_dim, dtype=np.float32)
-
-	def compute_full_vector(self, memory) -> np.ndarray:
-		"""compute_physical_vector's shape plus the two distress scalars, matching the other drivers' compute_full_vector shape."""
-		return np.zeros(4 * self._state_dim + 2, dtype=np.float32)
-
-	def detect_change(self, memory) -> bool:
+	def detect_change(self, memory, learn: bool = True) -> bool:
 		"""Never detects a shift."""
 		return False
-
-	def match(self, memory) -> tuple:
-		"""Always confidently resolves to niche 0."""
-		return 0, 1.0
 
 	def match_niche(self, memory, current_individual: dict, hall_of_fame, population: list = None) -> int:
 		"""Always assigns to niche 0."""

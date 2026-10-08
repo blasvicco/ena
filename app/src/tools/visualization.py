@@ -28,7 +28,7 @@ class ProgressReporter:
 		self.total_experiments = total_experiments
 		self.stop_event = threading.Event()
 
-	def run(self):
+	def run(self):  # pylint: disable=too-many-locals
 		"""Main loop for the reporter thread."""
 		with Progress(
 			SpinnerColumn(),
@@ -49,10 +49,7 @@ class ProgressReporter:
 			exp_progress = {}
 			finished_ids = set()
 
-			while (
-				completed_count < self.total_experiments
-				and not self.stop_event.is_set()
-			):
+			while completed_count < self.total_experiments and not self.stop_event.is_set():
 				memory_info = psutil.virtual_memory()
 				memory_string = f"Mem: {memory_info.used / (1024**3):.1f}GB ({memory_info.percent}%)"
 				progress.update(
@@ -73,9 +70,7 @@ class ProgressReporter:
 
 					if experiment_id is not None:
 						if experiment_id not in exp_tasks:
-							exp_tasks[experiment_id] = progress.add_task(
-								f"Experiment {experiment_id + 1}: Starting...", total=100
-							)
+							exp_tasks[experiment_id] = progress.add_task(f"Experiment {experiment_id + 1}: Starting...", total=100)
 
 						description = None
 						if status:
