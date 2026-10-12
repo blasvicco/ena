@@ -17,3 +17,20 @@ services:
     command: ["tail", "-f", "/dev/null"]
     container_name: ena-paper
     working_dir: /workdir
+
+  ena_infra:
+    build:
+      context: ./
+      dockerfile: hub/node/Dockerfile
+    volumes:
+      # The CDK project (infra/src), its scripts, where download.sh writes the results, and the AWS credentials
+      - ./infra/src:/home/app
+      - /home/app/node_modules
+      - ./infra/scripts:/home/scripts
+      - ./app/half_cheetah_outputs:/home/outputs
+      - ~/.aws:/root/.aws:ro
+    environment:
+      - AWS_PROFILE=${AWS_PROFILE:-personal}
+    command: ["tail", "-f", "/dev/null"]
+    container_name: ena-infra
+    working_dir: /home/app

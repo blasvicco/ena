@@ -1,0 +1,6 @@
+# Build context for hub/cloud/Dockerfile: only what the image needs (outputs, the paper and git history stay out)
+*
+!app/requirements.txt
+!app/cloud_manifest.txt
+!app/src/**
+**/__pycache__

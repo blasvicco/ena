@@ -1,5 +1,9 @@
 """Tests for cartpole_ena_ablation.py's skill matrix and study plumbing — catches a typo'd row before a multi-hour run."""
 
+# General imports
+import concurrent.futures
+import os
+
 # Libs imports
 import numpy as np
 import pandas as pd
@@ -463,3 +467,40 @@ def test_launch_summary_states_what_actually_runs(num_experiments, pending, work
 	"""Never more parallel replicates than there are left to run, and resumed replicates are counted out."""
 	with step("Act/Assert: the banner line."):
 		assert cartpole_ena_ablation.launch_summary(num_experiments, pending, workers, "ENA COMPUTE") == expected
+
+
+def test_study_ids_are_every_replicate_or_only_the_chosen_one() -> None:
+	"""--replicate K runs only exp_K (one machine per replicate in the cloud); by default every replicate runs."""
+	with step("Act/Assert: all 20, only exp_3, and an out-of-range choice."):
+		assert cartpole_ena_ablation.study_ids(20) == list(range(20))
+		assert cartpole_ena_ablation.study_ids(20, replicate=3) == [2]
+		with pytest.raises(ValueError):
+			cartpole_ena_ablation.study_ids(20, replicate=21)
+
+
+def test_parse_args_takes_one_replicate_within_the_study() -> None:
+	"""--replicate defaults to every replicate; it must name one of the study's replicates."""
+	with step("Act/Assert: default, a choice, and one beyond --num-experiments."):
+		assert cartpole_ena_ablation.parse_args([]).replicate is None
+		assert cartpole_ena_ablation.parse_args(["--replicate", "3"]).replicate == 3
+		with pytest.raises(SystemExit):
+			cartpole_ena_ablation.parse_args(["--num-experiments", "2", "--replicate", "3"])
+
+
+def _mark_replicate(experiment_id, output_dir, _queue, _variants, _include_random) -> None:
+	"""Experiment stub: leave a marker in the replicate's directory."""
+	with open(os.path.join(output_dir, "outputs.txt"), "w", encoding="utf-8") as outputs:
+		outputs.write(f"replicate {experiment_id} --- Experiment {experiment_id + 1} Test Results ---\n")
+
+
+def test_run_study_runs_only_the_chosen_replicate(monkeypatch, tmp_path) -> None:
+	"""With replicate=3, the study runs replicate id 2 into exp_3 and nothing else (same seeding as a full run)."""
+	with step("Arrange: worker threads instead of processes, so the stub experiment runs in-process."):
+		monkeypatch.setattr(cartpole_ena_ablation.concurrent.futures, "ProcessPoolExecutor", concurrent.futures.ThreadPoolExecutor)
+
+	with step("Act: a 20-replicate study, replicate 3 only."):
+		cartpole_ena_ablation.run_study(20, str(tmp_path), [], False, "TEST", experiment_fn=_mark_replicate, workers=1, replicate=3)
+
+	with step("Assert: only exp_3 ran, as replicate id 2."):
+		assert sorted(path.name for path in tmp_path.iterdir()) == ["exp_3"]
+		assert (tmp_path / "exp_3" / "outputs.txt").read_text(encoding="utf-8").startswith("replicate 2 ")

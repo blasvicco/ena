@@ -2,3 +2,8 @@
 *outputs
 __pycache__
 app/latex/build/
+# Cloud-run infrastructure (infra/src): dependencies, synth output, local config
+infra/src/node_modules/
+infra/src/cdk.out/
+infra/src/cdk.context.json
+infra/src/qos/qos.json

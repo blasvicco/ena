@@ -849,6 +849,16 @@ def _positive_int(value: str) -> int:
 	return number
 
 
+def study_ids(num_experiments: int, replicate: int = None) -> list:
+	"""The replicate ids a study runs: all of 0..num_experiments-1, or only exp_{replicate}'s (1-based, one machine per
+	replicate in the cloud). Seeding depends only on the id, so a replicate is the same run either way."""
+	if replicate is None:
+		return list(range(num_experiments))
+	if not 1 <= replicate <= num_experiments:
+		raise ValueError(f"replicate must be 1..{num_experiments}, got {replicate}")
+	return [replicate - 1]
+
+
 def select_variants(variant_table: list, names: list) -> list:
 	"""The rows of variant_table named in names, in table order."""
 	return [row for row in variant_table if row["name"] in names]
@@ -873,7 +883,11 @@ def parse_args(argv: list = None, variant_table: list = None, defaults: dict = N
 		default=None,
 		help="Cap each worker's TensorFlow threads (default: uncapped; set it on many-core machines).",
 	)
-	return parser.parse_args(argv)
+	parser.add_argument("--replicate", type=_positive_int, default=None, help="Run only exp_K, 1-based (default: every replicate).")
+	args = parser.parse_args(argv)
+	if args.replicate is not None and args.replicate > args.num_experiments:
+		parser.error(f"--replicate {args.replicate} is beyond --num-experiments {args.num_experiments}")
+	return args
 
 
 # pylint: disable=too-many-arguments,too-many-positional-arguments
@@ -886,8 +900,10 @@ def run_study(
 	experiment_fn=None,
 	workers: int = None,
 	threads_per_worker: int = None,
+	replicate: int = None,
 ) -> None:
-	"""Run num_experiments independent replicates in parallel worker processes, skipping any already complete."""
+	"""Run num_experiments independent replicates in parallel worker processes, skipping any already complete (with
+	replicate, only exp_{replicate}: study_ids)."""
 	# experiment_fn(experiment_id, output_dir, queue, variants, include_random) runs one replicate —
 	# default run_experiment (ENAgent rows); another study can pass its own (e.g. cartpole_challenge.py).
 	# workers sets how many replicates run at once (default MAX_WORKERS); running again with a larger
@@ -902,20 +918,21 @@ def run_study(
 		reporting_queue = manager.Queue()
 
 		# 2. Initialize and Start the Progress Reporter Thread
-		reporter = ProgressReporter(reporting_queue, num_experiments)
+		ids = study_ids(num_experiments, replicate)
+		reporter = ProgressReporter(reporting_queue, len(ids))
 		reporter_thread = threading.Thread(target=reporter.run, daemon=True)
 		reporter_thread.start()
 
 		vprint(f"\n[bold green]{'='*60}[/bold green]")
-		pending = [exp_id for exp_id in range(num_experiments) if not replicate_complete(os.path.join(output_dir, f"exp_{exp_id + 1}"))]
-		vprint(f"[bold]{launch_summary(num_experiments, len(pending), workers, title)}[/bold]")
+		pending = [exp_id for exp_id in ids if not replicate_complete(os.path.join(output_dir, f"exp_{exp_id + 1}"))]
+		vprint(f"[bold]{launch_summary(len(ids), len(pending), workers, title)}[/bold]")
 		vprint(f"Agents: {(['Random'] if include_random else []) + [row['name'] if isinstance(row, dict) else row for row in variants]}")
 		vprint(f"[bold green]{'='*60}[/bold green]\n")
 
 		# 3. Launch each experiment in isolated processes
 		with concurrent.futures.ProcessPoolExecutor(max_workers=max(1, min(workers, len(pending)))) as executor:
 			futures = {}
-			for exp_id in range(num_experiments):
+			for exp_id in ids:
 				exp_dir = os.path.join(output_dir, f"exp_{exp_id + 1}")
 				if replicate_complete(exp_dir):
 					reporting_queue.put(
@@ -948,7 +965,7 @@ def run_study(
 		reporter_thread.join(timeout=2.0)
 
 	vprint("\n[bold green]" + "=" * 60 + "[/bold green]")
-	vprint(f"[bold]ALL {num_experiments} EXPERIMENTS COMPLETE[/bold]")
+	vprint(f"[bold]ALL {len(ids)} EXPERIMENTS COMPLETE[/bold]")
 	vprint(f"Check the [cyan]{output_dir}/[/cyan] directory for detailed logs and plots.")
 	vprint("[bold green]" + "=" * 60 + "[/bold green]")
 

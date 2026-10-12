@@ -15,6 +15,10 @@ docker compose exec ena_experiment bash
 
 Every training run writes `live_training_{agent_name}.csv` to its output directory incrementally (one row per episode), and the terminal progress bar shows a live per-phase ETA. To watch convergence while a run is in progress: `streamlit run src/tools/live_dashboard.py` (port `8501` is mapped to the host in `docker-compose.yml`) or, on the host directly (not inside the container — it needs a real display), `python src/tools/live_monitor.py <path/to/live_training_*.csv>`.
 
+## Cloud run
+
+The HalfCheetah study runs in AWS from `infra/` (AWS CDK in TypeScript, run from the `ena_infra` toolbox service): one on-demand machine per replicate (`half_cheetah.py --replicate k`), results in S3, everything destroyable. The image is `hub/cloud/Dockerfile`, which ships only the files listed in `app/cloud_manifest.txt` (`tests/test_cloud_image.py` checks the study builds from them alone). The procedure is in `infra/README.md`; every AWS step needs the author's go-ahead.
+
 ## Extending the codebase
 
 - New agents must implement the `AAgent` contract (`agents/tools/abstract.py`); single-model RL baselines should further follow `ABaseline` (`agents/tools/baseline.py`). Reuse `AgentMemory`, `normalizers.py` (`agents/tools/normalizers.py`), and `EnvironmentRecognizer` rather than re-implementing equivalent bookkeeping.
