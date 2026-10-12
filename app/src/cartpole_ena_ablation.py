@@ -26,6 +26,7 @@ from keras.layers import Dense, Input
 
 # App imports
 from agents import ENAgent, RandomAgent
+from tools.agent_health import agent_health
 from tools.metrics import (
 	calculate_adaptation,
 	calculate_compute_cost,
@@ -204,8 +205,11 @@ def agent_training(
 	success_threshold: float = SUCCESS_THRESHOLD,
 	ylim: tuple = Y_LIM,
 	training_x_axis: str = "episodes",
+	steps_per_env: list = None,
+	health_every: int = None,
 ) -> None:
-	"""Train agents on worlds — by episode count, matched to a reference agent's env-steps, or early-stopped.
+	"""Train agents on worlds — by episode count, a fixed env-step budget, matched to a reference agent's env-steps,
+	or early-stopped.
 
 	training_x_axis is the training chart's axis: "env_steps" for studies at an equal step budget, where agents
 	play very different numbers of episodes (ENA's candidate evaluations count against its budget).
@@ -216,10 +220,13 @@ def agent_training(
 	# match_steps_of names an agent trained earlier in the list (by episodes): every agent after it
 	# trains on each environment until it has consumed the same number of env-steps the reference
 	# consumed there (ENA's include its candidate evaluations), equalizing interaction budgets.
+	# steps_per_env gives every agent that env-step budget per environment, with no checks (HalfCheetah).
+	# health_every writes each agent's internal health (tools/agent_health.py) to health_{agent}.csv at most every
+	# health_every env-steps (HalfCheetah); off by default.
 	agent_ids = []
 	execution_times = {}
 	history_training = {}
-	step_budget = None
+	step_budget = steps_per_env
 	for agent in agents:
 		agent_name = agent.get_name()
 		episodes = agent.get_episodes()
@@ -235,18 +242,24 @@ def agent_training(
 		seed_experiment(experiment_id)  # common random numbers: every agent's training starts from the same state
 		start_time = time.time()
 		live_log_path = os.path.join(output_dir, f"live_training_{agent_name}.csv")
+		on_episode = make_eta_reporter(experiment_id, queue, "Training", agent_name, start_time)
+		health = []
+		if health_every:
+			on_episode = _with_health(on_episode, agent, health, health_every)
 		history_training[agent_name] = play(
 			agent,
 			worlds,
 			episodes,
 			live_log_path=live_log_path,
-			on_episode=make_eta_reporter(experiment_id, queue, "Training", agent_name, start_time),
+			on_episode=on_episode,
 			steps_per_env=step_budget,
 			stopping=stopping,
 			eval_environments=eval_worlds,
 			env_seed=env_seed_for(experiment_id, "training"),
 		)
 		execution_times[agent_name] = time.time() - start_time
+		if health:
+			pd.DataFrame(health).to_csv(os.path.join(output_dir, f"health_{agent_name}.csv"), index=False)
 		evaluations = history_training[agent_name].attrs.get("evaluations")
 		if evaluations:
 			pd.DataFrame(evaluations).to_csv(os.path.join(output_dir, f"live_evaluation_{agent_name}.csv"), index=False)
@@ -592,6 +605,19 @@ def format_duration(seconds: float) -> str:
 	if minutes:
 		return f"{minutes}m {secs}s"
 	return f"{secs}s"
+
+
+def _with_health(on_episode: Callable[[int, int], None], agent, rows: list, every: int) -> Callable[[int, int], None]:
+	"""Wrap a play() on_episode callback to also append the agent's health to rows, at most every `every` steps."""
+
+	def _report(progress: int, total: int) -> None:
+		on_episode(progress, total)
+		if not rows or progress - rows[-1]["steps"] >= every:
+			reading = agent_health(agent)
+			if reading:
+				rows.append({"steps": progress, **reading})
+
+	return _report
 
 
 def make_eta_reporter(experiment_id: int, queue, label: str, agent_name: str, start_time: float) -> Callable[[int, int], None]:

@@ -2,6 +2,7 @@
 
 # Libs imports
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import seaborn as sns
 from matplotlib.lines import Line2D
@@ -9,6 +10,7 @@ from matplotlib.lines import Line2D
 
 # Episodes before and after the first environment switch compared by the stability gap.
 STABILITY_WINDOW = 20
+WINDOW_STEPS = 50_000  # per-run training curves on the step axis: moving window in env-steps (5% of a 1M phase)
 
 
 def _qualitative_colors(count: int) -> list:
@@ -204,6 +206,29 @@ def _draw_env_detection_overlay(axis, dataframe: pd.DataFrame, ylim: tuple, x_at
 		)
 
 
+def phase_rolling(scores: pd.Series, env_ids: pd.Series, window: int, steps: pd.Series = None, window_steps: int = None) -> tuple:
+	"""Moving mean and std of per-episode scores that restart at every environment switch (a phase's end is never
+	blurred by the next phase). By episodes (the last `window`), or, given steps and window_steps, by the episodes
+	ending within the last window_steps env-steps, so agents with long and short episodes are smoothed alike."""
+	scores = pd.Series(np.asarray(scores, dtype=float))
+	phase = pd.Series(np.asarray(env_ids)).ne(pd.Series(np.asarray(env_ids)).shift()).cumsum()
+	if steps is None:
+		grouped = scores.groupby(phase)
+		mean = grouped.transform(lambda part: part.rolling(window=window, min_periods=1).mean())
+		std = grouped.transform(lambda part: part.rolling(window=window, min_periods=1).std())
+		return mean, std
+	steps = np.asarray(steps, dtype=float)
+	mean, std = np.empty(len(scores)), np.empty(len(scores))
+	for _phase, positions in scores.groupby(phase).groups.items():
+		positions = np.asarray(positions)
+		values, ends = scores.to_numpy()[positions], steps[positions]
+		for offset, end in enumerate(ends):
+			window_values = values[np.searchsorted(ends, end - window_steps, side="right") : offset + 1]
+			mean[positions[offset]] = window_values.mean()
+			std[positions[offset]] = window_values.std(ddof=1) if len(window_values) > 1 else np.nan
+	return pd.Series(mean), pd.Series(std)
+
+
 def plot_academic_comparison(
 	histories,
 	names,
@@ -240,10 +265,10 @@ def plot_academic_comparison(
 	steps_right = max(float(dataframe["env_steps"].iloc[-1]) for dataframe in histories) if by_steps else None
 
 	for index, dataframe in enumerate(histories):
-		# Calculate Moving Stats
-		mean_score = dataframe["score"].rolling(window=window, min_periods=1).mean()
-		std_score = dataframe["score"].rolling(window=window, min_periods=1).std()
+		# Moving stats within each phase: by episodes, or on the step axis by WINDOW_STEPS env-steps
 		steps = dataframe["env_steps"].to_numpy() if by_steps else None
+		mean_score, std_score = phase_rolling(dataframe["score"], dataframe["env_id"], window, steps=steps, window_steps=WINDOW_STEPS)
+		mean_score.index, std_score.index = dataframe.index, dataframe.index
 		line_x = steps if by_steps else dataframe["episode"]
 
 		def x_at(pos, steps=steps):

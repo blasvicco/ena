@@ -10,7 +10,7 @@ import pytest
 from helpers import step
 import cartpole_challenge
 import cartpole_ena_ablation
-from tools.paper_config import _number, cartpole_rows, cheetah_rows, config_entries, environment_table
+from tools.paper_config import _number, cartpole_rows, cheetah_rows, config_entries, environment_table, chirp_entries
 
 
 @pytest.mark.parametrize("value, expected", [(2_500_000, "2,500,000"), (475.0, "475"), (0.05, "0.05"), (2.5, "2.5"), (3.0, "3")])
@@ -67,3 +67,22 @@ def test_environment_table_has_a_header_one_row_per_environment_and_the_label() 
 		assert "\\textbf{Environment} & \\textbf{$g$} \\\\" in table
 		assert "Mars & 3.7 \\\\" in table and "Earth & 9.8 \\\\" in table
 		assert "\\label{tab:envs}" in table
+
+
+def test_chirp_entries_read_the_halfcheetah_detector_and_benchmark() -> None:
+	"""The chirp detector's settings as the HalfCheetah study builds it, and the benchmark's protocol."""
+	with step("Act: the chirp entries."):
+		entries = chirp_entries()
+
+	with step("Assert: the chosen configuration and the benchmark constants."):
+		assert entries["cfg/cheetah/chirp/steps"] == "64"
+		assert entries["cfg/cheetah/chirp/excitation"] == "wavelet train" and entries["cfg/cheetah/chirp/excitationwavelet"] == "Mexican hat"
+		assert entries["cfg/cheetah/chirp/transform"] == "wavelet packet" and entries["cfg/cheetah/chirp/featurewavelet"] == "Haar"
+		assert (entries["cfg/cheetah/chirp/level"], entries["cfg/cheetah/chirp/bands"]) == ("3", "8")
+		assert (entries["cfg/cheetah/chirp/window"], entries["cfg/cheetah/chirp/minchirps"], entries["cfg/cheetah/chirp/margin"]) == ("4", "8", "3")
+		assert entries["cfg/cheetah/chirp/share"] == "6.4"
+		assert entries["cfg/detbench/episodes"] == "40" and entries["cfg/detbench/block"] == "4" and entries["cfg/detbench/window"] == "5"
+		assert entries["cfg/detbench/purity"] == "90"
+		assert (entries["cfg/detbench/seeds"], entries["cfg/detbench/selectionseeds"], entries["cfg/detbench/confirmseeds"]) == ("30", "5", "30")
+		assert (entries["cfg/detbench/seedfirst"], entries["cfg/detbench/seedlast"]) == ("5", "34")
+		assert (entries["cfg/detbench/confirmfirst"], entries["cfg/detbench/confirmlast"]) == ("35", "64")

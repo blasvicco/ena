@@ -25,8 +25,19 @@ class Instance(ADriver):
 	def update(self, winner: dict, current_trust: float, population: list, memory, recognizer, obs_normalizer, env_name: str = "Unknown") -> None:
 		"""No-op: this driver never inducts a winner."""
 
-	def inject_gladiators(self, population: list, pop_size: int, obs_normalizer, restore_trust: bool = True) -> None:
+	def inject_gladiators(self, population: list, pop_size: int, obs_normalizer, restore_trust: bool = True, admit=None) -> None:
 		"""No-op: there is nothing archived to re-introduce."""
+
+	def records_in_niche(self, niche_id: int) -> list:
+		"""Nothing is archived."""
+		return []
+
+	def record(self, individual_id: str):
+		"""Nothing is archived."""
+		return None
+
+	def evict(self, individual_id: str, population: list) -> None:
+		"""No-op: nothing is archived."""
 
 	def save_niche_details(self, output_dir: str, agent_name: str) -> None:
 		"""Write the same 'No gladiators inducted' summary the default driver writes when empty."""

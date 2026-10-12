@@ -167,3 +167,63 @@ def test_a_gladiator_solving_its_own_niche_strengthens_the_belief_in_that_niche(
 	with step("Assert: its home niche gained belief."):
 		home = population[played]["internal_env_id"]
 		assert driver.belief[home] > 1 / 3
+
+
+def _olympic_population():
+	"""Niche 0 holds a champion (Olympic mean 3,000) with lower trust and a runner-up (2,000) with higher trust."""
+	return [
+		{"individual_id": "champion", "trust": 0.2, "is_gladiator": True, "internal_env_id": 0, "olympic_return": 3_000.0},
+		{"individual_id": "runner-up", "trust": 0.9, "is_gladiator": True, "internal_env_id": 0, "olympic_return": 2_000.0},
+		{"individual_id": "other", "trust": 0.0, "is_gladiator": False, "internal_env_id": -1},
+	]
+
+
+def test_a_confirmed_gladiators_prior_is_its_olympic_mean() -> None:
+	"""With an Olympic result, the own-niche prior utility is that mean return / the solved return, not 1: the champion plays
+	first, though its trust is lower, and a single episode at its level keeps it playing."""
+	with step("Arrange: HalfCheetah's solved return 4,800; the Olympic population."):
+		driver = Instance(exploration_rate=0.0, return_scale=4_800.0)
+		population = _olympic_population()
+		driver.evaluate(population)
+
+	with step("Act: three test episodes, each scoring the player's Olympic mean."):
+		played = []
+		for _ in range(3):
+			index = driver.select_individual(population, None, memory=None, learn=False)
+			played.append(index)
+			driver.record_episode_result(population[index]["olympic_return"], memory=None)
+
+	with step("Assert: the champion every time."):
+		assert played == [0, 0, 0]
+
+
+def test_without_an_olympic_result_the_own_niche_prior_stays_solved() -> None:
+	"""No olympic_return (the Olympics off, CartPole): the prior is OWN_PRIOR and ties go to trust, as before."""
+	with step("Arrange: the same population without Olympic results."):
+		driver = Instance(exploration_rate=0.0, return_scale=4_800.0)
+		population = [{key: value for key, value in individual.items() if key != "olympic_return"} for individual in _olympic_population()]
+		driver.evaluate(population)
+
+	with step("Act/Assert: the higher-trust runner-up plays first."):
+		assert driver.select_individual(population, None, memory=None, learn=False) == 1
+
+
+def test_the_foreign_niche_prior_is_a_share_of_the_gladiators_own() -> None:
+	"""cross_prior scales the gladiator's own prior: 0.5 of 1 (no Olympic result) as before, 0.5 of its Olympic utility otherwise."""
+	# pylint: disable=protected-access
+	with step("Arrange: an Olympic gladiator of niche 0 and a plain one of niche 1."):
+		driver = Instance(exploration_rate=0.0, return_scale=4_800.0, cross_prior=0.5)
+		population = [
+			{"individual_id": "olympian", "trust": 0.0, "is_gladiator": True, "internal_env_id": 0, "olympic_return": 2_400.0},
+			{"individual_id": "plain", "trust": 0.0, "is_gladiator": True, "internal_env_id": 1},
+		]
+		driver.evaluate(population)
+		olympian, plain = driver._policies  # pylint: disable=protected-access
+
+	with step("Assert: own and foreign priors."):
+		assert driver._mean_utility(0, olympian) == pytest.approx(0.5) and driver._mean_utility(1, olympian) == pytest.approx(
+			0.25
+		)  # pylint: disable=protected-access
+		assert driver._mean_utility(1, plain) == pytest.approx(1.0) and driver._mean_utility(0, plain) == pytest.approx(
+			0.5
+		)  # pylint: disable=protected-access

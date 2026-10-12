@@ -11,9 +11,10 @@ Each environment changes the gravity $g$, the pole mass $m_p$ and the pole half-
 \input{generated/table_cartpole_envs}
 
 \subsubsection{HalfCheetah}
-Each environment changes the gravity, the ground friction (applied to every contact surface, since MuJoCo uses the larger friction of two touching bodies) and the wind (Table~\ref{tab:cheetah_worlds}). The training sequence is Mars-Slippery, Jupiter-Rough, Earth; the test sequence adds the unseen Ice-Floor and High-Wind, which keep Earth's gravity and change only the ground or the air. \todo{Success threshold for HalfCheetah (Stage 2 decision: 4800, Gymnasium's registered threshold, or another value).}
+Each environment changes the gravity, the ground friction (applied to every contact surface, since MuJoCo uses the larger friction of two touching bodies) and the wind (Table~\ref{tab:cheetah_worlds}). The training sequence is Earth, with a soft head wind, Heavy-Rough (1.5 times Earth's gravity, on rough ground) and Mars-Slippery (Mars's gravity on a slippery floor); the test sequence adds the unseen Ice-Floor and High-Wind, which keep Earth's gravity and change only the ground or the strength of the wind. \todo{Success threshold for HalfCheetah (Stage 2 decision: 4800, Gymnasium's registered threshold, or another value).}
 
 \input{generated/table_cheetah_envs}
+ENA detects HalfCheetah's environments with its chirp (Section~\ref{sec:chirp}) instead of the transition models.
 
 \subsection{Protocols}
 

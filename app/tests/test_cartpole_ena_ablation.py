@@ -172,6 +172,57 @@ def test_agent_training_matches_later_agents_to_the_reference_agents_steps_per_e
 		assert "800 env-steps" in (tmp_path / "outputs.txt").read_text(encoding="utf-8")
 
 
+def test_agent_training_gives_every_agent_a_fixed_step_budget_per_environment(monkeypatch, tmp_path) -> None:
+	"""steps_per_env trains every agent to the same env-step budget per environment, with no checks (HalfCheetah);
+	the total reaches PPO-like agents' training-length hook."""
+	with step("Arrange: a stubbed play() that records budgets."):
+		budgets = {}
+
+		def _fake_play(agent, _worlds, _episodes, steps_per_env=None, **kwargs):
+			budgets[agent.get_name()] = (steps_per_env, kwargs.get("stopping"))
+			return pd.DataFrame({"env_id": ["Mars", "Jupiter"], "env_steps": [300, 800], "score": [1.0, 1.0]})
+
+		monkeypatch.setattr(cartpole_ena_ablation, "play", _fake_play)
+		for helper in ("calculate_paper_metrics", "calculate_compute_cost", "calculate_adaptation", "plot_academic_comparison"):
+			monkeypatch.setattr(cartpole_ena_ablation, helper, lambda *args, **kwargs: None)
+		agents = [_BudgetAgent("A", [5, 5]), _BudgetAgent("B", [5, 5])]
+
+	with step("Act: train with 400 steps per environment."):
+		with open(tmp_path / "outputs.txt", "w", encoding="utf-8") as output_file:
+			cartpole_ena_ablation.agent_training(agents, 0, str(tmp_path), output_file, None, [None, None], steps_per_env=[400, 400])
+
+	with step("Assert: both train under [400, 400], no stopping rule, and know the 800-step total."):
+		assert budgets == {"A": ([400, 400], None), "B": ([400, 400], None)}
+		assert agents[0].total_steps == agents[1].total_steps == 800
+
+
+@pytest.mark.parametrize("health_every, written", [(None, False), (10_000, True)])
+def test_agent_training_logs_agent_health_only_when_asked(monkeypatch, tmp_path, health_every, written) -> None:
+	"""health_every (HalfCheetah): each agent's internal health (SAC's temperature and Q-values, PPO's learning rate and
+	policy std) is written to health_{agent}.csv at most every health_every env-steps; off by default (CartPole)."""
+	with step("Arrange: a stubbed play() that reports progress at 10k and 20k steps, and a stubbed health reading."):
+
+		def _fake_play(_agent, _worlds, _episodes, on_episode=None, **_kwargs):
+			for progress in (5_000, 10_000, 20_000):
+				on_episode(progress, 20_000)
+			return pd.DataFrame({"env_id": ["Mars"], "env_steps": [20_000], "score": [1.0]})
+
+		monkeypatch.setattr(cartpole_ena_ablation, "play", _fake_play)
+		monkeypatch.setattr(cartpole_ena_ablation, "agent_health", lambda _agent: {"alpha": 0.5})
+		for helper in ("calculate_paper_metrics", "calculate_compute_cost", "calculate_adaptation", "plot_academic_comparison"):
+			monkeypatch.setattr(cartpole_ena_ablation, helper, lambda *args, **kwargs: None)
+
+	with step("Act: train one agent."):
+		with open(tmp_path / "outputs.txt", "w", encoding="utf-8") as output_file:
+			cartpole_ena_ablation.agent_training([_BudgetAgent("A", [5])], 0, str(tmp_path), output_file, None, [None], health_every=health_every)
+
+	with step("Assert: the file only when asked, with one row per 10k steps."):
+		path = tmp_path / "health_A.csv"
+		assert path.exists() is written
+		if written:
+			assert pd.read_csv(path).to_dict("list") == {"steps": [5_000, 20_000], "alpha": [0.5, 0.5]}
+
+
 @pytest.mark.parametrize("row_trust, expected", [(None, "linear_ramp"), ("zero", "zero")])
 def test_build_ena_agent_takes_trust_from_the_row_or_the_study_default(row_trust, expected) -> None:
 	"""trust_algorithm is an optional per-row key; rows without it use the study-wide linear_ramp."""

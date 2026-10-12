@@ -68,9 +68,13 @@ class SACAgent(ABaseline):
 		update_frequency=20,
 		gradient_steps=None,
 		learning_starts=0,
+		fused_updates=False,
+		jit_compile=False,
 	):
 		"""learning_starts: environment steps of uniform random actions, with no updates, before learning starts
-		(SB3's warm-up; 0 = train as soon as the buffer holds a batch)."""
+		(SB3's warm-up; 0 = train as soon as the buffer holds a batch).
+		fused_updates: run an update's gradient_steps in one compiled call (same algorithm, far less Python overhead);
+		jit_compile: compile that call with XLA. Both off by default (one compiled call per gradient step)."""
 		super().__init__(brain, make_env)
 		self.learn = True
 
@@ -81,6 +85,9 @@ class SACAgent(ABaseline):
 		self.update_frequency = update_frequency
 		self.gradient_steps = gradient_steps if gradient_steps is not None else update_frequency
 		self.learning_starts = learning_starts
+		self.fused_updates = fused_updates
+		self.jit_compile = jit_compile
+		self._sac_steps = tf.function(self._sac_steps_eager, jit_compile=jit_compile)
 		self.env_steps = 0
 
 		# Infer dims
@@ -169,6 +176,9 @@ class SACAgent(ABaseline):
 		self.env_steps += 1
 
 		if self.env_steps > self.learning_starts and self.buffer.size >= self.batch_size and self.env_steps % self.update_frequency == 0:
+			if self.fused_updates:
+				self._fused_update()
+				return
 			for _ in range(self.gradient_steps):
 				(
 					batch_states,
@@ -187,9 +197,32 @@ class SACAgent(ABaseline):
 				)
 
 	@tf.function
-	# pylint: disable=too-many-locals
 	def _update_networks(self, states, actions, rewards, next_states, dones):
-		"""Main SAC optimization step."""
+		"""Main SAC optimization step, its reparameterization noise drawn in the graph."""
+		noise_shape = tf.stack([tf.shape(states)[0], self.action_dim])
+		self._sac_step(states, actions, rewards, next_states, dones, tf.random.normal(noise_shape), tf.random.normal(noise_shape))
+
+	def _fused_update(self):
+		"""One update of gradient_steps steps in a single compiled call: the batches sampled as the per-step path samples
+		them (NumPy, in order), the reparameterization noise drawn with NumPy (the replicate's seed governs it)."""
+		samples = [self.buffer.sample(self.batch_size) for _ in range(self.gradient_steps)]
+		stacked = [tf.convert_to_tensor(np.stack([sample[part] for sample in samples])) for part in range(5)]
+		noise_shape = (self.gradient_steps, self.batch_size, self.action_dim)
+		self._sac_steps(
+			*stacked,
+			tf.convert_to_tensor(np.random.normal(size=noise_shape), dtype=tf.float32),
+			tf.convert_to_tensor(np.random.normal(size=noise_shape), dtype=tf.float32)
+		)
+
+	# pylint: disable=too-many-arguments,too-many-positional-arguments
+	def _sac_steps_eager(self, states, actions, rewards, next_states, dones, next_noise, current_noise):
+		"""k SAC steps from stacked (k, batch, ...) batches and noise; compiled once as self._sac_steps."""
+		for index in tf.range(tf.shape(states)[0]):
+			self._sac_step(states[index], actions[index], rewards[index], next_states[index], dones[index], next_noise[index], current_noise[index])
+
+	# pylint: disable=too-many-locals,too-many-arguments,too-many-positional-arguments
+	def _sac_step(self, states, actions, rewards, next_states, dones, next_noise, current_noise):
+		"""One SAC optimization step with the given reparameterization noise (critics, actor, temperature, targets)."""
 		alpha = tf.exp(self.log_alpha)
 
 		# 1. Update Critics
@@ -203,7 +236,6 @@ class SACAgent(ABaseline):
 			next_log_standard_deviation = tf.clip_by_value(next_log_standard_deviation, -20.0, 2.0)
 			next_standard_deviation = tf.exp(next_log_standard_deviation)
 
-			next_noise = tf.random.normal(tf.shape(next_mean))
 			next_actions_raw = next_mean + next_noise * next_standard_deviation
 			next_actions = tf.tanh(next_actions_raw)
 
@@ -240,7 +272,6 @@ class SACAgent(ABaseline):
 			current_log_standard_deviation = tf.clip_by_value(current_log_standard_deviation, -20.0, 2.0)
 			current_standard_deviation = tf.exp(current_log_standard_deviation)
 
-			current_noise = tf.random.normal(tf.shape(current_mean))
 			current_actions_raw = current_mean + current_noise * current_standard_deviation
 			current_actions = tf.tanh(current_actions_raw)
 

@@ -10,6 +10,10 @@ Keys:
 	<study>/<agent>/<phase>/<metric>/mean|std   phase: train, test, compute, adapt
 	<study>/<agent>/time/min/mean|std           wall-clock training time, minutes
 	<study>/<A>-vs-<B>/<phase>/<metric>/p|diff  Welch's t-test p-value and mean(B) - mean(A)
+	<study>/<agent>/end|retention/<env>/mean|std  HalfCheetah: end of phase (its last 3 checks), retention (%)
+	<study>/<agent>/retention/left/mean|std     retention over the environments left behind
+	<study>/<B>-vs-<agent>/retention/left/p|pholm|diff|ci/low|ci/high|d|nreq
+	<study>/hardware                            the machine and thread counts the replicates ran with
 
 Usage:
 	python src/tools/paper_results.py
@@ -22,10 +26,8 @@ import re
 import sys
 
 # Libs imports
-import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
-from scipy import optimize, stats
+from scipy import stats
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -33,9 +35,37 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # pylint: disable=wrong-import-position
 from cartpole_ena_ablation import make_training_worlds, make_unseen_worlds
 from cartpole_ena_compute import REFERENCES as COMPUTE_REFERENCES
+from half_cheetah import SOLVED_SCORE as CHEETAH_SOLVED, Y_LIM as CHEETAH_Y_LIM, build_ena_agent as build_cheetah_ena
 from tools.aggregate_metrics import collect_results
+from tools.cheetah_results import (
+	CHEETAH_AGENTS,
+	CHEETAH_ENVS,
+	CHEETAH_LEFT_BEHIND,
+	CHEETAH_TRAIN_ENVS,
+	hardware_entries,
+	retention_comparisons,
+	retention_entries,
+	retention_figure,
+	retention_rows,
+	retention_table,
+)
+from tools.detection_ablation import SCREENED, pass_table, study_labels
 from tools.detection_stats import study_detection, summarize as summarize_detection
 from tools.plot_study_curves import plot as plot_study_curves
+from tools.paper_figures import replicate_box_figure
+from tools.paper_stats import (
+	ALPHA,
+	CI_LEVEL,
+	POWER,
+	difference_entries,
+	clopper_pearson,
+	detectable_d,
+	format_value,
+	holm,
+	mcnemar_p,
+	p_macro,
+	welch_p,
+)
 from tools.paper_config import cartpole_rows, cheetah_rows, config_entries, environment_table, latex_table
 from tools.sac_discrete_entropy_check import OUTPUT_DIR as SACD_DIR
 
@@ -47,10 +77,13 @@ IMAGES_DIR = os.path.join(APP_DIR, "latex", "images")
 STUDY_TABLES = {
 	"ablation": ["table_ablation_test.tex", "table_detection.tex"],
 	"challenge": ["table_challenge_test.tex", "table_challenge_adapt.tex"],
+	"detection_ablation": ["table_chirp_ablation.tex"],
+	"cheetah": ["table_cheetah_test.tex", "table_cheetah_retention.tex"],
 }
 STUDY_FIGURES = {
 	"ablation": ["ablation_reliability.pdf"],
 	"challenge": ["challenge_reliability.pdf", "challenge_test_curves.pdf"],
+	"cheetah": ["cheetah_retention.pdf", "cheetah_training_curves.pdf", "cheetah_test_curves.pdf"],
 }
 PHASE_KEYS = {"Training": "train", "Test": "test", "Compute Cost": "compute", "Adaptation": "adapt"}
 METRIC_SLUGS = {
@@ -61,8 +94,6 @@ METRIC_SLUGS = {
 	"Avg Eval Depth": "evaldepth",
 	"Avg Candidates/Gen": "candidates",
 }
-# Metrics shown as whole numbers with thousands separators; everything else to one decimal.
-COUNT_METRICS = ("steps", "Steps", "candsteps")
 TIME_PATTERN = re.compile(r"^\s+(?P<agent>\S.*?): (?P<seconds>[\d.]+) seconds(?:, (?P<steps>[\d,]+) env-steps)?\s*$")
 
 CARTPOLE_ENVS = ["Mars-Light", "Neptune", "Jupiter-Heavy", "Brown-dwarf", "Earth-Standard"]
@@ -89,10 +120,6 @@ ABLATION_FAMILY = [
 # No Random row: the challenge does not run it (the floor is in the ablation table).
 CHALLENGE_AGENTS = ["DQN", "PPO", "SAC-Discrete", "ENA-Combined"]
 TEST_METRICS = ["Reliability (%)", "Stability Gap (↓)"] + [f"{env} Avg" for env in CARTPOLE_ENVS]
-# Statistical conventions, stated in the paper from these same constants (stats/* macros).
-ALPHA = 0.05
-POWER = 0.8
-CI_LEVEL = 0.95
 DETECTION_SLUGS = {"unrecognized": "unrec", "changes": "changes", "first_change": "firstchange", "niches": "niches"}
 # Environment-recognition table columns: (metric, header).
 DETECTION_COLUMNS = [("unrecognized", "Unrec. (\\%)"), ("changes", "Changes"), ("first_change", "First (ep.)"), ("niches", "Niches")]
@@ -103,6 +130,14 @@ STUDIES = {
 	"compute": "cartpole_ena_compute_outputs",
 	"controller": "cartpole_ena_plasticity_controller_outputs",
 	"challenge": "cartpole_challenge_outputs",
+	"cheetah": "half_cheetah_outputs",
+}
+DETECTION_ABLATION_DIR = os.path.join(APP_DIR, "detection_ablation_outputs")  # tools/detection_ablation.py
+# detection_ablation.BASELINES label -> macro slug.
+BASELINE_SLUGS = {
+	"Transition model, changing behavior": "transition",
+	"Transition model, one fixed gait": "transitionfixed",
+	"Chirp (study), changing behavior": "chirp",
 }
 
 
@@ -111,84 +146,6 @@ def slug(metric: str) -> str:
 	if metric in METRIC_SLUGS:
 		return METRIC_SLUGS[metric]
 	return re.sub(r" Avg$", "", metric).replace(" ", "")
-
-
-def _format(value: float, metric_slug: str) -> str:
-	"""A value as the paper prints it: counts with thousands separators, the rest to one decimal."""
-	if value is None or (isinstance(value, float) and math.isnan(value)):
-		return "n/a"
-	if any(marker in metric_slug for marker in COUNT_METRICS):
-		return f"{value:,.0f}"
-	return f"{value:.1f}"
-
-
-def format_p(p_value: float) -> str:
-	"""p-value as printed: bounded below 0.001, else three decimals."""
-	if p_value is None or math.isnan(p_value):
-		return "n/a"
-	return "<0.001" if p_value < 0.001 else f"{p_value:.3f}"
-
-
-def welch_p(sample_a, sample_b) -> float:
-	"""Two-sided Welch's t-test p-value; 1.0 for two identical constant samples, NaN when either has n < 2."""
-	sample_a, sample_b = np.asarray(sample_a, dtype=float), np.asarray(sample_b, dtype=float)
-	if len(sample_a) < 2 or len(sample_b) < 2:
-		return float("nan")
-	if np.std(sample_a) == 0 and np.std(sample_b) == 0:
-		return 1.0 if np.mean(sample_a) == np.mean(sample_b) else 0.0
-	return float(stats.ttest_ind(sample_a, sample_b, equal_var=False).pvalue)
-
-
-def welch_ci(sample_a, sample_b, level: float = CI_LEVEL) -> tuple:
-	"""Welch confidence interval of mean(b) - mean(a); (NaN, NaN) when either sample has n < 2 or both are constant."""
-	sample_a, sample_b = np.asarray(sample_a, dtype=float), np.asarray(sample_b, dtype=float)
-	if len(sample_a) < 2 or len(sample_b) < 2 or (np.std(sample_a) == 0 and np.std(sample_b) == 0):
-		return float("nan"), float("nan")
-	interval = stats.ttest_ind(sample_b, sample_a, equal_var=False).confidence_interval(level)
-	return float(interval.low), float(interval.high)
-
-
-def cohens_d(sample_a, sample_b) -> float:
-	"""Effect size of b over a: difference of means over the average of the two sample standard deviations."""
-	sample_a, sample_b = np.asarray(sample_a, dtype=float), np.asarray(sample_b, dtype=float)
-	spread = math.sqrt((sample_a.var(ddof=1) + sample_b.var(ddof=1)) / 2)
-	return float((sample_b.mean() - sample_a.mean()) / spread) if spread > 0 else float("nan")
-
-
-def _power(effect: float, replicates: int, alpha: float) -> float:
-	"""Power of a two-sided two-sample t-test with `replicates` per group at effect size `effect`."""
-	freedom = 2 * replicates - 2
-	return float(stats.nct.sf(stats.t.ppf(1 - alpha / 2, freedom), freedom, abs(effect) * math.sqrt(replicates / 2)))
-
-
-def replicates_for_power(effect: float, alpha: float, power: float = POWER, limit: int = 100_000):
-	"""Smallest replicates per group reaching `power` at effect size `effect` (None for no effect)."""
-	if not effect or math.isnan(effect):
-		return None
-	low, high = 2, 2
-	while _power(effect, high, alpha) < power:
-		low, high = high, high * 2
-		if high > limit:
-			return None
-	while low < high:
-		middle = (low + high) // 2
-		low, high = (middle + 1, high) if _power(effect, middle, alpha) < power else (low, middle)
-	return low
-
-
-def detectable_d(replicates: int, alpha: float, power: float = POWER) -> float:
-	"""Smallest effect size a two-sided two-sample t-test detects with `power` at `replicates` per group."""
-	return float(optimize.brentq(lambda effect: _power(effect, replicates, alpha) - power, 1e-3, 20.0))
-
-
-def holm(p_values: list, family_size: int = None) -> list:
-	"""Holm-adjusted p-values, in the input order; family_size defaults to the number of p-values."""
-	size = family_size or len(p_values)
-	adjusted, running = [0.0] * len(p_values), 0.0
-	for rank, index in enumerate(sorted(range(len(p_values)), key=lambda position: p_values[position])):
-		running = max(running, min(1.0, (size - rank) * p_values[index]))
-		adjusted[index] = running
-	return adjusted
 
 
 def parse_training_times(outputs_path: str) -> dict:
@@ -229,8 +186,8 @@ def summary_entries(study: str, results: dict) -> dict:
 				if values.empty:
 					continue
 				key = f"{study}/{agent}/{phase_key}/{slug(metric)}"
-				entries[f"{key}/mean"] = _format(values.mean(), slug(metric))
-				entries[f"{key}/std"] = _format(values.std() if len(values) > 1 else float("nan"), slug(metric))
+				entries[f"{key}/mean"] = format_value(values.mean(), slug(metric))
+				entries[f"{key}/std"] = format_value(values.std() if len(values) > 1 else float("nan"), slug(metric))
 	entries[f"{study}/n"] = str(len(replicates))
 	return entries
 
@@ -248,23 +205,8 @@ def comparison_entries(
 		if values_a.empty or values_b.empty:
 			continue
 		key = f"{study}/{agent_a}-vs-{agent_b}/{PHASE_KEYS[phase]}/{slug(metric)}"
-		p_text = format_p(welch_p(values_a, values_b))
-		entries[f"{key}/p"] = f"$p{p_text}$" if p_text.startswith("<") else f"$p={p_text}$"
-		difference = values_b.mean() - values_a.mean()
-		entries[f"{key}/diff"] = ("+" if difference >= 0 else "") + _format(difference, slug(metric))
-		low, high = welch_ci(values_a, values_b)
-		entries[f"{key}/ci/low"], entries[f"{key}/ci/high"] = _format(low, slug(metric)), _format(high, slug(metric))
-		effect = cohens_d(values_a, values_b)
-		entries[f"{key}/d"] = "n/a" if math.isnan(effect) else f"{effect:.2f}"
-		needed = replicates_for_power(effect, alpha)
-		entries[f"{key}/nreq"] = "n/a" if needed is None else f"{needed:,}"
+		entries.update(difference_entries(key, values_a, values_b, alpha, slug(metric)))
 	return entries
-
-
-def _p_macro(p_value: float) -> str:
-	"""A p-value as the paper prints it, in math mode."""
-	p_text = format_p(p_value)
-	return f"$p{p_text}$" if p_text.startswith("<") else f"$p={p_text}$"
 
 
 def paired_p(pooled_a: pd.DataFrame, agent_a: str, pooled_b: pd.DataFrame, agent_b: str, metric: str) -> tuple:
@@ -366,11 +308,11 @@ def controller_entries(results_ref: dict, reference: str, results_alt: dict, alt
 				continue
 			key = f"controller/{reference}-vs-{alternative}/{PHASE_KEYS[phase]}/{metric_slug}"
 			tested.append((alternative, key, values_alt.mean() - values_ref.mean(), welch_p(values_ref, values_alt)))
-			entries[f"{key}/ppaired"] = _p_macro(paired_p(pooled_ref, reference, pooled_alt, alternative, metric)[0])
+			entries[f"{key}/ppaired"] = p_macro(paired_p(pooled_ref, reference, pooled_alt, alternative, metric)[0])
 			if metric_slug == "rel":
 				outcomes[alternative]["rel_mean"] = values_alt.mean()
 		for (alternative, key, difference, _p_value), adjusted in zip(tested, holm([row[3] for row in tested], family_size=len(alternatives))):
-			entries[f"{key}/pholm"] = _p_macro(adjusted)
+			entries[f"{key}/pholm"] = p_macro(adjusted)
 			outcomes[alternative][metric_slug] = (difference, adjusted)
 	complete = {alternative: outcome for alternative, outcome in outcomes.items() if {"rel", "candsteps", "rel_mean"} <= set(outcome)}
 	replicates = _pooled(results_alt, "Test")["Exp"].nunique()
@@ -391,7 +333,7 @@ def family_entries(study: str, results: dict, pairs: list, metric: str = "Reliab
 			tested.append((f"{study}/{agent_a}-vs-{agent_b}/test/{slug(metric)}", welch_p(values_a, values_b)))
 	entries = {}
 	for (key, _p_value), adjusted in zip(tested, holm([p_value for _key, p_value in tested], family_size=len(pairs))):
-		entries[f"{key}/pholm"] = _p_macro(adjusted)
+		entries[f"{key}/pholm"] = p_macro(adjusted)
 	replicates = pooled["Exp"].nunique()
 	entries[f"{study}/family"] = str(len(pairs))
 	entries[f"{study}/mde"] = f"{detectable_d(replicates, ALPHA / len(pairs)):.2f}"
@@ -444,8 +386,8 @@ def time_entries(study: str, study_dir: str) -> dict:
 	entries = {}
 	for agent, values in minutes.items():
 		series = pd.Series(values)
-		entries[f"{study}/{agent}/time/min/mean"] = _format(series.mean(), "min")
-		entries[f"{study}/{agent}/time/min/std"] = _format(series.std() if len(series) > 1 else float("nan"), "min")
+		entries[f"{study}/{agent}/time/min/mean"] = format_value(series.mean(), "min")
+		entries[f"{study}/{agent}/time/min/std"] = format_value(series.std() if len(series) > 1 else float("nan"), "min")
 	return entries
 
 
@@ -479,9 +421,9 @@ def results_table(results: dict, phase: str, agents: list, columns: list, captio
 			if values.empty:
 				cells.append("--")
 				continue
-			cell = _format(values.mean(), slug(metric))
+			cell = format_value(values.mean(), slug(metric))
 			if show_std and len(values) > 1:
-				cell += f" $\\pm$ {_format(values.std(), slug(metric))}"
+				cell += f" $\\pm$ {format_value(values.std(), slug(metric))}"
 			cells.append(cell)
 		lines.append(f"{agent} & " + " & ".join(cells) + " \\\\")
 	lines.append("\\hline")
@@ -508,8 +450,8 @@ def detection_entries(study: str, summary: pd.DataFrame) -> dict:
 	entries = {}
 	for row in summary.itertuples():
 		key = f"{study}/{row.agent}/detect/{row.phase}/{row.env_id}/{DETECTION_SLUGS[row.metric]}"
-		entries[f"{key}/mean"] = _format(row.mean, "detect")
-		entries[f"{key}/std"] = _format(row.std, "detect")
+		entries[f"{key}/mean"] = format_value(row.mean, "detect")
+		entries[f"{key}/std"] = format_value(row.std, "detect")
 	return entries
 
 
@@ -534,10 +476,84 @@ def detection_table(summary: pd.DataFrame, agents: list, caption: str, label: st
 						cells.append("--")
 						continue
 					mean, std = values.loc[key, "mean"], values.loc[key, "std"]
-					cells.append(_format(mean, "detect") + ("" if math.isnan(std) else f" $\\pm$ {_format(std, 'detect')}"))
+					cells.append(format_value(mean, "detect") + ("" if math.isnan(std) else f" $\\pm$ {format_value(std, 'detect')}"))
 				lines.append(f"{agent} & {phase_label} & {env_id.split('-', maxsplit=1)[0]} & " + " & ".join(cells) + " \\\\")
 		lines.append("\\hline")
 	return latex_table(caption, label, f"|l|l|l|{'c|' * len(DETECTION_COLUMNS)}", lines, fit_width=True)
+
+
+def detection_ablation_entries(grid: pd.DataFrame, confirmation: pd.DataFrame, chosen: tuple) -> dict:
+	"""The detection benchmark's numbers, each from the seed set that may report it (tools/detection_ablation.py):
+
+	- confirmation seeds (never used for a choice): per baseline, the mean over seeds of changes, false changes, niches and
+	  worst purity (%) and the seeds passing; the study's chirp's pass count with its Clopper-Pearson interval, worst and
+	  mean switch delay, worst and mean purity, and the seeds with a false change;
+	- grid seeds: how many configurations pass on every seed, the chosen excitation's fewest passes over feature types,
+	  the best one without a wavelet train, and the screened one;
+	- one Holm family of exact McNemar tests (paired by seed): the chirp vs the transition model (confirmation) and the
+	  chosen configuration vs the best one without a wavelet train (grid)."""
+	entries = {"detbench/seeds": str(grid["seed"].nunique()), "detbench/confirmseeds": str(confirmation["seed"].nunique())}
+	for label, rows in confirmation.groupby("baseline", sort=False):
+		baseline = BASELINE_SLUGS[label]
+		entries[f"detbench/{baseline}/changes"] = f"{rows['changes'].mean():.1f}"
+		entries[f"detbench/{baseline}/inside"] = f"{rows['inside'].mean():.1f}"
+		entries[f"detbench/{baseline}/niches"] = f"{rows['niches'].mean():.1f}"
+		entries[f"detbench/{baseline}/purity"] = f"{100 * rows['min_purity'].mean():.1f}"
+		entries[f"detbench/{baseline}/passes"] = str(int(rows["passes"].sum()))
+		# Seeds on which two environments share their majority niche (merged physics).
+		entries[f"detbench/{baseline}/merged"] = str(int((~rows["distinct"].astype(bool)).sum()))
+	study = confirmation[confirmation["baseline"] == "Chirp (study), changing behavior"].sort_values("seed")
+	transition = confirmation[confirmation["baseline"] == "Transition model, changing behavior"].sort_values("seed")
+	passes, trials = int(study["passes"].sum()), len(study)
+	low, high = clopper_pearson(passes, trials)
+	entries["detbench/chosen/passes"] = str(passes)
+	entries["detbench/chosen/lower"], entries["detbench/chosen/upper"] = f"{100 * low:.1f}", f"{100 * high:.1f}"
+	entries["detbench/chosen/maxdelay"] = str(int(study["max_delay"].max()))
+	entries["detbench/chosen/delaymean"] = f"{study['max_delay'].mean():.1f}"
+	entries["detbench/chosen/minpurity"] = f"{100 * study['min_purity'].min():.0f}"
+	entries["detbench/chosen/puritymean"] = f"{100 * study['min_purity'].mean():.1f}"
+	entries["detbench/chosen/falseseeds"] = str(int((study["inside"] > 0).sum()))
+
+	def record(excitation, features):
+		return grid[(grid["excitation"] == excitation) & (grid["features"] == features)].sort_values("seed")["passes"].to_numpy()
+
+	counts = grid.groupby(["excitation", "features"], sort=False)["passes"].sum()
+	others = counts[[not excitation.startswith("Wavelet train") for excitation, _features in counts.index]]
+	best_other = others.idxmax()
+	entries["detbench/bestother/excitation"], entries["detbench/bestother/features"] = best_other
+	entries["detbench/bestother/passes"] = str(int(others[best_other]))
+	entries["detbench/screened/passes"] = str(int(counts[SCREENED]))
+	entries["detbench/chosengrid/passes"] = str(int(counts[chosen]))
+	# The chosen excitation with every feature type: its fewest passes (how much the excitation alone carries).
+	entries["detbench/chosenexcitation/minpasses"] = str(int(counts[[excitation == chosen[0] for excitation, _features in counts.index]].min()))
+	entries["detbench/passing"] = str(int((pass_table(grid) == grid["seed"].nunique()).fillna(False).to_numpy().sum()))
+	adjusted = holm([mcnemar_p(study["passes"].to_numpy(), transition["passes"].to_numpy()), mcnemar_p(record(*chosen), record(*best_other))])
+	entries["detbench/cmp/chirp/p"], entries["detbench/cmp/other/p"] = p_macro(adjusted[0]), p_macro(adjusted[1])
+	return entries
+
+
+def cartpole_check_entries(cartpole: pd.DataFrame) -> dict:
+	"""CartPole's detector on CartPole's benchmark (the benchmark's sanity check): seeds meeting the target."""
+	return {"detbench/cartpole/passes": str(int(cartpole["passes"].sum())), "detbench/cartpole/seeds": str(len(cartpole))}
+
+
+def chirp_ablation_table(grid: pd.DataFrame, chosen: tuple) -> str:
+	"""Seeds meeting the detection target per excitation (row) and response features (column); the study's choice in bold."""
+	table, seeds = pass_table(grid), grid["seed"].nunique()
+	lines = ["\\hline", "\\textbf{Excitation} & " + " & ".join(f"\\textbf{{{column}}}" for column in table.columns) + " \\\\", "\\hline"]
+	for excitation, row in table.iterrows():
+		cells = [f"{count}/{seeds}" for count in row]
+		cells = [f"\\textbf{{{cell}}}" if (excitation, column) == chosen else cell for cell, column in zip(cells, table.columns)]
+		lines.append(f"{excitation} & " + " & ".join(cells) + " \\\\")
+	lines.append("\\hline")
+	return latex_table(
+		f"Chirp detector ablation on the HalfCheetah detection benchmark: benchmark seeds (of {seeds}) on which an excitation and "
+		"response features catch both switches, confirm no false change and give each environment its own niche",
+		"tab:chirp_ablation",
+		f"|l|{'c|' * len(table.columns)}",
+		lines,
+		fit_width=True,
+	)
 
 
 def clear_absent_outputs(present: set, generated_dir: str = GENERATED_DIR, images_dir: str = IMAGES_DIR) -> None:
@@ -561,23 +577,7 @@ def reliability_figure(results: dict, agents: list, path: str) -> str:
 	"""Box plot of per-replicate test reliability per agent, each replicate drawn as a dot; returns the path written."""
 	pooled = _pooled(results, "Test")
 	samples = [_values(pooled, agent, "Reliability (%)").to_numpy() for agent in agents]
-	figure, axis = plt.subplots(figsize=(3.5, 2.4))
-	axis.boxplot(samples, widths=0.55, showfliers=False, medianprops={"color": "#1f2937", "linewidth": 1.5}, boxprops={"color": "#6b7280"})
-	rng = np.random.default_rng(0)
-	for position, sample in enumerate(samples, start=1):
-		axis.scatter(position + rng.uniform(-0.15, 0.15, len(sample)), sample, s=6, color="#2563eb", alpha=0.55, linewidths=0, zorder=3)
-	axis.set_xticks(range(1, len(agents) + 1), agents, rotation=30, ha="right", fontsize=7)
-	axis.set_ylabel("Test reliability (%)", fontsize=8)
-	axis.set_ylim(-3, 103)
-	axis.tick_params(axis="y", labelsize=7)
-	axis.grid(axis="y", color="#e5e7eb", linewidth=0.6)
-	axis.set_axisbelow(True)
-	for side in ("top", "right"):
-		axis.spines[side].set_visible(False)
-	figure.tight_layout()
-	figure.savefig(path)
-	plt.close(figure)
-	return path
+	return replicate_box_figure(samples, agents, "Test reliability (%)", path, ylim=(-3, 103), rotate=True)
 
 
 def _write(path: str, text: str) -> None:
@@ -619,6 +619,21 @@ def study_comparisons(results: dict) -> dict:
 						"challenge", results["challenge"], baseline, results["challenge"], "ENA-Combined", phase, metrics, alpha=ALPHA / family
 					)
 				)
+	if "cheetah" in results:
+		# ENA-Combined against each baseline on the test return per environment: a family of the two baselines.
+		for baseline in CHEETAH_AGENTS[:-1]:
+			entries.update(
+				comparison_entries(
+					"cheetah",
+					results["cheetah"],
+					baseline,
+					results["cheetah"],
+					"ENA-Combined",
+					"Test",
+					[f"{env} Avg" for env in CHEETAH_ENVS],
+					alpha=ALPHA / (len(CHEETAH_AGENTS) - 1),
+				)
+			)
 	if "controller" in results and "ablation" in results:
 		# Each alternative Plasticity controller against the linear ramp (the ablation's own ENA-Combined).
 		for alternative in CONTROLLER_ALTERNATIVES:
@@ -659,6 +674,9 @@ def collect_studies() -> tuple:
 		entries.update(time_entries(study, study_dir))
 		if study == "challenge":
 			entries.update(episode_count_entries(study, study_dir, CHALLENGE_AGENTS))
+		if study == "cheetah":
+			entries.update(episode_count_entries(study, study_dir, CHEETAH_AGENTS))
+			entries.update(hardware_entries(study, study_dir))
 
 	if "compute" in results and "ablation" in results:
 		# The compute study runs full search only; zero and the ramp are the ablation's runs of the same replicates.
@@ -671,6 +689,55 @@ def collect_studies() -> tuple:
 			compute_rank_entries(results["compute"], "ENA-Combined-PlasticityFull", results["ablation"], COMPUTE_REFERENCES["linear_ramp"])
 		)
 	return results, entries
+
+
+def write_cheetah_outputs(results: dict, rows: pd.DataFrame, entries: dict) -> None:
+	"""HalfCheetah's tables (test return per environment; retention and training time) and figures (retention; training
+	curves by env-steps; test curves)."""
+	cheetah_columns = [(f"{env} Avg", env.split("-", maxsplit=1)[0], True) for env in CHEETAH_ENVS]
+	_write(
+		os.path.join(GENERATED_DIR, "table_cheetah_test.tex"),
+		results_table(
+			results,
+			"Test",
+			CHEETAH_AGENTS,
+			cheetah_columns,
+			f"HalfCheetah comparison, frozen test: mean return per environment ({entries['cheetah/n']} replicates)",
+			"tab:cheetah_test",
+		),
+	)
+	minutes = {agent: entries.get(f"cheetah/{agent}/time/min/mean", "--") for agent in CHEETAH_AGENTS}
+	_write(
+		os.path.join(GENERATED_DIR, "table_cheetah_retention.tex"),
+		retention_table(
+			rows,
+			CHEETAH_LEFT_BEHIND,
+			CHEETAH_AGENTS,
+			minutes,
+			f"HalfCheetah comparison: end-of-phase and test return, and retention, of the environments left behind, and "
+			f"wall-clock training time ({entries['cheetah/n']} replicates)",
+			"tab:cheetah_retention",
+		),
+	)
+	retention_figure(rows, CHEETAH_LEFT_BEHIND, CHEETAH_AGENTS, os.path.join(IMAGES_DIR, "cheetah_retention.pdf"))
+	# Training at a step budget: replicates play different numbers of episodes, so the curves are binned by env-steps.
+	plot_study_curves(
+		os.path.join(APP_DIR, STUDIES["cheetah"]),
+		"training",
+		CHEETAH_AGENTS,
+		os.path.join(IMAGES_DIR, "cheetah_training_curves.pdf"),
+		mastery_score=CHEETAH_SOLVED,
+		ylim=CHEETAH_Y_LIM,
+		x_axis="env_steps",
+	)
+	plot_study_curves(
+		os.path.join(APP_DIR, STUDIES["cheetah"]),
+		"testing",
+		CHEETAH_AGENTS,
+		os.path.join(IMAGES_DIR, "cheetah_test_curves.pdf"),
+		mastery_score=CHEETAH_SOLVED,
+		ylim=CHEETAH_Y_LIM,
+	)
 
 
 def main() -> None:
@@ -687,8 +754,28 @@ def main() -> None:
 			detection[study] = summarize_detection(study_detection(study_dir))
 			entries.update(detection_entries(study, detection[study]))
 
+	present = set(results)
+	ablation_grid, ablation_confirmation = os.path.join(DETECTION_ABLATION_DIR, "grid.csv"), os.path.join(DETECTION_ABLATION_DIR, "confirmation.csv")
+	if os.path.exists(ablation_grid) and os.path.exists(ablation_confirmation):
+		grid, confirmation = pd.read_csv(ablation_grid), pd.read_csv(ablation_confirmation)
+		# The study's chirp configuration, read from the HalfCheetah ENA as the study builds it.
+		chosen = study_labels(build_cheetah_ena(1)._skills["env_detection"]._instance._settings)  # pylint: disable=protected-access
+		entries.update(detection_ablation_entries(grid, confirmation, chosen))
+		cartpole_path = os.path.join(DETECTION_ABLATION_DIR, "cartpole.csv")
+		if os.path.exists(cartpole_path):
+			entries.update(cartpole_check_entries(pd.read_csv(cartpole_path)))
+		present.add("detection_ablation")
+
+	if "cheetah" in results:
+		# Retention reads each replicate's evaluation checks and test episodes, not the outputs.txt tables.
+		rows = retention_rows(os.path.join(APP_DIR, STUDIES["cheetah"]), CHEETAH_AGENTS, CHEETAH_TRAIN_ENVS)
+		entries.update(retention_entries("cheetah", rows, CHEETAH_LEFT_BEHIND))
+		entries.update(retention_comparisons("cheetah", rows, CHEETAH_LEFT_BEHIND, "ENA-Combined", CHEETAH_AGENTS[:-1]))
+
 	os.makedirs(GENERATED_DIR, exist_ok=True)
 	write_macros(entries, os.path.join(GENERATED_DIR, "results.tex"))
+	if "detection_ablation" in present:
+		_write(os.path.join(GENERATED_DIR, "table_chirp_ablation.tex"), chirp_ablation_table(grid, chosen))
 	test_columns = [(f"{env} Avg", env.split("-", maxsplit=1)[0], False) for env in CARTPOLE_ENVS] + [("Reliability (%)", "Rel. (\\%)", True)]
 	if "ablation" in results:
 		_write(
@@ -756,7 +843,7 @@ def main() -> None:
 		),
 	)
 	images_dir = IMAGES_DIR
-	clear_absent_outputs(set(results))
+	clear_absent_outputs(present)
 	if "ablation" in results:
 		reliability_figure(results["ablation"], ABLATION_AGENTS[1:], os.path.join(images_dir, "ablation_reliability.pdf"))
 	if "challenge" in results:
@@ -764,6 +851,8 @@ def main() -> None:
 		plot_study_curves(
 			os.path.join(APP_DIR, STUDIES["challenge"]), "testing", CHALLENGE_AGENTS, os.path.join(images_dir, "challenge_test_curves.pdf")
 		)
+	if "cheetah" in results:
+		write_cheetah_outputs(results["cheetah"], rows, entries)
 	print(f"Wrote {len(entries)} numbers and the tables to {GENERATED_DIR}")
 
 

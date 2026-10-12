@@ -20,3 +20,10 @@ def test_clear_training_history_resets_reward_state() -> None:
 		assert not list(memory.reward_history)
 		assert memory.max_seen == float("-inf")
 		assert memory.min_seen == float("inf")
+
+
+def test_observation_normalizer_window_defaults_to_ten_evaluation_depths() -> None:
+	"""max_count defaults to max_eval_steps * 10 and can be set explicitly."""
+	with step("Act/Assert: default and explicit windows."):
+		assert AgentMemory(history_size=10, state_dim=4, max_eval_steps=100).obs_normalizer.max_count == 1_000
+		assert AgentMemory(history_size=10, state_dim=4, max_eval_steps=100, obs_normalizer_max_count=50_000).obs_normalizer.max_count == 50_000

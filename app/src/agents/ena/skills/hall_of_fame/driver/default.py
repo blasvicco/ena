@@ -13,7 +13,7 @@ from agents.ena.skills.hall_of_fame.driver.abstract import ADriver
 from agents.ena.tools.genetic_similarity import genetic_similarity
 
 
-class Instance(ADriver):
+class Instance(ADriver):  # pylint: disable=too-many-instance-attributes
 	"""Manages the archive of elite specialists (Gladiators)."""
 
 	# Responsibilities:
@@ -30,9 +30,26 @@ class Instance(ADriver):
 	GATE_SPREAD_FLOOR = 0.1
 	GATE_TRUST = 0.5
 
-	def __init__(self, max_per_niche, max_gladiator_ratio, brain, action_dim, state_dim):
+	# pylint: disable=too-many-arguments,too-many-positional-arguments
+	def __init__(self, max_per_niche, max_gladiator_ratio, brain, action_dim, state_dim, **_kwargs):
 		# max_per_niche:       max gladiators stored per recognised niche
 		# max_gladiator_ratio: fraction of pop_size that can be gladiators at injection time
+		# protect_confirmed:   (the olympic driver) only an Olympiad removes or re-scores a gladiator that
+		#                      competed (olympic_confirmed): a new winner's trust rests on one episode, a
+		#                      confirmed gladiator's on its Olympic mean, so the archive's own replacement
+		#                      steps would let a lucky winner displace it.
+		# qualifier_seats:     (the olympic driver) extra seats per niche for provisional entrants; the
+		#                      Olympics trim confirmed gladiators to max_per_niche, so these seats are
+		#                      never held by one. Ignored without protection (capacity max_per_niche).
+		# aligned_statistics: (the olympic driver) a record stores the statistics its weights are aligned to (the
+		#                     winner's own last_mu/last_var), not the normalizer's current ones; the default keeps
+		#                     stamping the current statistics, as every CartPole run did.
+		self.protect_confirmed = False
+		self.qualifier_seats = 0
+		self.aligned_statistics = False
+		# reinject_as_gladiators: (the olympic driver) a re-injected record's copy is a gladiator, since every record is
+		#                        one; the default copies the record's own flag, as every CartPole run did.
+		self.reinject_as_gladiators = False
 		self.max_per_niche = max_per_niche
 		self.max_gladiator_ratio = max_gladiator_ratio
 		self._records = {}
@@ -51,11 +68,13 @@ class Instance(ADriver):
 		pop_size,
 		obs_normalizer,
 		restore_trust=True,
+		admit=None,
 	):
-		"""Re-introduces Gladiators into the active population."""
+		"""Re-introduces Gladiators (those admit(record) accepts, if given) into the active population."""
 		# Strategy: round-robin across niches (1 per niche per round), best-first within
 		# each niche, until floor(pop_size * max_gladiator_ratio) population slots are filled.
-		if not self._records:
+		records = [record for record in self._records.values() if admit is None or admit(record)]
+		if not records:
 			return
 
 		max_slots = int(pop_size * self.max_gladiator_ratio)
@@ -64,7 +83,7 @@ class Instance(ADriver):
 
 		# Group by niche, randomly shuffle each niche so we try different gladiators
 		niches = {}
-		for individual in self._records.values():
+		for individual in records:
 			nid = individual.get("internal_env_id", -1)
 			niches.setdefault(nid, []).append(individual)
 		for niche in niches.values():
@@ -95,11 +114,13 @@ class Instance(ADriver):
 			target["individual_id"] = gladiator["individual_id"]
 			target["model"].set_weights(gladiator["model"].get_weights())
 			target["trust"] = gladiator["trust"] if restore_trust else 0.0
-			target["is_gladiator"] = gladiator.get("is_gladiator", False)
+			target["is_gladiator"] = True if self.reinject_as_gladiators else gladiator.get("is_gladiator", False)
 			target["env_name"] = gladiator.get("env_name", "Unknown")
 			target["internal_env_id"] = gladiator.get("internal_env_id", -1)
 			target["last_mu"] = np.copy(gladiator.get("last_mu", obs_normalizer.mean))
 			target["last_var"] = np.copy(gladiator.get("last_var", obs_normalizer.var))
+			target["olympic_confirmed"] = gladiator.get("olympic_confirmed", False)
+			target["olympic_return"] = gladiator.get("olympic_return")
 
 	def save_niche_details(self, output_dir, agent_name):
 		"""Save the niche details to a file in the output directory."""
@@ -180,14 +201,14 @@ class Instance(ADriver):
 
 		if current_env_id == existing_env_id:
 			# Same niche: update in place if strictly better. env_id and env_name stay frozen.
+			if self.__protected(existing):
+				return True
 			if current_trust > existing.get("trust", -99):
 				existing["model"].set_weights(winner["model"].get_weights())
 				existing["trust"] = current_trust
-				existing["last_mu"] = np.copy(obs_normalizer.mean)
-				existing["last_var"] = np.copy(obs_normalizer.var)
+				self.__stamp(existing, winner, obs_normalizer)
 				winner["internal_env_id"] = current_env_id
-				winner["last_mu"] = np.copy(obs_normalizer.mean)
-				winner["last_var"] = np.copy(obs_normalizer.var)
+				self.__stamp(winner, winner, obs_normalizer)
 			return True
 
 		# Cross-niche: winner is already a gladiator from a different niche.
@@ -198,13 +219,12 @@ class Instance(ADriver):
 		niche_records = [individual for individual in self._records.values() if individual.get("internal_env_id") == current_env_id]
 		for record in niche_records:
 			if genetic_similarity(winner, record) > self.SIMILARITY_THRESHOLD:
-				if current_trust > record.get("trust", -99):
+				if current_trust > record.get("trust", -99) and not self.__protected(record):
 					record["model"].set_weights(winner["model"].get_weights())
 					record["trust"] = current_trust
-					record["last_mu"] = np.copy(obs_normalizer.mean)
-					record["last_var"] = np.copy(obs_normalizer.var)
+					self.__stamp(record, winner, obs_normalizer)
 				return True
-		if len(niche_records) < self.max_per_niche:
+		if len(niche_records) < self.__capacity():
 			clone_id = str(uuid.uuid4())
 			clone = {
 				"model": self._brain(self._action_dim, self._state_dim),
@@ -213,9 +233,8 @@ class Instance(ADriver):
 				"env_name": env_name,
 				"internal_env_id": current_env_id,
 				"is_gladiator": True,
-				"last_mu": np.copy(obs_normalizer.mean),
-				"last_var": np.copy(obs_normalizer.var),
 			}
+			self.__stamp(clone, winner, obs_normalizer)
 			clone["model"].set_weights(winner["model"].get_weights())
 			self._records[clone_id] = clone
 		return True
@@ -224,13 +243,29 @@ class Instance(ADriver):
 	def __eco_niche_protection(self, winner, current_trust, recognizer, obs_normalizer, population, env_name):
 		"""STEP 6: SAME-NICHE REPLACEMENT — evict weakest in winner's niche if winner is better."""
 		current_niche_id = recognizer.current_niche_id
-		niche_records = [individual for individual in self._records.values() if individual.get("internal_env_id") == current_niche_id]
+		niche_records = [
+			individual
+			for individual in self._records.values()
+			if individual.get("internal_env_id") == current_niche_id and not self.__protected(individual)
+		]
 		if not niche_records:
 			return
 		weakest = min(niche_records, key=lambda individual: individual.get("trust"))
 		if current_trust > weakest.get("trust"):
 			self.__evict(weakest["individual_id"], population)
 			self.__save(winner, current_trust, recognizer, obs_normalizer, env_name)
+
+	def records_in_niche(self, niche_id):
+		"""The archived records of one niche (the Olympics' competitors)."""
+		return [record for record in self._records.values() if record.get("internal_env_id") == niche_id]
+
+	def record(self, individual_id):
+		"""One archived record, or None."""
+		return self._records.get(individual_id)
+
+	def evict(self, individual_id, population):
+		"""Remove a record and clear its live copy's gladiator tags (the Olympics' eviction)."""
+		self.__evict(individual_id, population)
 
 	def __evict(self, individual_id, population):
 		"""Remove a record from the archive and clear its live population member's gladiator tags."""
@@ -243,6 +278,8 @@ class Instance(ADriver):
 				individual["is_gladiator"] = False
 				individual["internal_env_id"] = -1
 				individual["env_name"] = "Unknown"
+				if self.protect_confirmed:
+					individual["olympic_confirmed"] = False
 				break
 
 	# pylint: disable=too-many-arguments,too-many-positional-arguments
@@ -256,6 +293,10 @@ class Instance(ADriver):
 
 			similarity = genetic_similarity(winner, hof_record)
 			if similarity > self.SIMILARITY_THRESHOLD:
+				if self.__protected(hof_record):
+					# The twin waits for the next Olympiad beside it, provisional, if the niche has room.
+					self.__slot_induction(winner, current_trust, recognizer, obs_normalizer, env_name)
+					return True
 				existing_trust = hof_record.get("trust", -99)
 				if current_trust > existing_trust:
 					self.__evict(hof_id, population)
@@ -288,8 +329,7 @@ class Instance(ADriver):
 		backup["trust"] = trust
 		backup["env_name"] = env_name
 		backup["internal_env_id"] = recognizer.current_niche_id
-		backup["last_mu"] = np.copy(obs_normalizer.mean)
-		backup["last_var"] = np.copy(obs_normalizer.var)
+		self.__stamp(backup, individual, obs_normalizer)
 		self._records[individual["individual_id"]] = backup
 
 		# Mark the live population member as a gladiator immediately.
@@ -297,15 +337,32 @@ class Instance(ADriver):
 		individual["is_gladiator"] = True
 		individual["internal_env_id"] = recognizer.current_niche_id
 		individual["env_name"] = backup["env_name"]
-		individual["last_mu"] = np.copy(obs_normalizer.mean)
-		individual["last_var"] = np.copy(obs_normalizer.var)
+		self.__stamp(individual, individual, obs_normalizer)
+		if self.protect_confirmed:
+			individual["olympic_confirmed"] = False  # a new record is provisional until its first Olympiad
+
+	def __capacity(self) -> int:
+		"""Records a niche may hold: max_per_niche, plus the qualifier seats when confirmed gladiators are protected."""
+		return self.max_per_niche + (self.qualifier_seats if self.protect_confirmed else 0)
+
+	def __stamp(self, target: dict, source: dict, obs_normalizer) -> None:
+		"""Set target's normalization snapshot: source's own (aligned_statistics), else the normalizer's current one."""
+		if self.aligned_statistics and source.get("last_mu") is not None:
+			mean, var = source["last_mu"], source["last_var"]
+		else:
+			mean, var = obs_normalizer.mean, obs_normalizer.var
+		target["last_mu"], target["last_var"] = np.copy(mean), np.copy(var)
+
+	def __protected(self, record) -> bool:
+		"""Whether only an Olympiad may remove or re-score this record."""
+		return self.protect_confirmed and bool(record.get("olympic_confirmed", False))
 
 	# pylint: disable=too-many-arguments,too-many-positional-arguments
 	def __slot_induction(self, winner, current_trust, recognizer, obs_normalizer, env_name):
 		"""STEP 5: OPEN SLOT INDUCTION — induct if winner's niche is below budget."""
 		current_niche_id = recognizer.current_niche_id
 		niche_count = sum(1 for individual in self._records.values() if individual.get("internal_env_id") == current_niche_id)
-		if niche_count < self.max_per_niche:
+		if niche_count < self.__capacity():
 			self.__save(winner, current_trust, recognizer, obs_normalizer, env_name)
 			return True
 		return False

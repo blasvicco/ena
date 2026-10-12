@@ -78,16 +78,13 @@ def replicate_seconds(
 	*,
 	budget_per_env: int,
 	n_envs: int,
-	check_every: int,
-	eval_episodes: int,
 	test_episodes: list,
 	episode_steps: int = EPISODE_STEPS,
 ) -> float:
-	"""One agent's seconds in one replicate: training budget, the periodic evaluation checks, and the frozen test."""
+	"""One agent's seconds in one replicate: the training budget and the frozen test."""
 	training = n_envs * budget_per_env * measurement["train_seconds_per_step"]
-	checks = n_envs * (budget_per_env // check_every) * eval_episodes * episode_steps * measurement["eval_seconds_per_step"]
 	test = sum(test_episodes) * episode_steps * measurement["eval_seconds_per_step"]
-	return training + checks + test
+	return training + test
 
 
 def estimate_study(agent_seconds: dict, *, replicates: int, workers: int, threads_per_worker: int, price_per_hour: float) -> dict:
@@ -108,7 +105,7 @@ def estimate_study(agent_seconds: dict, *, replicates: int, workers: int, thread
 
 def parse_args(argv: list = None) -> argparse.Namespace:
 	"""CLI: what to measure (or load), and the study/machine to estimate for."""
-	agents = [row["name"] for row in half_cheetah.CHALLENGE_AGENTS] + ["Random"]
+	agents = [row["name"] for row in half_cheetah.CHALLENGE_AGENTS]
 	parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 	parser.add_argument("--agents", nargs="+", default=agents, choices=agents)
 	parser.add_argument("--train-steps", type=int, default=20_000, help="Timed training env-steps per agent (after one warm-up episode).")
@@ -145,8 +142,6 @@ def main(argv: list = None) -> None:
 	protocol = {
 		"budget_per_env": args.budget_per_env,
 		"n_envs": len(half_cheetah.TRAINING_EPISODES),
-		"check_every": half_cheetah.CHECK_EVERY,
-		"eval_episodes": half_cheetah.EVAL_EPISODES,
 		"test_episodes": half_cheetah.TESTING_EPISODES,
 	}
 	agent_seconds = {row["agent"]: replicate_seconds(row, **protocol) for row in measurements}
@@ -163,10 +158,7 @@ def main(argv: list = None) -> None:
 		threads_per_worker=args.threads_per_worker,
 		price_per_hour=args.price_per_hour,
 	)
-	print(
-		f"\nProtocol: {protocol['budget_per_env']:,} steps x {protocol['n_envs']} envs, "
-		f"check every {protocol['check_every']:,}, test {protocol['test_episodes']}"
-	)
+	print(f"\nProtocol: {protocol['budget_per_env']:,} steps x {protocol['n_envs']} envs, " f"test {protocol['test_episodes']}")
 	print(f"Memory per worker (all agents built): ~{max(row['rss_mb'] for row in measurements):,.0f} MB")
 	print(f"One replicate: {estimate['replicate_hours']:.1f} h (bottleneck: {estimate['bottleneck_agent']})")
 	print(

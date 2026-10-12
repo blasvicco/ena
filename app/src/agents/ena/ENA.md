@@ -21,8 +21,8 @@ agents/ena/
 │   ├── crossover/            main.py + driver/{abstract,uniform_mask}.py
 │   ├── trust/                 main.py + driver/{abstract,zero,full,linear_ramp,quadratic}.py
 │   ├── plasticity/             main.py + driver/{abstract,zero,full,linear_ramp,quadratic}.py
-│   ├── hall_of_fame/            main.py + driver/{abstract,default,none}.py
-│   ├── env_detection/            main.py + driver/{abstract,dynamics_model,none}.py
+│   ├── hall_of_fame/            main.py + driver/{abstract,default,olympic,none}.py
+│   ├── env_detection/            main.py + driver/{abstract,dynamics_model,chirp,none}.py
 │   └── selection/                 main.py + driver/{abstract,bpr}.py
 └── tools/
     ├── curves.py              — zero/full/linear_ramp/quadratic formulas shared by trust & plasticity
@@ -51,11 +51,13 @@ Key constructor parameters and what they configure:
 - `physics` — list of env attribute names (`gravity`, `masspole`, `length`) the trainer re-reads from `env.unwrapped` each episode to build evaluation environments (`train()`, §7).
 - `plasticity_algorithm` / `trust_algorithm` — driver name forwarded to the Plasticity/Trust skills (§6): `"zero"`, `"full"`, `"linear_ramp"`, or `"quadratic"`.
 - `mutation_rate` / `mutation_noise` — forwarded to the Mutation skill's `gaussian` driver (§5).
+- `olympics_interval`, `olympics_episodes`, `olympics_qualifier_seats` — the `olympic` Hall of Fame driver's Olympiads: environment steps between them, full episodes per competitor, provisional seats per niche beyond `max_per_niche` (§8.1). The other drivers ignore them.
 - `hall_of_fame_driver` — `"default"` (the real archive) or `"none"` (disables specialist archiving/recall entirely — everything else, e.g. exploration/mutation, still runs); forwarded with `max_per_niche`/`max_gladiator_ratio` (§8).
 - `selection_driver` — `"bpr"` (default, the only driver), forwarded to the Selection skill with `exploration_rate` and `return_scale` (§4).
 - `recognizer_strategy` — `"dynamics_model"` (default) or `"none"` (disables environment detection — always resolves to a single universal niche); selects the environment-detection driver (§3.1). `recognizer_residual_tolerance` / `recognizer_novelty_margin` / `recognizer_cusum_false_alarm_steps` are forwarded to it.
 - `max_episode_steps` / `return_scale` — the episode length and the return that counts as solving the task, read from the environment's spec when not given (CartPole-v1: 500 / 475; HalfCheetah-v5: 1000 / 4800); construction fails if neither is available. A truncated candidate evaluation is extrapolated to `max_episode_steps` (`__evaluate_individual_performance`); `return_scale` is BPR's utility scale (§4) and the warmup scale of return normalization (§6).
 - `max_eval_steps` / `min_eval_steps` — the range of the plasticity-scaled candidate-evaluation depth during `train()` (§7).
+- `obs_normalizer_max_count` — how many recent samples the observation normalizer averages over (§9); default `max_eval_steps * 10` (HalfCheetah: 2,000 at its `max_eval_steps` of 200). The statistics follow recent states, so a gladiator's frozen snapshot can go stale; the `olympic` driver stores the statistics each gladiator's weights are aligned to (`aligned_statistics`, §8.1), so a short window is safe there.
 - `max_threads` — size of the `ThreadPoolExecutor` used to evaluate population candidates in parallel during `train()`.
 
 On init: builds one throwaway env via `make_env()` to read `state_dim`/`action_dim`/`is_continuous`, constructs `AgentMemory`, then all seven `self._skills` facades (Hall of Fame after `action_dim`/`state_dim` are known), and finally the initial population — `pop_size` individuals built by `__build_individual()`.
@@ -84,6 +86,20 @@ The facade `EnvironmentRecognizer(driver, state_dim, **kwargs)` delegates `detec
 - **Detect, then verify**: a PM-CuSum alarm is only a candidate. Once `min_verify_samples` (default 50) post-alarm transitions exist, `detect_change(memory, learn)` runs the identification test on them against the alarm's niche. Still explained → a coverage gap, not new physics: in training the transitions are folded into that niche's model, and CuSum restarts. At test time (`learn=False`) the models are never updated: the test is frozen. Not explained → shift. While an alarm is pending, neither `start_episode()` nor `match_niche()` identifies or provisions on the recent buffer, which may straddle the change.
 - **Consistent tolerance**: every likelihood used for identification, verification and `log_likelihoods()` is evaluated with the residual variance widened by `residual_tolerance²` — the same widening detection uses. Nearly identical physics (CartPole Earth vs. Neptune) then share a niche.
 - `reset()` (on a detected shift) drops the old regime's evidence but **keeps a confirmed shift's post-alarm transitions** as the new regime's first evidence, then restarts PM-CuSum; the active niche is `-1` until re-identified.
+
+**`chirp`** (`driver/chirp.py`) — detection from a fixed probing excitation, independent of the acting individual. It is HalfCheetah's detector (`half_cheetah.ENA_DETECTION`); CartPole keeps `dynamics_model`.
+- **Why:** `dynamics_model`'s evidence is the acting individual's transitions. In a contact-rich body every new behavior reaches unseen contact states, which read as new physics: 27 changes and 23 niches for 3 environments on the detection benchmark (`tools/detection_benchmark.py`), against 2–3 with one fixed gait.
+- **Chirp:** `chirp_actions`, a fixed `steps`-long action sequence from `tools/chirp_signals.py` (`excitation`, `excitation_params`; default a 64-step Mexican-hat wavelet train, the wavelet's waveform at dyadic scales).
+  - ENAgent plays it at every episode end (`__run_chirp`) in the real environment, from a fresh reset, restoring the environment's random stream afterwards so episode starts are unchanged.
+  - Its steps count as candidate steps; the observations go to `observe_chirp`.
+- **Features:** `tools/chirp_features.py` on the response (observations minus the start observation): default Haar wavelet packets at level 3 (dyadic, non-overlapping, 8 bands) with one log-energy per channel and band; also `dwt`, `swt` (overlapping), `cwt` and raw.
+- **Detection and identification:**
+  - Each niche keeps its chirps' mean feature vector; the per-feature variance is pooled across niches.
+  - A change is confirmed when the mean of the last `window` chirps is more than `margin` from the current niche: the RMS over features of the deviation in standard errors, about 1 under the same physics.
+  - Its most recent chirps then identify a judged niche (at least `min_chirps`) within the margin, or create a new niche in training (never at test).
+- **The rest:** `log_likelihoods` gives each judged niche's Gaussian log-likelihood of the latest chirp (BPR's dynamics evidence). `observe`/`start_episode` are no-ops.
+- **Settings:** one dict, ENAgent's `recognizer_chirp`, over the driver's `DEFAULTS`, key by key (unknown keys rejected). A given `features` or `excitation_params` dict *replaces* the default whole: missing keys fall back to the feature or signal function's own defaults, so a configuration is fully determined by what it passes. Changing `DEFAULTS` cannot change an ablation result. The default (Mexican-hat wavelet train, Haar wavelet packets at level 3) comes from `tools/detection_ablation.py`.
+- **Interface:** the facade and `ADriver` expose `chirp_actions` (None for passive drivers) and `observe_chirp`.
 
 **`none`** (`driver/none.py`) — the disable switch: `detect_change` always `False`, `match`/`match_niche` always resolve to niche `0`, `current_niche_id`/`known_niche_ids` report only niche `0`. Combined with the `none` Hall of Fame driver, this collapses specialist archiving to pure global elitism.
 
@@ -133,6 +149,7 @@ Invoked from the domain runner's `play()` loop whenever `agent.learn` is `True` 
 4. `plasticity = self._skills["plasticity"].compute(score, memory, learn)` (§6); appended to `memory.plasticity_history`. This value gates both how many other individuals get evaluated this round and mutation magnitude.
 5. `hall_of_fame.update(...)` — see §8.
 6. If `failure_signal > 0.1`, `self._skills["trust"].reset_population(population, memory, return_scale, factor=failure_signal)` blends every **non-gladiator** individual's trust toward the current dynamic reference trust, proportional to the failure signal — a poor result partially "resets confidence" across the population, but gladiators are excluded (they're already protected from replacement in `__evolve_population`, and an unrelated exploratory failure — e.g. the epsilon-greedy random non-gladiator pick during training — shouldn't erode an established gladiator's trust either).
+6b. If an Olympiad is due (`hall_of_fame.olympics_due(total_env_steps)`; only the `olympic` driver ever is) and the eviction bar exists (at least `REFERENCE_MIN_RETURNS` training returns; before that the reference trust is a −1 placeholder), `__hold_olympics(env)` runs it (§8.1); otherwise it is postponed to the next episode.
 7. **Parallel candidate evaluation**: `num_to_eval = max(2, int(pop_size * plasticity))` other individuals are sampled and evaluated in parallel via a `ThreadPoolExecutor(max_workers=max_threads)`, each against a freshly built env cloned from the live env's current physics params (`env_params` read via `physics` attribute list) and a shared `gen_seed` so all candidates face the same conditions this generation. Each evaluation is capped at `eval_step_cap = min_eval_steps + (max_eval_steps - min_eval_steps) * plasticity` steps, applied uniformly (gladiators included, no special-casing) — confident/converged generations (low plasticity) evaluate candidates cheaply, uncertain ones get the full depth for a reliable signal. A candidate whose evaluation is cut off before the episode ends has its score extrapolated to the full episode (`score * max_episode_steps / eval_step_cap`). Their trust scores are updated with the same EMA rule as step 3. `candidate_env_steps` counts the steps actually spent; the runner logs its per-episode increase.
 8. `__evolve_population()` — see §8.
 
@@ -157,11 +174,46 @@ A gladiator's `env_name` is set once, at induction, from the `env_name` argument
 
 `__save` deep-copies the winner's model into a fresh `brain(...)` instance (so the archived weights are independent of the live, still-mutating individual) and immediately flags the *live* population dict as `is_gladiator=True` with its assigned `internal_env_id` — gladiators are then protected from replacement in `__evolve_population` (§9's sibling, population replacement in `ena.py`).
 
-`inject_gladiators(population, pop_size, obs_normalizer, restore_trust)` (called by `ENAgent.load_gladiators()`, e.g. before `cartpole_challenge.py`'s testing phase) round-robins one gladiator per known niche per round into the first `floor(pop_size * max_gladiator_ratio)` population slots, until the budget is filled or niches are exhausted.
+`inject_gladiators(population, pop_size, obs_normalizer, restore_trust, admit=None)` (called by `ENAgent.load_gladiators()`, e.g. before `cartpole_challenge.py`'s testing phase) round-robins one gladiator per known niche per round into the first `floor(pop_size * max_gladiator_ratio)` population slots, until the budget is filled or niches are exhausted. With `admit` (the Olympics' `admits`, when enabled) only the records it accepts are re-introduced; each copy carries the record's `olympic_confirmed` flag.
+
+`records_in_niche(niche_id)` lists one niche's records (the Olympics' competitors); `evict(individual_id, population)` removes a record through the same path as the archive's own replacement, clearing the live copy's gladiator tags.
 
 `save_niche_details(output_dir, agent_name)` writes a `niches_<agent_name>.txt` summary (niche ID, env name, gladiator count) — this is one of the run-artifact files `CLAUDE.md` flags as generated, not source.
 
 **`none`** (`driver/none.py`) — the disable switch: `update`/`inject_gladiators` are no-ops, `__bool__` is always `False`, `save_niche_details` writes the same "No gladiators inducted" summary the default driver writes when its archive is empty.
+
+## 8.1. `olympic` Hall of Fame driver — the default archive plus Olympiads (`skills/hall_of_fame/driver/olympic.py`)
+
+A gladiator is admitted on the evidence of one episode. Where a policy's return depends strongly on the initial state (HalfCheetah runs or flips), many admissions are lucky, and test time plays them. The Olympics re-evaluate the archive periodically: elite re-evaluation (Such et al. 2017) applied to the archive only (Justesen et al. 2019 re-sample archive elites in noisy MAP-Elites).
+
+`hall_of_fame_driver="olympic"` extends `default` with Olympiads. The driver decides and judges; ENAgent only plays. Every `olympics_interval` environment steps (`total_env_steps`, checked after each training episode), `ENAgent.__hold_olympics(env)` calls `hall_of_fame.hold_olympics(niche, play, trust_of, eviction_bar, population, total_env_steps)`, which:
+1. takes the current niche's records (`hall_of_fame.records_in_niche`); other niches' gladiators cannot be judged in this physics;
+2. draws `olympics_episodes` seeds shared by every competitor (common random numbers), fresh at each Olympiad, from the agent's seeded NumPy RNG;
+3. has each competitor play those full episodes through ENA's `play` callback, in a clone of the current environment, as test time plays a gladiator (`__run_gladiator`: its frozen `last_mu`/`last_var` normalization via `infer_action`, no projection, so the archive is not modified); the steps count as `candidate_env_steps`, the agent's budget;
+4. turns each competitor's mean return into trust (ENA's `trust_of`: `normalize_reward`) and evicts those below the eviction bar — the population's reference trust (`trust.reference`: a gladiator must beat what the population typically does) — except the champion, so a niche never empties;
+5. re-scores survivors (record and live copy) with their Olympic trust and marks them `olympic_confirmed`.
+
+**Only an Olympiad removes or re-scores a confirmed gladiator.** The `olympic` driver sets `protect_confirmed`, which the `default` archive's own steps respect. A new winner's trust rests on one episode, a confirmed gladiator's on its Olympic mean, so the archive's own steps would otherwise let a lucky winner displace it:
+- continual improvement no longer overwrites a confirmed record's weights or trust, including the cross-niche twin refresh;
+- a genetic twin of a confirmed record joins beside it as provisional if the niche has a free slot, and is dropped otherwise;
+- eco-niche protection replaces only the weakest *provisional* record, and drops the winner if every record is confirmed;
+- a newly saved or evicted live copy has `olympic_confirmed` cleared, so no stale flag admits it.
+
+**Qualifier seats** (`olympics_qualifier_seats`, default 2): a niche full of confirmed gladiators would otherwise freeze, dropping every newer and better winner.
+- The Hall of Fame (`qualifier_seats`, active only with `protect_confirmed`) lets a niche hold up to `max_per_niche + qualifier_seats` records; new winners always enter as provisional.
+- Each Olympiad relegates the lowest survivors beyond `max_per_niche`, even if they cleared the bar. So confirmed gladiators never exceed `max_per_niche`, and a confirmed gladiator never holds a qualifier seat.
+- Provisional entrants may also use empty confirmed seats.
+
+**Olympic prior for BPR.** Each survivor's raw Olympic mean return is stored as `olympic_return`, on the record and the live copy, and re-injected copies carry it. BPR (§4) uses it as the gladiator's prior utility in its own niche (`olympic_return / return_scale`) instead of the solved return (`OWN_PRIOR` = 1); the foreign-niche prior is `cross_prior` times that own prior.
+- **Why:** BPR's performance model is measured offline in the original paper, and the Olympics measure exactly that.
+- **The problem it fixes:** where the solved return is out of reach (HalfCheetah), a prior of 1 makes every untried gladiator look better than anything observed, so the test spends its episodes trying them all.
+- **Olympics off:** without an Olympic result, the priors are as before.
+
+**Gladiators play during training, as with the `default` driver.** The live winner becomes a gladiator of its niche (provisional until its first Olympiad), keeps playing and stays protected from replacement; an Olympiad that evicts a record clears its live copy, so a mediocre early gladiator cannot anchor the search for long. Re-injected records are gladiators (`reinject_as_gladiators`: every record is one); the `default` driver copies the record's own flag, as every CartPole run did.
+
+A gladiator that has not competed yet is **provisional**: with the `olympic` driver (`holds_olympics`), `load_gladiators()` re-introduces only confirmed records (`admits`) and `set_learning(False)` strips gladiator status from unconfirmed live copies, so test time plays only gladiators that competed. It also restores each confirmed live copy's trust from its record (`hall_of_fame.record`). During training, a live copy's trust keeps moving with single episodes and candidate evaluations, which is deliberate: after an environment switch a failing gladiator must lose trust, so training selection can move on. Test-time selection therefore starts from the Olympic ranking. Every competitor's returns, steps, admission and Olympic trust, bar and verdict are appended to `ENAgent.olympics_history` (`tools/half_cheetah_probe.py` writes them to `olympics.csv`).
+
+**Without the Olympics** (the `default` and `none` drivers): `holds_olympics` is False, an Olympiad is never due, and every gladiator is admitted at test. That is ENA exactly as before, proved on the CartPole ablation's seeded replicate 1 (first 100 episodes byte-identical).
 
 ## 9. Universal Snapshot Projection tool (`tools/weight_projection.py`)
 

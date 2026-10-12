@@ -6,7 +6,7 @@ import pytest
 
 # App imports
 from helpers import step
-from tools.plot_study_curves import discover_agents, load_replicates, phase_boundaries, plot, summarize
+from tools.plot_study_curves import discover_agents, load_binned, load_replicates, phase_boundaries, plot, summarize
 
 
 def _write_replicate(study, exp_name, agent, scores, envs, *, phase="testing"):  # pylint: disable=too-many-arguments
@@ -83,3 +83,57 @@ def test_plot_uses_the_domains_mastery_bar_and_range(tmp_path, monkeypatch, kwar
 		axis = figures[0].axes[0]
 		assert axis.get_ylim() == ylim
 		assert [line.get_ydata()[0] for line in axis.get_lines() if line.get_linestyle() == ":"] == [mastery]
+
+
+def test_summarize_smooths_within_each_phase_only(tmp_path) -> None:
+	"""The cross-replicate curve's smoothing restarts at every switch, so forgetting at a switch is not blurred."""
+	with step("Arrange: one replicate, two phases of two episodes."):
+		_write_replicate(tmp_path, "exp_1", "Agent-X", [0, 0, 100, 100], ["Mars", "Mars", "Jupiter", "Jupiter"])
+
+	with step("Act: summarize with a centered 3-episode window."):
+		summary = summarize(load_replicates(str(tmp_path), "testing", "Agent-X"), window=3)
+
+	with step("Assert: Mars's last episode averages Mars only; Jupiter's first, Jupiter only."):
+		assert summary["mean"].tolist() == [0.0, 0.0, 100.0, 100.0]
+
+
+def _write_steps_replicate(study, exp_name, steps, scores, envs):
+	"""Write one replicate's live_training CSV with cumulative env_steps."""
+	exp_dir = study / exp_name
+	exp_dir.mkdir(parents=True, exist_ok=True)
+	pd.DataFrame({"episode": range(1, len(scores) + 1), "env_steps": steps, "score": scores, "env_id": envs}).to_csv(
+		exp_dir / "live_training_Agent-X.csv", index=False
+	)
+
+
+def test_load_binned_aligns_replicates_on_environment_steps(tmp_path) -> None:
+	"""Training curves are averaged by environment steps, not by episode number: replicates (and agents) play different
+	numbers of episodes for the same budget. Each bin holds the mean return of the episodes ending in it."""
+	with step("Arrange: one replicate with 5k-step episodes, one with 10k-step episodes."):
+		_write_steps_replicate(tmp_path, "exp_1", [5_000, 10_000, 15_000, 20_000], [1, 3, 5, 7], ["Mars", "Mars", "Jupiter", "Jupiter"])
+		_write_steps_replicate(tmp_path, "exp_2", [10_000, 20_000], [2, 6], ["Mars", "Jupiter"])
+
+	with step("Act: bin by 10k steps."):
+		matrix = load_binned(str(tmp_path), "training", "Agent-X", bin_steps=10_000)
+
+	with step("Assert: bins at 10k and 20k, both replicates aligned; the environment per bin."):
+		assert matrix.index.tolist() == [10_000, 20_000]
+		assert matrix.to_dict("list") == {"exp_1": [2.0, 6.0], "exp_2": [2.0, 6.0]}
+		assert matrix.attrs["env_ids"].tolist() == ["Mars", "Jupiter"]
+
+
+def test_plot_on_the_step_axis(tmp_path, monkeypatch) -> None:
+	"""x_axis='env_steps' plots the binned curves against environment steps."""
+	with step("Arrange: two replicates; keep the figure instead of closing it."):
+		_write_steps_replicate(tmp_path, "exp_1", [5_000, 10_000, 15_000, 20_000], [1, 3, 5, 7], ["Mars", "Mars", "Jupiter", "Jupiter"])
+		_write_steps_replicate(tmp_path, "exp_2", [10_000, 20_000], [2, 6], ["Mars", "Jupiter"])
+		figures = []
+		monkeypatch.setattr("tools.plot_study_curves.plt.close", figures.append)
+
+	with step("Act: plot it."):
+		plot(str(tmp_path), "training", ["Agent-X"], str(tmp_path / "curves.png"), x_axis="env_steps", bin_steps=10_000)
+
+	with step("Assert: the step axis, and the curve at the bins."):
+		axis = figures[0].axes[0]
+		assert axis.get_xlabel() == "Environment steps"
+		assert [line for line in axis.get_lines() if line.get_label() == "Mean over runs"][0].get_xdata().tolist() == [10_000, 20_000]

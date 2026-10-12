@@ -8,18 +8,17 @@ from helpers import step
 from tools.benchmark_half_cheetah import estimate_study, measure_agent, replicate_seconds
 
 
-def test_replicate_seconds_counts_training_evaluation_checks_and_the_frozen_test() -> None:
-	"""Training: budget x environments at the training rate; checks and the test: 1000-step episodes at the inference rate."""
+def test_replicate_seconds_counts_training_and_the_frozen_test() -> None:
+	"""Training: budget x environments at the training rate (no evaluation checks); the test: 1000-step episodes at the
+	inference rate."""
 	with step("Arrange: 0.01 s per training step, 0.001 s per inference step."):
 		measurement = {"train_seconds_per_step": 0.01, "eval_seconds_per_step": 0.001}
 
-	with step("Act: 3 environments x 100k steps, a 5-episode check every 25k, 2 test episodes on each of 5 worlds."):
-		seconds = replicate_seconds(
-			measurement, budget_per_env=100_000, n_envs=3, check_every=25_000, eval_episodes=5, test_episodes=[2] * 5, episode_steps=1000
-		)
+	with step("Act: 3 environments x 100k steps, 2 test episodes on each of 5 worlds."):
+		seconds = replicate_seconds(measurement, budget_per_env=100_000, n_envs=3, test_episodes=[2] * 5, episode_steps=1000)
 
-	with step("Assert: 3,000 s training + 12 checks x 5 s + 10 s test."):
-		assert seconds == pytest.approx(3_000 + 60 + 10)
+	with step("Assert: 3,000 s training + 10 s test."):
+		assert seconds == pytest.approx(3_000 + 10)
 
 
 def test_estimate_study_runs_replicates_in_waves_of_workers() -> None:
@@ -38,12 +37,12 @@ def test_estimate_study_runs_replicates_in_waves_of_workers() -> None:
 
 
 def test_measure_agent_reports_rates_and_memory_for_a_real_world() -> None:
-	"""A short real measurement (Random is near-free): positive rates, steps actually consumed, memory reported."""
-	with step("Act: measure Random for 2,000 training steps and 1 evaluation episode."):
-		measurement = measure_agent("Random", train_steps=2_000, eval_episodes=1)
+	"""A short real measurement: positive rates, steps actually consumed, memory reported."""
+	with step("Act: measure PPO for 2,000 training steps and 1 evaluation episode."):
+		measurement = measure_agent("PPO", train_steps=2_000, eval_episodes=1)
 
 	with step("Assert: the shape of the result."):
-		assert measurement["agent"] == "Random"
+		assert measurement["agent"] == "PPO"
 		assert measurement["train_steps_measured"] >= 2_000
 		assert measurement["train_seconds_per_step"] > 0
 		assert measurement["eval_seconds_per_step"] > 0

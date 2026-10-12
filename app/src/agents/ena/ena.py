@@ -18,7 +18,7 @@ from .skills.hall_of_fame.main import HallOfFame
 from .skills.mutation.main import Mutation
 from .skills.plasticity.main import Plasticity
 from .skills.selection.main import SelectionController
-from .skills.trust.main import Trust
+from .skills.trust.main import REFERENCE_MIN_RETURNS, Trust
 from .tools.inference import infer_action
 from .tools.reward_normalizer import normalize_reward
 from .tools.weight_projection import project_individual_weights
@@ -51,6 +51,10 @@ class ENAgent(AAgent):
 		history_size: int = 100,
 		max_eval_steps: int = 500,
 		min_eval_steps: int = 10,
+		obs_normalizer_max_count: int = None,
+		olympics_interval: int = 200_000,
+		olympics_episodes: int = 3,
+		olympics_qualifier_seats: int = 2,
 		max_threads: int = 1,
 		mutation_noise: float = 0.1,
 		mutation_rate: float = 0.01,
@@ -65,6 +69,7 @@ class ENAgent(AAgent):
 		recognizer_min_samples: int = 100,
 		recognizer_min_verify_samples: int = 50,
 		recognizer_recent_size: int = 500,
+		recognizer_chirp: dict = None,
 		trust_algorithm: str = "zero",
 	) -> None:
 		super().__init__(brain, make_env)
@@ -87,7 +92,7 @@ class ENAgent(AAgent):
 		if self.max_episode_steps <= 0 or self.return_scale <= 0:
 			raise ValueError("ENAgent needs max_episode_steps and return_scale: pass them, or use an environment whose spec defines them")
 
-		self.memory = AgentMemory(history_size, self.state_dim, max_eval_steps)
+		self.memory = AgentMemory(history_size, self.state_dim, max_eval_steps, obs_normalizer_max_count)
 
 		# Skills (pluggable, one facade per mechanism — see agents/ena/skills/)
 		self._skills = {
@@ -104,6 +109,8 @@ class ENAgent(AAgent):
 				min_samples=recognizer_min_samples,
 				min_verify_samples=recognizer_min_verify_samples,
 				recent_size=recognizer_recent_size,
+				# chirp only: its excitation, response features and test (driver/chirp.py DEFAULTS).
+				chirp=recognizer_chirp,
 			),
 		}
 
@@ -116,11 +123,16 @@ class ENAgent(AAgent):
 			brain=brain,
 			action_dim=self.action_dim,
 			state_dim=self.state_dim,
+			# The olympic driver only (ENA.md §8.1); the others ignore them.
+			olympics_interval=olympics_interval,
+			olympics_episodes=olympics_episodes,
+			qualifier_seats=olympics_qualifier_seats,
 		)
 		self._skills["mutation"] = Mutation("gaussian", mutation_rate=mutation_rate, mutation_noise=mutation_noise)
 		self._skills["crossover"] = Crossover("uniform_mask")
 		self._skills["trust"] = Trust(trust_algorithm)
 		self._skills["plasticity"] = Plasticity(plasticity_algorithm)
+		self.olympics_history = []  # one row per competitor per Olympiad (returns, steps, trust, evicted)
 
 		# Initialize population
 		self.best_individual_idx = 0
@@ -156,7 +168,7 @@ class ENAgent(AAgent):
 		self._skills["env_detection"].observe(state, action, next_state, self.memory)
 
 		if terminated or truncated:
-			self.__end_episode()
+			self.__end_episode(env)
 
 		return next_state, reward, terminated, truncated, action
 
@@ -201,11 +213,13 @@ class ENAgent(AAgent):
 	def load_gladiators(self, restore_trust: bool = True) -> None:
 		"""Re-introduces Gladiators into the active population with Niche Distribution."""
 		if self._skills["hall_of_fame"]:
-			self._skills["hall_of_fame"].inject_gladiators(
+			hall_of_fame = self._skills["hall_of_fame"]
+			hall_of_fame.inject_gladiators(
 				self.population,
 				self.pop_size,
 				self.memory.obs_normalizer,
 				restore_trust=restore_trust,
+				admit=hall_of_fame.admits if hall_of_fame.holds_olympics else None,
 			)
 
 	def set_learning(self, mode: bool, output_dir: str = None) -> None:
@@ -226,6 +240,17 @@ class ENAgent(AAgent):
 			# Drop the last training regime's transitions so test-phase identification judges
 			# the test physics on fresh evidence.
 			self._skills["env_detection"].reset()
+			if self._skills["hall_of_fame"].holds_olympics:
+				# Provisional gladiators (never competed in an Olympiad) are not played at test; a confirmed
+				# one's live copy gets its Olympic trust back (training episodes kept moving it), so test-time
+				# selection starts from the Olympic ranking.
+				for individual in self.population:
+					if individual.get("is_gladiator", False) and not self._skills["hall_of_fame"].admits(individual):
+						individual["is_gladiator"] = False
+					elif individual.get("is_gladiator", False):
+						record = self._skills["hall_of_fame"].record(individual.get("individual_id"))
+						if record is not None:
+							individual["trust"] = record["trust"]
 			self._skills["selection"].evaluate(self.population)
 
 		# Save niche details when entering test mode if output_dir is provided
@@ -272,6 +297,11 @@ class ENAgent(AAgent):
 		# 7. Only reset trust (challenge the specialist) when failing
 		if failure_signal > TRUST_RESET_SIGNAL:
 			self._skills["trust"].reset_population(self.population, self.memory, self.return_scale, factor=failure_signal)
+
+		# 7b. Olympics: periodically re-evaluate the current niche's gladiators and evict the lucky ones.
+		# Postponed until the eviction bar (the reference trust) exists; before that it is a -1 placeholder.
+		if self._skills["hall_of_fame"].olympics_due(self.total_env_steps) and len(self.memory.reward_history) >= REFERENCE_MIN_RETURNS:
+			self.__hold_olympics(env)
 
 		# tools/metrics.py's estimate_eval_cost() mirrors this formula for display (live
 		# dashboard / compute-cost report) — update both if this one changes.
@@ -339,9 +369,11 @@ class ENAgent(AAgent):
 			"last_var": np.copy(self.memory.obs_normalizer.var),
 		}
 
-	def __end_episode(self) -> None:
-		"""Finalize the episode: score bookkeeping, driver finalization, and shift detection."""
+	def __end_episode(self, env) -> None:
+		"""Finalize the episode: score bookkeeping, the detector's chirp (if it chirps), driver finalization, and shift detection."""
 		self.memory.last_episode_score = self.memory.current_episode_reward
+		if self._skills["env_detection"].chirp_actions is not None:
+			self._skills["env_detection"].observe_chirp(self.__run_chirp(env))
 		self._skills["selection"].on_episode_end(self.memory, self.learn, self._skills["env_detection"])
 
 		self._last_env_shift_detected = self._skills["env_detection"].evaluate(self.memory, self.learn)
@@ -351,6 +383,69 @@ class ENAgent(AAgent):
 		self.memory.current_episode_reward = 0
 		self.memory.steps_this_episode = 0
 		self._episode_started = False
+
+	def __run_chirp(self, env) -> np.ndarray:
+		"""Play the detector's fixed chirp in the real environment from a fresh reset; return its observations
+		(start observation first, padded with the last one if the chirp ends early). The environment's random
+		stream is restored afterwards, so the runner's next episode starts exactly as without the chirp."""
+		actions = self._skills["env_detection"].chirp_actions
+		random_state = env.unwrapped.np_random.bit_generator.state
+		observation, _ = env.reset()
+		observations = [observation]
+		for action in actions:
+			observation, _reward, terminated, truncated, _ = env.step(action)
+			observations.append(observation)
+			if terminated or truncated:
+				break
+		env.unwrapped.np_random.bit_generator.state = random_state
+		with self._env_steps_lock:
+			self.candidate_env_steps += len(observations) - 1
+		observations += [observations[-1]] * (len(actions) + 1 - len(observations))
+		return np.asarray(observations)
+
+	def __hold_olympics(self, env) -> None:
+		"""An Olympiad of the current niche's gladiators (the olympic Hall of Fame driver decides and judges; the agent plays:
+		each competitor's full episodes in a clone of the current environment, counted as candidate steps)."""
+		env_params = {key: getattr(env.unwrapped, key) for key in self.physics if hasattr(env.unwrapped, key)}
+
+		def play(records: list, seeds: list) -> list:
+			"""[(returns, steps)] per record, each competitor in its own environment instance (one model per thread)."""
+
+			def compete(record: dict) -> tuple:
+				local_env = self.make_env(name=env.unwrapped.name, **env_params)
+				played = [self.__run_gladiator(record, local_env, seed) for seed in seeds]
+				local_env.close()
+				return [score for score, _ in played], [steps for _, steps in played]
+
+			with ThreadPoolExecutor(max_workers=self.max_threads) as executor:
+				results = list(executor.map(compete, records))
+			with self._env_steps_lock:
+				self.candidate_env_steps += sum(sum(steps) for _, steps in results)
+			return results
+
+		self.olympics_history.extend(
+			self._skills["hall_of_fame"].hold_olympics(
+				self._skills["env_detection"].current_niche_id,
+				play=play,
+				trust_of=lambda mean_return: normalize_reward(mean_return, self.memory, self.return_scale),
+				eviction_bar=self._skills["trust"].reference(self.memory, self.return_scale),
+				population=self.population,
+				total_env_steps=self.total_env_steps,
+			)
+		)
+
+	def __run_gladiator(self, record, env, seed) -> tuple:
+		"""Play one full episode with an archived gladiator as test time plays it (its own frozen normalization); (score, steps)."""
+		player = {**record, "is_gladiator": True, "fast_call": record["model"]}
+		state, _ = env.reset(seed=seed)
+		done, score, steps = False, 0.0, 0
+		while not done:
+			action = infer_action(player, state, self.memory, self.is_continuous)
+			state, reward, terminated, truncated, _ = env.step(action)
+			done = terminated or truncated
+			score += reward
+			steps += 1
+		return float(score), steps
 
 	def __evaluate_individual_performance(self, individual, env, seed=None, max_steps=None):
 		"""Evaluate an individual for a single episode and return the score."""

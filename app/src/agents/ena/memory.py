@@ -20,12 +20,16 @@ TREND_MIN_RETURNS = 20
 class AgentMemory:
 	"""Centralized memory storage for all historical variables and statistics."""
 
-	def __init__(self, history_size, state_dim, max_eval_steps=500):
+	def __init__(self, history_size, state_dim, max_eval_steps=500, obs_normalizer_max_count=None):
 		# 1. Global Statistics
 		self.max_seen = -np.inf
 		self.min_seen = np.inf
 
-		self.obs_normalizer = _RunningNormalizer(shape=state_dim, max_count=max_eval_steps * 10)
+		# The observation statistics average over the last max_count samples (default: ten evaluation
+		# depths). A domain whose episodes are as long as that window passes a longer one, or the
+		# statistics follow each episode's states.
+		max_count = obs_normalizer_max_count if obs_normalizer_max_count is not None else max_eval_steps * 10
+		self.obs_normalizer = _RunningNormalizer(shape=state_dim, max_count=max_count)
 
 		# 2. Performance Histories
 		self.reward_history = deque(maxlen=history_size)

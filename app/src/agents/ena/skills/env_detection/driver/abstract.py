@@ -7,6 +7,13 @@ from abc import ABC, abstractmethod
 class ADriver(ABC):
 	"""Detects environment shifts and identifies which recurring niche is currently active."""
 
+	# Probing drivers (driver/chirp.py) return their fixed action sequence here; ENAgent then plays it at every
+	# episode end and hands the response to observe_chirp(). Passive drivers do not chirp.
+	chirp_actions = None
+
+	def observe_chirp(self, response) -> None:
+		"""A chirp's observations (start observation first); passive drivers ignore it."""
+
 	@property
 	@abstractmethod
 	def current_niche_id(self) -> int:

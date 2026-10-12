@@ -35,6 +35,13 @@ class Instance(ADriver):
 	# posterior. cross_prior must not be pessimistic: with 0 an own-niche gladiator that fails at
 	# test time (observed: a Mars specialist scoring 16/500 in Mars) is never abandoned, since no
 	# other policy can look better without first being tried. Ties go to the higher-trust gladiator.
+	#
+	# With the Olympics on, a confirmed gladiator's performance was measured before the test: its Olympic mean
+	# return (olympic_return) over full episodes. That is BPR's offline performance model, so it replaces the
+	# solved-return prior in the gladiator's own niche (utility olympic_return / return_scale). Where the solved
+	# return is out of reach (HalfCheetah), the constant prior of 1 makes every untried gladiator look better than
+	# anything observed, and the test spends its episodes trying all of them. The foreign-niche prior is
+	# cross_prior times the gladiator's own (cross_prior itself without an Olympic result, as before).
 
 	# pylint: disable=too-many-arguments,too-many-positional-arguments
 	OWN_PRIOR = 1.0  # prior utility of a gladiator in its own niche: it was archived for solving it
@@ -48,7 +55,7 @@ class Instance(ADriver):
 		self._cross_prior = cross_prior
 
 		self._niches = []  # niche ids with a gladiator in the population (the types)
-		self._policies = []  # [(population index, individual_id, home niche, trust)] — every gladiator
+		self._policies = []  # [(population index, individual_id, home niche, trust, own-niche prior utility)] — every gladiator
 		self._belief = np.zeros(0)
 		self._utility_sum = {}  # (type, individual_id) -> belief-weighted sum of observed utilities
 		self._utility_weight = {}  # (type, individual_id) -> belief-weighted number of observations
@@ -93,7 +100,7 @@ class Instance(ADriver):
 	def evaluate(self, population):
 		"""(Re)build the types and policy library from the population's gladiators and reset the belief to uniform."""
 		self._policies = [
-			(index, ind.get("individual_id", str(index)), ind["internal_env_id"], ind.get("trust", 0.0))
+			(index, ind.get("individual_id", str(index)), ind["internal_env_id"], ind.get("trust", 0.0), self.__own_prior(ind))
 			for index, ind in enumerate(population)
 			if ind.get("is_gladiator", False) and ind.get("internal_env_id", -1) >= 0
 		]
@@ -120,10 +127,16 @@ class Instance(ADriver):
 		non_gladiators = [index for index, ind in enumerate(population) if not ind.get("is_gladiator", False)]
 		return int(np.random.choice(non_gladiators)) if non_gladiators else 0
 
+	def __own_prior(self, individual: dict) -> float:
+		"""Prior utility in the gladiator's own niche: its Olympic mean return if it competed, else solved (OWN_PRIOR)."""
+		if individual.get("olympic_return") is None:
+			return self.OWN_PRIOR
+		return float(individual["olympic_return"]) / self._return_scale
+
 	def _mean_utility(self, niche_id, policy) -> float:
 		"""Posterior mean utility of the policy (a gladiator) when niche_id is active."""
-		_index, individual_id, home_niche_id, _trust = policy
-		prior_mean = self.OWN_PRIOR if niche_id == home_niche_id else self._cross_prior
+		_index, individual_id, home_niche_id, _trust, own_prior = policy
+		prior_mean = own_prior if niche_id == home_niche_id else self._cross_prior * own_prior
 		key = (niche_id, individual_id)
 		weight = self._utility_weight.get(key, 0.0)
 		return (self._prior_strength * prior_mean + self._utility_sum.get(key, 0.0)) / (self._prior_strength + weight)

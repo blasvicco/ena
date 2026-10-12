@@ -14,6 +14,7 @@ from tools.metrics import (
 	_qualitative_colors,
 	calculate_compute_cost,
 	estimate_eval_cost,
+	phase_rolling,
 	plot_academic_comparison,
 	plot_specialist_transitions,
 )
@@ -385,3 +386,27 @@ def test_plot_academic_comparison_rejects_an_unknown_x_axis(tmp_path) -> None:
 	with step("Act/Assert: ValueError."):
 		with pytest.raises(ValueError):
 			plot_academic_comparison([_budget_history(2, 10)], ["A"], save_path=str(tmp_path / "chart.png"), x_axis="seconds")
+
+
+def test_phase_rolling_never_smooths_across_an_environment_switch() -> None:
+	"""The per-run curves' moving mean restarts at every switch, so a phase's end is not blurred by the next one."""
+	with step("Act: a 50-episode window over two phases of two episodes."):
+		mean, _std = phase_rolling(pd.Series([0.0, 0.0, 100.0, 100.0]), pd.Series(["Mars", "Mars", "Jupiter", "Jupiter"]), window=50)
+
+	with step("Assert: each phase averages only its own episodes."):
+		assert mean.tolist() == [0.0, 0.0, 100.0, 100.0]
+
+
+def test_phase_rolling_on_the_step_axis_averages_the_last_window_of_steps() -> None:
+	"""On the env-step axis the window is in steps, so agents with long and short episodes are smoothed alike."""
+	with step("Act: four episodes ending every 10k steps, a 20k-step window."):
+		mean, _std = phase_rolling(
+			pd.Series([0.0, 10.0, 20.0, 30.0]),
+			pd.Series(["Mars"] * 4),
+			window=50,
+			steps=pd.Series([10_000, 20_000, 30_000, 40_000]),
+			window_steps=20_000,
+		)
+
+	with step("Assert: each point averages the episodes ending within the last 20k steps."):
+		assert mean.tolist() == [0.0, 5.0, 15.0, 25.0]

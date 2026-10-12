@@ -40,3 +40,11 @@ def test_none_driver_inject_gladiators_is_a_no_op() -> None:
 
 	with step("Assert: the population slot is unchanged."):
 		assert population[0] == {"individual_id": "solo", "is_gladiator": False}
+
+
+def test_none_driver_has_no_records_to_compete_or_evict() -> None:
+	"""The Olympics see an empty archive under the none driver."""
+	with step("Act/Assert: no records in any niche; evict is a no-op."):
+		hall_of_fame = Instance()
+		assert not hall_of_fame.records_in_niche(0)
+		hall_of_fame.evict("anyone", [])

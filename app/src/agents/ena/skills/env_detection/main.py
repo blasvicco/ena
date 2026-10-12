@@ -23,6 +23,15 @@ class EnvironmentRecognizer:
 		return self._instance.current_niche_id
 
 	@property
+	def chirp_actions(self):
+		"""The driver's fixed chirp actions, or None if it does not chirp."""
+		return self._instance.chirp_actions
+
+	def observe_chirp(self, response) -> None:
+		"""Hand the driver a chirp's observations (start observation first)."""
+		self._instance.observe_chirp(response)
+
+	@property
 	def known_niche_ids(self) -> set:
 		"""Set of niche IDs that have physical prototypes."""
 		return self._instance.known_niche_ids

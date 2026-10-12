@@ -9,6 +9,8 @@ import numpy as np
 # App imports
 from agents.ena.tools.reward_normalizer import normalize_reward
 
+REFERENCE_MIN_RETURNS = 5  # fewer training returns than this: no reference trust yet (reference() returns -1.0)
+
 
 class Trust:
 	"""Resolves and delegates to the configured trust driver."""
@@ -29,11 +31,11 @@ class Trust:
 
 	def reference(self, memory, return_scale: float) -> float:
 		"""Return the reference trust for a freshly built or reset individual."""
-		# Below 5 samples, -1.0 keeps a fresh/reset slot ranked above any evaluated mutant
+		# Below REFERENCE_MIN_RETURNS samples, -1.0 keeps a fresh/reset slot ranked above any evaluated mutant
 		# (even one with a negative score) without creating an artificial ceiling at 0.0
 		# in negative-reward environments. Independent of the configured driver — every
 		# algorithm shares the same bootstrap reference.
-		if len(memory.reward_history) < 5:
+		if len(memory.reward_history) < REFERENCE_MIN_RETURNS:
 			return -1.0
 		return normalize_reward(float(np.mean(memory.reward_history)), memory, return_scale)
 

@@ -2,10 +2,12 @@
 
 # General imports
 import threading
+import time
 
 # Libs imports
 import psutil
 from rich.console import Console
+from rich.text import Text
 from rich.progress import (
 	BarColumn,
 	Progress,
@@ -22,11 +24,25 @@ console = Console()
 class ProgressReporter:
 	"""Centralized progress reporter for parallel experiments."""
 
-	def __init__(self, queue, total_experiments):
-		"""Initialize ProgressReporter"""
+	def __init__(self, queue, total_experiments, min_interval: float = 60.0):
+		"""Initialize ProgressReporter. Off a terminal (a redirected log, a remote run) the live bar never reaches the
+		file, so each status change is also printed as a plain line, at most one per replicate per min_interval seconds
+		(a replicate's end always)."""
 		self.queue = queue
 		self.total_experiments = total_experiments
 		self.stop_event = threading.Event()
+		self.min_interval = min_interval
+		self._last_plain = {}
+
+	def _plain(self, experiment_id, description: str, force: bool = False) -> None:
+		"""Print one plain, timestamped status line when not on a terminal (throttled per replicate)."""
+		if console.is_terminal:
+			return
+		now = time.monotonic()
+		if not force and now - self._last_plain.get(experiment_id, -float("inf")) < self.min_interval:
+			return
+		self._last_plain[experiment_id] = now
+		print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {Text.from_markup(description).plain}", flush=True)
 
 	def run(self):  # pylint: disable=too-many-locals
 		"""Main loop for the reporter thread."""
@@ -83,6 +99,7 @@ class ProgressReporter:
 								exp_tasks[experiment_id],
 								description=description,
 							)
+							self._plain(experiment_id, description, force=done)
 
 						if progress_inc > 0:
 							progress.advance(exp_tasks[experiment_id], progress_inc)
@@ -113,4 +130,4 @@ def vprint(message, file=None):
 	if file is None:
 		console.print(message)
 	else:
-		print(message, file=file)
+		print(message, file=file, flush=True)  # a run's outputs.txt is readable while it goes

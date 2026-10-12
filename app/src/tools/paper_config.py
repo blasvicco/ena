@@ -10,6 +10,7 @@ studies construct; the protocol constants from the study scripts. paper_results.
 """
 
 # General imports
+import inspect
 import math
 import os
 import sys
@@ -29,6 +30,8 @@ from agents.ena.skills.mutation.driver import gaussian
 from agents.ena.skills.plasticity.driver import fuzzylogic
 from agents.ena.skills.selection.driver.bpr import Instance as BPR
 from agents.ena.tools import curves, reward_normalizer
+from agents.ena.tools.chirp_features import features as chirp_features
+from tools import detection_ablation, detection_benchmark
 from tools import metrics
 from tools import sac_discrete_entropy_check as sac_check
 
@@ -124,7 +127,6 @@ def protocol_entries() -> dict:
 		"challenge/evalepisodes": challenge.EVAL_EPISODES,
 		"cheetah/solved": cheetah.SOLVED_SCORE,
 		"cheetah/budget": cheetah.FIXED_BUDGET_PER_ENV,
-		"cheetah/checkevery": cheetah.CHECK_EVERY,
 		"cheetah/test": cheetah.TESTING_EPISODES[0],
 	}
 	entries = {f"cfg/{key}": _number(value) for key, value in values.items()}
@@ -177,9 +179,50 @@ def cheetah_rows() -> list:
 	return rows
 
 
+WAVELET_NAMES = {"haar": "Haar", "mexh": "Mexican hat", "morl": "Morlet"}  # PyWavelets names as the paper prints them
+TRANSFORM_NAMES = {"dwt": "DWT", "swt": "SWT", "packet": "wavelet packet", "cwt": "CWT"}
+
+
+def chirp_entries() -> dict:
+	"""HalfCheetah's chirp detector as the study builds it, and the detection benchmark's protocol."""
+	agent = half_cheetah.build_ena_agent(1)
+	settings = agent._skills["env_detection"]._instance._settings  # pylint: disable=protected-access
+	feature_defaults = {name: parameter.default for name, parameter in inspect.signature(chirp_features).parameters.items()}
+	features = {**feature_defaults, **settings["features"]}
+	case = detection_benchmark.domain_case("half_cheetah")
+	entries = {
+		"cfg/cheetah/chirp/steps": _number(settings["steps"]),
+		"cfg/cheetah/chirp/excitation": settings["excitation"].replace("_", " "),
+		"cfg/cheetah/chirp/excitationwavelet": WAVELET_NAMES.get(
+			settings["excitation_params"].get("wavelet"), settings["excitation_params"].get("wavelet")
+		),
+		"cfg/cheetah/chirp/transform": TRANSFORM_NAMES[features["transform"]],
+		"cfg/cheetah/chirp/level": _number(features["level"]),
+		# Bands per channel: a packet tree's leaves (2^level), or a DWT's details plus its approximation.
+		"cfg/cheetah/chirp/bands": _number(2 ** features["level"] if features["transform"] == "packet" else features["level"] + 1),
+		"cfg/cheetah/chirp/featurewavelet": WAVELET_NAMES.get(features["wavelet"], features["wavelet"]),
+		"cfg/cheetah/chirp/window": _number(settings["window"]),
+		"cfg/cheetah/chirp/minchirps": _number(settings["min_chirps"]),
+		"cfg/cheetah/chirp/margin": _number(settings["margin"]),
+		"cfg/cheetah/chirp/share": _number(round(100 * settings["steps"] / agent.max_episode_steps, 6)),
+		"cfg/detbench/episodes": _number(case["episodes_per_world"]),
+		"cfg/detbench/block": _number(case["policy_block"]),
+		"cfg/detbench/window": _number(case["window"]),
+		"cfg/detbench/purity": _number(detection_benchmark.PURITY_TARGET * 100),
+		"cfg/detbench/seeds": _number(len(detection_ablation.SEEDS)),
+		"cfg/detbench/selectionseeds": _number(len(detection_ablation.SELECTION_SEEDS)),
+		"cfg/detbench/confirmseeds": _number(len(detection_ablation.CONFIRMATION_SEEDS)),
+		"cfg/detbench/seedfirst": _number(detection_ablation.SEEDS[0]),
+		"cfg/detbench/seedlast": _number(detection_ablation.SEEDS[-1]),
+		"cfg/detbench/confirmfirst": _number(detection_ablation.CONFIRMATION_SEEDS[0]),
+		"cfg/detbench/confirmlast": _number(detection_ablation.CONFIRMATION_SEEDS[-1]),
+	}
+	return entries
+
+
 def config_entries() -> dict:
 	"""Every configuration macro."""
-	return {**ena_entries(), **protocol_entries()}
+	return {**ena_entries(), **protocol_entries(), **chirp_entries()}
 
 
 if __name__ == "__main__":

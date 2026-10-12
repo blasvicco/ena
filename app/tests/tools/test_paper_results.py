@@ -8,8 +8,22 @@ import pytest
 
 # App imports
 from helpers import step
-from tools.paper_results import (
+from tools.paper_stats import (
+	ALPHA,
+	clopper_pearson,
 	cohens_d,
+	detectable_d,
+	format_p,
+	holm,
+	mcnemar_p,
+	replicates_for_power,
+	welch_ci,
+	welch_p,
+)
+from tools.paper_results import (
+	detection_ablation_entries,
+	cartpole_check_entries,
+	chirp_ablation_table,
 	clear_absent_outputs,
 	comparison_entries,
 	family_entries,
@@ -20,22 +34,15 @@ from tools.paper_results import (
 	compute_rank_entries,
 	controller_entries,
 	controller_verdict,
-	detectable_d,
-	ALPHA,
-	holm,
 	paired_p,
-	replicates_for_power,
 	detection_entries,
 	detection_table,
-	format_p,
 	parse_training_times,
 	reliability_figure,
 	slug,
 	results_table,
 	summary_entries,
-	welch_ci,
 	with_reference_rows,
-	welch_p,
 	write_macros,
 )
 
@@ -167,7 +174,7 @@ def test_reliability_figure_writes_a_vector_figure_with_one_box_per_agent(tmp_pa
 	with step("Arrange: three replicates of two agents; keep the figure instead of closing it."):
 		rows = [(f"exp_{index}", agent, {"Reliability (%)": value + index}) for index in range(3) for agent, value in (("A", 30.0), ("B", 90.0))]
 		figures = []
-		monkeypatch.setattr("tools.paper_results.plt.close", figures.append)
+		monkeypatch.setattr("tools.paper_figures.plt.close", figures.append)
 
 	with step("Act: draw it."):
 		path = reliability_figure(_results(rows), ["A", "B"], str(tmp_path / "rel.pdf"))
@@ -486,3 +493,105 @@ def test_family_entries_correct_the_comparisons_against_each_baseline_as_one_hol
 		assert all(entries[f"challenge/{name}-vs-ENA/test/rel/pholm"] == "$p<0.001$" for name in "ABC")
 		assert entries["challenge/family"] == "3"
 		assert entries["challenge/mde"] == f"{detectable_d(50, ALPHA / 3):.2f}"
+
+
+def _ablation_rows():
+	"""Grid: three configurations x 4 seeds; confirmation: two baselines and the chosen configuration on 4 other seeds."""
+	grid = pd.DataFrame(
+		{
+			"excitation": ["Wavelet train (Mexican hat)"] * 4 + ["Wavelet train (db4)"] * 4 + ["Linear chirp"] * 4,
+			"features": ["Packets Haar"] * 4 + ["DWT Haar"] * 4 + ["Raw"] * 4,
+			"seed": [5, 6, 7, 8] * 3,
+			"passes": [True, True, True, True, True, False, True, False, False, False, False, True],
+			"changes": [2] * 12,
+			"inside": [0] * 12,
+			"niches": [3] * 12,
+			"min_purity": [0.95] * 12,
+			"max_delay": [1] * 12,
+			"distinct": [True] * 12,
+		}
+	)
+	confirmation = pd.DataFrame(
+		{
+			"baseline": ["Transition model, changing behavior"] * 4 + ["Chirp (study), changing behavior"] * 4,
+			"seed": [35, 36, 37, 38] * 2,
+			"passes": [False] * 4 + [True] * 4,
+			"changes": [27, 25, 27, 25, 2, 2, 2, 2],
+			"inside": [25, 23, 25, 23, 0, 0, 0, 0],
+			"niches": [23, 21, 23, 21, 3, 3, 3, 3],
+			"min_purity": [0.17, 0.2, 0.17, 0.2, 0.95, 0.97, 0.95, 0.97],
+			"max_delay": [1, 1, 1, 1, 2, 1, 0, 1],
+			"distinct": [True] * 8,
+		}
+	)
+	return grid, confirmation
+
+
+def test_detection_ablation_entries_summarize_baselines_and_the_chosen_chirp() -> None:
+	"""Confirmation: means over seeds per baseline, the chosen chirp's pass count, worst delay and purity; grid: seed count."""
+	with step("Act: entries from the small grid and confirmation."):
+		grid, confirmation = _ablation_rows()
+		entries = detection_ablation_entries(grid, confirmation, chosen=("Wavelet train (Mexican hat)", "Packets Haar"))
+
+	with step("Assert: baseline means and the chosen configuration's numbers."):
+		assert entries["detbench/transition/changes"] == "26.0" and entries["detbench/transition/niches"] == "22.0"
+		assert entries["detbench/transition/purity"] == "18.5"
+		assert entries["detbench/chirp/inside"] == "0.0"
+		assert entries["detbench/transition/merged"] == "0" and entries["detbench/chirp/merged"] == "0"
+		assert entries["detbench/chosen/passes"] == "4" and entries["detbench/confirmseeds"] == "4" and entries["detbench/seeds"] == "4"
+		assert entries["detbench/chosen/maxdelay"] == "2" and entries["detbench/chosen/minpurity"] == "95"
+		# Seeds on which the chosen chirp confirmed a false change; the chosen excitation's fewest passes over feature types.
+		assert entries["detbench/chosen/falseseeds"] == "0" and entries["detbench/chosenexcitation/minpasses"] == "4"
+
+
+def test_the_chirp_ablation_table_shows_seeds_passing_with_the_chosen_cell_bold() -> None:
+	"""Rows: excitations; columns: feature types; cells: seeds passing out of all; the study's choice in bold."""
+	with step("Act: the table."):
+		grid, _confirmation = _ablation_rows()
+		table = chirp_ablation_table(grid, chosen=("Wavelet train (Mexican hat)", "Packets Haar"))
+
+	with step("Assert: header, counts and the bold chosen cell."):
+		assert "Packets Haar" in table and "Raw" in table
+		assert "\\textbf{4/4}" in table and "2/4" in table and "1/4" in table
+		assert "tab:chirp_ablation" in table
+
+
+def test_mcnemar_p_compares_two_paired_pass_records() -> None:
+	"""Exact McNemar test on seed-paired pass/fail records: only the discordant seeds count."""
+	with step("Act/Assert: 6 seeds where only a passes -> 2 * 0.5^6; no discordant seed -> 1."):
+		assert mcnemar_p([True] * 6, [False] * 6) == pytest.approx(2 * 0.5**6)
+		assert mcnemar_p([True, False], [True, False]) == pytest.approx(1.0)
+		assert mcnemar_p([True, True, False], [False, True, True]) == pytest.approx(1.0)
+
+
+def test_detection_ablation_entries_report_the_interval_and_holm_adjusted_paired_comparisons() -> None:
+	"""The chosen chirp's Clopper-Pearson interval on the confirmation seeds; the chirp vs the transition model (confirmation)
+	and the chosen configuration vs the best one without a wavelet train (grid), exact McNemar, Holm-adjusted together;
+	and the screened configuration's grid record."""
+	with step("Act: entries."):
+		grid, confirmation = _ablation_rows()
+		entries = detection_ablation_entries(grid, confirmation, chosen=("Wavelet train (Mexican hat)", "Packets Haar"))
+
+	with step("Assert: the interval, the best other configuration, both adjusted p-values and the screened record."):
+		assert entries["detbench/chosen/lower"] == "39.8" and entries["detbench/chosen/upper"] == "100.0"
+		assert entries["detbench/bestother/excitation"] == "Linear chirp" and entries["detbench/bestother/passes"] == "1"
+		# vs transition: 4 discordant, all for the chirp -> 0.125; vs best other: 3 discordant, all for the chosen -> 0.25.
+		# Holm (2): 0.125 * 2 = 0.25; max(0.25, 0.25 * 1) = 0.25.
+		assert entries["detbench/cmp/chirp/p"] == "$p=0.250$" and entries["detbench/cmp/other/p"] == "$p=0.250$"
+		assert entries["detbench/screened/passes"] == "2"
+
+
+def test_clopper_pearson_bounds_a_pass_rate() -> None:
+	"""Exact binomial interval: all-pass and none-pass edges, and an interior case."""
+	with step("Act/Assert: 30/30, 0/30 and 15/30 at 95%."):
+		assert clopper_pearson(30, 30) == pytest.approx((0.025 ** (1 / 30), 1.0))
+		assert clopper_pearson(0, 30) == pytest.approx((0.0, 1 - 0.025 ** (1 / 30)))
+		low, high = clopper_pearson(15, 30)
+		assert low < 0.5 < high
+
+
+def test_cartpole_check_entries_count_the_seeds_passing() -> None:
+	"""CartPole's detector on CartPole's benchmark: seeds meeting the target, out of all."""
+	with step("Act/Assert: 2 of 3."):
+		entries = cartpole_check_entries(pd.DataFrame({"seed": [35, 36, 37], "passes": [True, True, False]}))
+		assert (entries["detbench/cartpole/passes"], entries["detbench/cartpole/seeds"]) == ("2", "3")

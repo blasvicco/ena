@@ -564,3 +564,13 @@ def test_every_detector_setting_is_a_constructor_argument_with_the_cartpole_defa
 	with step("Assert: defaults unchanged, overrides reach the driver."):
 		assert (default._var_floor, default._min_samples, default._min_verify_samples, default._recent.maxlen) == (1e-6, 100, 50, 500)
 		assert (tuned._var_floor, tuned._min_samples, tuned._min_verify_samples, tuned._recent.maxlen) == (1e-4, 300, 120, 2000)
+
+
+def test_observation_normalizer_window_is_a_constructor_argument_with_the_cartpole_default(build_agent) -> None:
+	"""The normalizer averages over max_eval_steps * 10 samples by default (CartPole); a domain with long episodes passes its own."""
+	with step("Act: one agent with the default window, one with a 1M-sample window."):
+		default, tuned = build_agent(max_eval_steps=100), build_agent(max_eval_steps=100, obs_normalizer_max_count=1_000_000)
+
+	with step("Assert: 1,000 samples by default, the override otherwise."):
+		assert default.memory.obs_normalizer.max_count == 1_000
+		assert tuned.memory.obs_normalizer.max_count == 1_000_000
