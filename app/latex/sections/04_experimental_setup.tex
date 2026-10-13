@@ -49,12 +49,12 @@ ENA-Combined & \checkmark & \checkmark & \checkmark \\
 \end{table}
 
 \subsubsection{Gradient-based baselines}
-On CartPole we compare ENA-Combined with DQN~\cite{mnih2015human}, PPO~\cite{schulman2017proximal} and the discrete-action variant of SAC~\cite{christodoulou2019soft}; on HalfCheetah with PPO and SAC~\cite{haarnoja2018soft}. All are our own implementations, with common hyperparameters for these benchmarks (Appendix~\ref{app:hyperparameters}) and two changes that the non-stationary stream made necessary, both found in full-length runs before the reported study:
+On CartPole we compare ENA-Combined with DQN~\cite{mnih2015human}, PPO~\cite{schulman2017proximal} and the discrete-action variant of SAC~\cite{christodoulou2019soft}; on HalfCheetah with PPO and SAC~\cite{haarnoja2018soft}. These standard single-policy baselines are included to quantify the baseline magnitude of catastrophic forgetting under these specific physical shifts when continuous parameter updates operate without architectural memory or policy preservation. All are our own implementations, with common hyperparameters for these benchmarks (Appendix~\ref{app:hyperparameters}) and two changes that the non-stationary stream made necessary, both found in full-length runs before the reported study:
 \begin{itemize}
 \item \textit{PPO uses a constant learning rate.} With the usual linear annealing to zero over the training budget, PPO reaches its last environment with almost no learning rate left; a learner in a non-stationary stream has no reason to learn less in a later environment than in an earlier one.
 \item \textit{SAC-Discrete uses a target entropy of $\Res{cfg/challenge/sacdratio}\log|\mathcal{A}|$} instead of $\Res{cfg/sacd/paperratio}\log|\mathcal{A}|$. With CartPole's two actions, $\Res{cfg/sacd/paperratio}\log 2$ is nearly the maximum entropy; the policy cannot reach it, and the temperature grows without bound, collapsing the agent to random play. Over \Res{sacd/0.98/steps} steps of the first training environment (median of \Res{sacd/0.98/seeds} seeds), the temperature rose from \Res{sacd/0.98/alphastart} to \Res{sacd/0.98/alphamax}, and the critics' values to \Res{sacd/0.98/valuemax}. A ratio of $\Res{cfg/sacd/cleanrlratio}$ diverged in the same way (temperature \Res{sacd/0.89/alphamax}, values \Res{sacd/0.89/valuemax}). At $\Res{cfg/challenge/sacdratio}$ the temperature peaked at \Res{sacd/0.5/alphamax} and the values at \Res{sacd/0.5/valuemax}.
 \end{itemize}
-During the frozen test, the baselines act greedily, and ENA plays with its weights frozen and Plasticity at zero, adapting only through its choice of gladiator.
+During the frozen test, the baselines act greedily with their final learned parameters, while ENA executes with its network weights frozen and Plasticity at zero ($\mathcal{P}=0$), adapting solely through online Bayesian policy routing across its archived specialists.
 
 \subsection{Metrics}
 \label{sec:metrics}

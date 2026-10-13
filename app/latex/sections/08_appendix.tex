@@ -195,12 +195,25 @@ The HalfCheetah comparison ran in AWS (eu-west-1), one \textbf{c8g.xlarge} insta
   \item \textbf{Wall-clock time per replicate:} \Res{cheetah/ENA-Combined/time/min/mean}\,min (ENA), \Res{cheetah/PPO/time/min/mean}\,min (PPO), \Res{cheetah/SAC/time/min/mean}\,min (SAC).
 \end{itemize}
 
-\section{Extended Continuous-Control Dynamics}
+\section{Extended Evaluation and Training Dynamics}
+\label{app:dynamics}
 \label{app:cheetah_dynamics}
 
-This appendix presents the complete episode-by-episode evaluation curves and step-by-step training trajectories for the continuous-control HalfCheetah experiment across all \Res{cheetah/n} confirmation replicates.
+This appendix presents the complete episode-by-episode evaluation curves and step-by-step training trajectories across both experimental domains.
 
-\subsection{Frozen Test Dynamics Across Environments}
+\subsection{Frozen Test Dynamics on CartPole}
+\label{app:cartpole_dynamics}
+Fig.~\ref{fig:challenge_curves} displays the frozen evaluation on CartPole across the sequential protocol of five environments (50 evaluation episodes per environment): Mars-Light $\to$ Neptune $\to$ Jupiter-Heavy $\to$ Brown-dwarf $\to$ Earth-Standard. Solid lines mark the mean return across all \Res{challenge/n} replicates, and shaded bands show the middle 50\% interquartile range.
+
+On \textit{Jupiter-Heavy} (episodes 101--150), all gradient-based baselines experience severe catastrophic forgetting after adapting to Earth-Standard, dropping to mean returns of \Res{challenge/PPO/test/Jupiter-Heavy/mean} (PPO), \Res{challenge/SAC-Discrete/test/Jupiter-Heavy/mean} (SAC-Discrete) and \Res{challenge/DQN/test/Jupiter-Heavy/mean} (DQN). In contrast, ENA-Combined maintains its performance at \Res{challenge/ENA-Combined/test/Jupiter-Heavy/mean} by recognizing Jupiter's physics and recalling its archived specialists. On Neptune, which shares gravitational dynamics close to Earth, ENA deploys its Earth-adapted specialists zero-shot.
+
+\begin{figure*}[t]
+\centerline{\includegraphics[width=0.85\textwidth]{images/challenge_test_curves.pdf}}
+\caption{Frozen test on CartPole: mean return per episode across \Res{challenge/n} replicates (line) and the middle 50\% of replicates (band). Dashed lines mark environment switches; Neptune and Brown-dwarf were never seen in training.}
+\label{fig:challenge_curves}
+\end{figure*}
+
+\subsection{Frozen Test Dynamics on HalfCheetah}
 Fig.~\ref{fig:cheetah_test_curves} illustrates the test phase across the sequential protocol of five environments (50 evaluation episodes per environment): Earth-Standard $\to$ Ice-Floor $\to$ Heavy-Rough $\to$ High-Wind $\to$ Mars-Slippery. Solid lines show the mean test return across all \Res{cheetah/n} replicates, and shaded bands mark the middle 50\% interquartile range.
 
 On \textit{Heavy-Rough} (episodes 101--150), both PPO and SAC suffer catastrophic performance collapse: after having adapted to Mars-Slippery during the final training phase, their frozen policies drop to mean returns of \Res{cheetah/PPO/test/Heavy-Rough/mean} and \Res{cheetah/SAC/test/Heavy-Rough/mean}, respectively. In contrast, ENA-Combined identifies the environment switch via its wavelet-packet chirp and successfully retrieves its archived Heavy-Rough specialist, sustaining a mean return of \Res{cheetah/ENA-Combined/test/Heavy-Rough/mean}.

@@ -56,7 +56,10 @@ A return at or above the \Res{cfg/ena/signal/percentile}th percentile gives the 
 \subsubsection{Trust}
 The acting specialist's Trust is an exponential average whose rate is the failure signal $D=f(R)$:
 \begin{equation}
-T_{t+1} = (1 - D)\,T_t + D\,\hat{r}(R), \qquad \hat{r}(R) = \frac{R - P_{\Res{cfg/ena/trust/plow}}(H)}{P_{\Res{cfg/ena/trust/phigh}}(H) - P_{\Res{cfg/ena/trust/plow}}(H)},
+\begin{split}
+T_{t+1} &= (1 - D)\,T_t + D\,\hat{r}(R), \\
+\hat{r}(R) &= \frac{R - P_{\Res{cfg/ena/trust/plow}}(H)}{P_{\Res{cfg/ena/trust/phigh}}(H) - P_{\Res{cfg/ena/trust/plow}}(H)},
+\end{split}
 \label{eq:trust}
 \end{equation}
 with $\hat{r}$ clipped to $[\Res{cfg/ena/trust/low}, \Res{cfg/ena/trust/high}]$, deliberately not to $[0,1]$, so a specialist that beats the current record still ranks above the rest. A poor episode moves Trust quickly; a good one only nudges it, which punishes failure fast and rewards success slowly. When $D > \Res{cfg/ena/trust/reset}$, the Trust of every non-archived specialist is also blended toward a reference value (the normalized mean of $H$) by the factor $D$, which re-opens the competition after a failure.
@@ -119,7 +122,7 @@ The standardized residuals of the current niche's model, with the variance widen
 \begin{equation}
 S_t = \max(S_{t-1}, 0) + \log \frac{\hat{p}_t(z_t)}{q(z_t)},
 \end{equation}
-where $\hat{p}_t$ is a Fixed-Share~\cite{herbster1998tracking} mixture of Gaussian predictors fitted on sliding windows of $2, 4, \dots$ recent residuals. An alarm is raised when $S_t > \log\gamma$, which guarantees an average run length to false alarm of at least $\gamma$ ($\gamma = 10^{\Res{cfg/ena/detect/gammaexp}}$ steps). We depart from the Gaussian example of~\cite{halme2026sequential} in one respect: each window also estimates a variance, and that variance is one-sided (never below the pre-change one), because a wrong dynamics model changes the spread of the residuals at least as much as their mean, and can only fit worse, never better.
+where $\hat{p}_t$ is a Fixed-Share~\cite{herbster1998tracking} mixture of Gaussian predictors fitted on sliding windows of $2, 4, \dots$ recent residuals. An alarm is raised when $S_t > \log\gamma$, thresholded in accordance with the theoretical average run length to false alarm of at least $\gamma$ ($\gamma = 10^{\Res{cfg/ena/detect/gammaexp}}$ steps) derived by Halme, Poor and Koivunen~\cite{halme2026sequential} for exact pre-change distributions. In our empirical setting, where the pre-change distribution is an online-fitted linear-Gaussian approximation on nonlinear dynamics, $\log\gamma$ acts as a calibrated decision threshold whose false-alarm behavior is evaluated empirically (Section~\ref{sec:results} and Table~\ref{tab:detection}). We depart from the Gaussian example of~\cite{halme2026sequential} in one respect: each window also estimates a variance, and that variance is one-sided (never below the pre-change one), because a wrong dynamics model changes the spread of the residuals at least as much as their mean, and can only fit worse, never better.
 
 \subsubsection{Identification}
 The recent transitions (up to \Res{cfg/ena/detect/recent}) are recognized as niche $j^{*}$, the niche of highest mean per-step log-likelihood, if $j^{*}$ explains them within a margin of $m = \Res{cfg/ena/detect/margin}$ nats per step of a model fitted on those same transitions. Otherwise the physics are new and a niche is created. Only niches fitted on at least \Res{cfg/ena/detect/minsamples} transitions take part.
@@ -145,7 +148,7 @@ which is about 1 under the same physics ($d$ features). Above the margin $\Res{c
 
 \subsection{Specialist Selection}
 \label{sec:selection}
-At test time the weights are frozen and $\mathcal{P}=0$; the only adaptation left is the choice of which gladiator acts. We use Bayesian Policy Reuse (BPR)~\cite{rosman2016bayesian}, with the niches as types and every gladiator as a policy. The agent keeps a belief $\beta$ over niches and plays the gladiator of highest expected utility $\sum_{j}\beta(j)\,\mu_{j\pi}$, where $u = R/R_{\text{solved}}$ is the return relative to the one at which the environment counts as solved (so solving reads as $u = 1$), and $\mu_{j\pi}$ is the mean utility of policy $\pi$ in niche $j$. After each episode,
+At test time the weights are frozen and $\mathcal{P}=0$; the only adaptation left is the choice of which gladiator acts. We adopt Bayesian Policy Reuse (BPR)~\cite{rosman2016bayesian} as a principled probabilistic mechanism to fuse continuous dynamics evidence $L_j$ with observed scalar utility $u$, with the niches as types and every gladiator as a policy. The agent keeps a belief $\beta$ over niches and plays the gladiator of highest expected utility $\sum_{j}\beta(j)\,\mu_{j\pi}$, where $u = R/R_{\text{solved}}$ is the return relative to the one at which the environment counts as solved (so solving reads as $u = 1$), and $\mu_{j\pi}$ is the mean utility of policy $\pi$ in niche $j$. After each episode,
 \begin{equation}
 \beta'(j) \propto \beta(j)\; \mathcal{N}\!\left(u;\, \mu_{j\pi}, \Res{cfg/ena/bpr/noise}^2\right)\; e^{L_j},
 \label{eq:bpr}
@@ -155,3 +158,4 @@ where $L_j$ is the log-likelihood of the episode's transitions under niche $j$'s
 \item BPR builds its performance model offline, by playing every policy in every type. Ours is learned online: a prior of utility $\Res{cfg/ena/bpr/ownprior}$ for a gladiator in its own niche and $\Res{cfg/ena/bpr/crossprior}$ elsewhere, worth \Res{cfg/ena/bpr/prior} observation, updated with every observed utility weighted by the posterior.
 \item BPR assumes one fixed type per trial. To follow a changing environment, a Fixed-Share step~\cite{herbster1998tracking} mixes back a uniform share: $\beta \leftarrow \Res{cfg/ena/bpr/mix}\,\beta' + \Res{cfg/ena/bpr/switch}/|\mathcal{J}|$. A confirmed change of physics also resets the belief to uniform.
 \end{itemize}
+While simpler heuristic selection policies (such as greedily deploying the top-performing specialist of $\arg\max_j L_j$) or learned contextual bandits are viable alternatives, BPR operates out-of-the-box with our likelihood and utility formulation under uncertainty; exploring alternative retrieval drivers is left as future work (Section~\ref{sec:conclusion}).
