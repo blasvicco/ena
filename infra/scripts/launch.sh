@@ -8,8 +8,6 @@ source "$(dirname "$0")/common.sh"
 RANGE=${1:?usage: launch.sh K or K-L}
 FIRST=${RANGE%-*}
 LAST=${RANGE#*-}
-TEMPLATE=$(output LaunchTemplateId)
-IFS=',' read -ra SUBNETS <<< "$(output SubnetIds)"
 RUNNING=$(machines pending,running | awk '{print $1}')
 
 for K in $(seq "${FIRST}" "${LAST}"); do
@@ -22,12 +20,13 @@ for K in $(seq "${FIRST}" "${LAST}"); do
     echo "${NAME}: complete in S3, skipped"
     continue
   fi
-  # Spread the machines over the public subnets (one per availability zone)
-  SUBNET=${SUBNETS[$((K % ${#SUBNETS[@]}))]}
-  TAGS="Tags=[{Key=Name,Value=${NAME}},{Key=Project,Value=${STACK}}]"
-  ID=$(aws ec2 run-instances --region "${REGION}" --count 1 \
-    --launch-template "LaunchTemplateId=${TEMPLATE},Version=\$Latest" --subnet-id "${SUBNET}" \
-    --tag-specifications "ResourceType=instance,${TAGS}" "ResourceType=volume,${TAGS}" \
-    --query 'Instances[0].InstanceId' --output text)
-  echo "${NAME}: launched ${ID} in ${SUBNET}"
+  # Spread the machines over the zones; a zone without capacity passes the machine on to the next one
+  if RESULT=$(launch_machine "${K}" "Tags=[{Key=Name,Value=${NAME}},{Key=Project,Value=${STACK}}]"); then
+    echo "${NAME}: launched ${RESULT% *} in ${RESULT#* }"
+  elif [ $? -eq 1 ]; then
+    echo "${NAME}: no zone has capacity now; run launch.sh ${K} again later"
+  else
+    echo "${NAME}: launch failed"
+    exit 1
+  fi
 done

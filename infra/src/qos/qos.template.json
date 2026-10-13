@@ -4,12 +4,12 @@
   },
   "aws": {
     "account": "",
-    "region": "eu-south-2",
+    "region": "eu-west-1",
     "construct": {
       "ec2": {
         "imageTag": "latest",
-        "instanceType": "c7g.2xlarge",
-        "maxHours": 16,
+        "instanceType": "c8g.xlarge",
+        "maxHours": 40,
         "replicates": 20,
         "syncMinutes": 15,
         "volumeGb": 30
@@ -20,11 +20,12 @@
         "name": "ena-experiment"
       },
       "net": {
+        "azs": 3,
         "cidr": "10.40.0.0/16",
         "name": "ena-experiment"
       },
       "s3": {
-        "name": "ena-experiment"
+        "name": "ena-experiment-w1"
       }
     }
   }

@@ -21,7 +21,8 @@ export class CNet extends Construct {
       `${id}-vpc`,
       {
         ipAddresses: ec2.IpAddresses.cidr(config.aws.construct.net.cidr),
-        maxAzs: 2,
+        // Every zone of the region where possible: an instance type can run out of capacity in one zone
+        maxAzs: config.aws.construct.net.azs,
         subnetConfiguration: [{
           name: 'Public',
           subnetType: ec2.SubnetType.PUBLIC,
