@@ -1,0 +1,3 @@
+# Build context for hub/node/Dockerfile: only the CDK project's package.json
+*
+!infra/src/package.json

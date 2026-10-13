@@ -10,7 +10,7 @@ import tensorflow as tf
 from keras import Input, Model, layers, optimizers
 
 # App imports
-from .baseline import ABaseline
+from .tools.baseline import ABaseline, transition
 
 # pylint: disable=too-many-instance-attributes
 class ReplayBuffer:
@@ -50,6 +50,7 @@ class ReplayBuffer:
 			self.dones[indices],
 		)
 
+
 # pylint: disable=too-many-instance-attributes
 class SACAgent(ABaseline):
 	"""Soft Actor-Critic Agent with Twin-Q and automatic entropy tuning."""
@@ -66,7 +67,14 @@ class SACAgent(ABaseline):
 		tau=0.005,
 		update_frequency=20,
 		gradient_steps=None,
+		learning_starts=0,
+		fused_updates=False,
+		jit_compile=False,
 	):
+		"""learning_starts: environment steps of uniform random actions, with no updates, before learning starts
+		(SB3's warm-up; 0 = train as soon as the buffer holds a batch).
+		fused_updates: run an update's gradient_steps in one compiled call (same algorithm, far less Python overhead);
+		jit_compile: compile that call with XLA. Both off by default (one compiled call per gradient step)."""
 		super().__init__(brain, make_env)
 		self.learn = True
 
@@ -75,9 +83,11 @@ class SACAgent(ABaseline):
 		self.gamma = gamma
 		self.tau = tau
 		self.update_frequency = update_frequency
-		self.gradient_steps = (
-			gradient_steps if gradient_steps is not None else update_frequency
-		)
+		self.gradient_steps = gradient_steps if gradient_steps is not None else update_frequency
+		self.learning_starts = learning_starts
+		self.fused_updates = fused_updates
+		self.jit_compile = jit_compile
+		self._sac_steps = tf.function(self._sac_steps_eager, jit_compile=jit_compile)
 		self.env_steps = 0
 
 		# Infer dims
@@ -127,18 +137,25 @@ class SACAgent(ABaseline):
 	# pylint: disable=too-many-arguments
 	def act(self, env, state):
 		"""Sample action from the policy using Gaussian reprocessing."""
+		if self.learn and self.env_steps < self.learning_starts:
+			# Warm-up: uniform random actions in the tanh range (NumPy, so the replicate's seed governs it).
+			action = np.random.uniform(-1.0, 1.0, size=self.action_dim).astype(np.float32)
+			next_obs, reward, terminated, truncated, _ = env.step(action)
+			return next_obs, reward, terminated, truncated, action
+
 		obs_tensor = tf.convert_to_tensor(state[np.newaxis], dtype=tf.float32)
 		mean, log_standard_deviation = self._get_policy_outputs(obs_tensor)
-		standard_deviation = tf.exp(log_standard_deviation)
+		if self.learn:
+			# Reparameterization trick for sampling. Noise is drawn with NumPy: an eager tf.random call
+			# leaks per-call state under tf.random.set_seed (the ones inside tf.function graphs don't).
+			gaussian_noise = tf.convert_to_tensor(np.random.normal(size=mean.shape), dtype=mean.dtype)
+			action_raw = mean + gaussian_noise * tf.exp(log_standard_deviation)
+		else:
+			# Frozen test: the deterministic policy, tanh of the mean (standard SAC evaluation).
+			action_raw = mean
 
-		# Reparameterization trick for sampling
-		gaussian_noise = tf.random.normal(tf.shape(mean))
-		action_raw = mean + gaussian_noise * standard_deviation
-		action_squashed = tf.tanh(action_raw)
-
-		# Scale/Clip action to env space happens within gym if needed,
-		# but HalfCheetah expects [-1, 1] which tanh provides.
-		action = action_squashed.numpy()[0]
+		# HalfCheetah expects actions in [-1, 1], which tanh provides.
+		action = tf.tanh(action_raw).numpy()[0]
 
 		next_obs, reward, terminated, truncated, _ = env.step(action)
 		return next_obs, reward, terminated, truncated, action
@@ -154,20 +171,14 @@ class SACAgent(ABaseline):
 	def train(self, **kwargs):
 		"""Store transition and update networks if buffer has enough data."""
 		step_data = kwargs["step_data"]
-		self.buffer.store(
-			step_data["state"],
-			step_data["action"],
-			step_data["reward"],
-			step_data["next_state"],
-			float(step_data["done"]),
-		)
+		self.buffer.store(*transition(step_data))
 
 		self.env_steps += 1
 
-		if (
-			self.buffer.size >= self.batch_size
-			and self.env_steps % self.update_frequency == 0
-		):
+		if self.env_steps > self.learning_starts and self.buffer.size >= self.batch_size and self.env_steps % self.update_frequency == 0:
+			if self.fused_updates:
+				self._fused_update()
+				return
 			for _ in range(self.gradient_steps):
 				(
 					batch_states,
@@ -186,9 +197,32 @@ class SACAgent(ABaseline):
 				)
 
 	@tf.function
-	# pylint: disable=too-many-locals
 	def _update_networks(self, states, actions, rewards, next_states, dones):
-		"""Main SAC optimization step."""
+		"""Main SAC optimization step, its reparameterization noise drawn in the graph."""
+		noise_shape = tf.stack([tf.shape(states)[0], self.action_dim])
+		self._sac_step(states, actions, rewards, next_states, dones, tf.random.normal(noise_shape), tf.random.normal(noise_shape))
+
+	def _fused_update(self):
+		"""One update of gradient_steps steps in a single compiled call: the batches sampled as the per-step path samples
+		them (NumPy, in order), the reparameterization noise drawn with NumPy (the replicate's seed governs it)."""
+		samples = [self.buffer.sample(self.batch_size) for _ in range(self.gradient_steps)]
+		stacked = [tf.convert_to_tensor(np.stack([sample[part] for sample in samples])) for part in range(5)]
+		noise_shape = (self.gradient_steps, self.batch_size, self.action_dim)
+		self._sac_steps(
+			*stacked,
+			tf.convert_to_tensor(np.random.normal(size=noise_shape), dtype=tf.float32),
+			tf.convert_to_tensor(np.random.normal(size=noise_shape), dtype=tf.float32)
+		)
+
+	# pylint: disable=too-many-arguments,too-many-positional-arguments
+	def _sac_steps_eager(self, states, actions, rewards, next_states, dones, next_noise, current_noise):
+		"""k SAC steps from stacked (k, batch, ...) batches and noise; compiled once as self._sac_steps."""
+		for index in tf.range(tf.shape(states)[0]):
+			self._sac_step(states[index], actions[index], rewards[index], next_states[index], dones[index], next_noise[index], current_noise[index])
+
+	# pylint: disable=too-many-locals,too-many-arguments,too-many-positional-arguments
+	def _sac_step(self, states, actions, rewards, next_states, dones, next_noise, current_noise):
+		"""One SAC optimization step with the given reparameterization noise (critics, actor, temperature, targets)."""
 		alpha = tf.exp(self.log_alpha)
 
 		# 1. Update Critics
@@ -199,26 +233,19 @@ class SACAgent(ABaseline):
 				next_mean,
 				next_log_standard_deviation,
 			) = tf.split(actor_outputs, 2, axis=-1)
-			next_log_standard_deviation = tf.clip_by_value(
-				next_log_standard_deviation, -20.0, 2.0
-			)
+			next_log_standard_deviation = tf.clip_by_value(next_log_standard_deviation, -20.0, 2.0)
 			next_standard_deviation = tf.exp(next_log_standard_deviation)
 
-			next_noise = tf.random.normal(tf.shape(next_mean))
 			next_actions_raw = next_mean + next_noise * next_standard_deviation
 			next_actions = tf.tanh(next_actions_raw)
 
 			# Next log_prob
-			next_log_probabilities = self._calculate_log_probability(
-				next_actions_raw, next_actions, next_mean, next_log_standard_deviation
-			)
+			next_log_probabilities = self._calculate_log_probability(next_actions_raw, next_actions, next_mean, next_log_standard_deviation)
 
 			# Target Q values
 			target_q1 = self.target_critic_1([next_states, next_actions])
 			target_q2 = self.target_critic_2([next_states, next_actions])
-			target_q_minimum = (
-				tf.minimum(target_q1, target_q2) - alpha * next_log_probabilities
-			)
+			target_q_minimum = tf.minimum(target_q1, target_q2) - alpha * next_log_probabilities
 
 			target_q_final = rewards + (1.0 - dones) * self.gamma * target_q_minimum
 
@@ -231,9 +258,7 @@ class SACAgent(ABaseline):
 			critic_loss_total = critic1_loss + critic2_loss
 
 		# Apply Critic Gradients jointly (preventing optimizer variable mismatch)
-		critic_variables = (
-			self.critic_1.trainable_variables + self.critic_2.trainable_variables
-		)
+		critic_variables = self.critic_1.trainable_variables + self.critic_2.trainable_variables
 		critic_gradients = critic_tape.gradient(critic_loss_total, critic_variables)
 		self.critic_optimizer.apply_gradients(zip(critic_gradients, critic_variables))
 
@@ -244,15 +269,10 @@ class SACAgent(ABaseline):
 				current_mean,
 				current_log_standard_deviation,
 			) = tf.split(actor_outputs, 2, axis=-1)
-			current_log_standard_deviation = tf.clip_by_value(
-				current_log_standard_deviation, -20.0, 2.0
-			)
+			current_log_standard_deviation = tf.clip_by_value(current_log_standard_deviation, -20.0, 2.0)
 			current_standard_deviation = tf.exp(current_log_standard_deviation)
 
-			current_noise = tf.random.normal(tf.shape(current_mean))
-			current_actions_raw = (
-				current_mean + current_noise * current_standard_deviation
-			)
+			current_actions_raw = current_mean + current_noise * current_standard_deviation
 			current_actions = tf.tanh(current_actions_raw)
 
 			current_log_probabilities = self._calculate_log_probability(
@@ -269,18 +289,12 @@ class SACAgent(ABaseline):
 			actor_loss = tf.reduce_mean(alpha * current_log_probabilities - q_minimum)
 
 		# Apply Actor Gradients
-		actor_gradients = actor_tape.gradient(
-			actor_loss, self.actor.trainable_variables
-		)
-		self.actor_optimizer.apply_gradients(
-			zip(actor_gradients, self.actor.trainable_variables)
-		)
+		actor_gradients = actor_tape.gradient(actor_loss, self.actor.trainable_variables)
+		self.actor_optimizer.apply_gradients(zip(actor_gradients, self.actor.trainable_variables))
 
 		# 3. Update Alpha (Entropy Coefficient)
 		with tf.GradientTape() as alpha_tape:
-			alpha_loss = -tf.reduce_mean(
-				self.log_alpha * (current_log_probabilities + self.target_entropy)
-			)
+			alpha_loss = -tf.reduce_mean(self.log_alpha * (current_log_probabilities + self.target_entropy))
 
 		alpha_gradients = alpha_tape.gradient(alpha_loss, [self.log_alpha])
 		self.alpha_optimizer.apply_gradients(zip(alpha_gradients, [self.log_alpha]))
@@ -289,15 +303,11 @@ class SACAgent(ABaseline):
 		self._soft_update(self.target_critic_1, self.critic_1)
 		self._soft_update(self.target_critic_2, self.critic_2)
 
-	def _calculate_log_probability(
-		self, raw_action, squashed_action, mean, log_standard_deviation
-	):
+	def _calculate_log_probability(self, raw_action, squashed_action, mean, log_standard_deviation):
 		"""Gaussian log-probability with tanh squashing correction."""
 		standard_deviation = tf.exp(log_standard_deviation)
 		log_probability = -0.5 * (
-			tf.square((raw_action - mean) / (standard_deviation + 1e-8))
-			+ 2.0 * log_standard_deviation
-			+ tf.math.log(2.0 * np.pi)
+			tf.square((raw_action - mean) / (standard_deviation + 1e-8)) + 2.0 * log_standard_deviation + tf.math.log(2.0 * np.pi)
 		)
 		log_probability = tf.reduce_sum(log_probability, axis=-1, keepdims=True)
 		# Tanh correction: log(1 - tanh(x)^2)
@@ -310,9 +320,5 @@ class SACAgent(ABaseline):
 
 	def _soft_update(self, target_network, source_network):
 		"""Polyak averaging for target networks."""
-		for target_weight, source_weight in zip(
-			target_network.weights, source_network.weights
-		):
-			target_weight.assign(
-				target_weight * (1.0 - self.tau) + source_weight * self.tau
-			)
+		for target_weight, source_weight in zip(target_network.weights, source_network.weights):
+			target_weight.assign(target_weight * (1.0 - self.tau) + source_weight * self.tau)

@@ -8,13 +8,23 @@
 \usepackage{textcomp}
 \usepackage{xcolor}
 \usepackage{url}
+\usepackage{adjustbox}
 
-\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
-    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+% Draft marker: renders in red; package_arxiv.sh refuses to package while any remains.
+\newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
+
+% Generated results: \Res{key} prints a number from generated/results.tex (app/src/tools/paper_results.py).
+% An unknown key prints red ??key and logs "Undefined result", which package_arxiv.sh refuses.
+\makeatletter
+\newcommand{\resdef}[2]{\expandafter\def\csname res@#1\endcsname{#2}}
+\newcommand{\Res}[1]{\ifcsname res@#1\endcsname\csname res@#1\endcsname\else\textcolor{red}{??#1}\@latex@warning{Undefined result #1}\fi}
+\makeatother
+\input{generated/results}
 
 \begin{document}
 
-\title{Introducing the Evolutionary Neuroplastic Agent: Dynamic Specialists for Non-Stationary Environments}
+% TODO(author): final title. Working title below.
+\title{Gradient-Free Continual Reinforcement Learning with Environment Detection and Specialist Reuse: the Evolutionary Neuroplastic Agent}
 
 \author{
 \IEEEauthorblockN{Blas Eugenio Vicco Zarate}
@@ -24,25 +34,26 @@
 
 \maketitle
 
-\renewcommand{\abstractname}{}
-
 \begin{abstract}
 \input{abstract}
 \end{abstract}
 
 \begin{IEEEkeywords}
-Evolutionary Reinforcement Learning, Non-Stationary Environments, Plasticity, Quality-Diversity, Autonomous Adaptation
+Continual Reinforcement Learning, Neuroevolution, Non-Stationary Environments, Change Detection, Policy Reuse
 \end{IEEEkeywords}
 
 \input{sections/01_introduction}
 \input{sections/02_related_work}
 \input{sections/03_methodology}
-\input{sections/04_experiments}
+\input{sections/04_experimental_setup}
 \input{sections/05_results}
 \input{sections/06_conclusion}
 \input{sections/07_code_availability}
 
 \bibliographystyle{IEEEtran}
 \bibliography{references}
+
+\appendices
+\input{sections/08_appendix}
 
 \end{document}

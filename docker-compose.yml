@@ -5,6 +5,32 @@ services:
       dockerfile: hub/python/Dockerfile
     volumes:
       - ./app:/home/app
+    ports:
+      - "8501:8501"
     command: ["tail", "-f", "/dev/null"]
     container_name: ena-experiment
+    working_dir: /home/app
+  paper:
+    image: texlive/texlive:latest
+    volumes:
+      - ./app/latex:/workdir
+    command: ["tail", "-f", "/dev/null"]
+    container_name: ena-paper
+    working_dir: /workdir
+
+  ena_infra:
+    build:
+      context: ./
+      dockerfile: hub/node/Dockerfile
+    volumes:
+      # The CDK project (infra/src), its scripts, where download.sh writes the results, and the AWS credentials
+      - ./infra/src:/home/app
+      - /home/app/node_modules
+      - ./infra/scripts:/home/scripts
+      - ./app/half_cheetah_outputs:/home/outputs
+      - ~/.aws:/root/.aws:ro
+    environment:
+      - AWS_PROFILE=${AWS_PROFILE:-personal}
+    command: ["tail", "-f", "/dev/null"]
+    container_name: ena-infra
     working_dir: /home/app

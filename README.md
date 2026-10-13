@@ -1,8 +1,6 @@
 # ENA — Evolutionary Neuroplastic Agent
 
-> A preliminary study into evolutionary, non-gradient adaptation across non-stationary physical environments.
-
-[Open In Colab](https://colab.research.google.com/drive/1i8LY95hCwqbk4fcmAK12YT0lxH5TDzrW?usp=sharing)
+> A gradient-free agent for non-stationary reinforcement learning that detects changes in the environment's physics and reuses the specialists it has archived for them.
 
 ---
 
@@ -12,106 +10,188 @@ Traditional Reinforcement Learning (RL) agents often struggle to adapt rapidly i
 
 ---
 
+## What This Project Is
+
+ENA evolves a population of small neural-network policies without gradients and keeps proven specialists in a Hall of Fame, organized by the physics it detects. It is evaluated on two non-stationary domains, training on three environments in sequence without being told when they change, then tested frozen on five, two of them never seen:
+
+- **CartPole** — training on Mars, Jupiter, Earth (gravity, pole mass and length change); the test adds Neptune and Brown-dwarf.
+- **HalfCheetah** — training on Mars-Slippery, Jupiter-Rough, Earth (gravity and ground friction); the test adds Ice-Floor and High-Wind.
+
+The studies:
+- **Skill ablation** (`cartpole_ena_ablation.py`): each skill (Plasticity, Hall of Fame, environment detection) switched on and off, 30 replicates.
+- **Compute cost of Plasticity** (`cartpole_ena_compute.py`), and the **Plasticity controller** study (`cartpole_ena_plasticity_controller.py`): the linear ramp against quadratic and Mamdani fuzzy controllers, 30 replicates.
+- **Comparison with gradient-based agents** at an equal budget of environment steps: DQN, PPO and SAC-Discrete on CartPole (`cartpole_challenge.py`), PPO and SAC on HalfCheetah (`half_cheetah.py`).
+
+Metrics: test **reliability** (% of episodes at the success threshold), mean return per environment, **stability gap** at an environment switch, **steps to first solve** per environment, and **compute** (environment steps, wall-clock time).
+
+---
+
 ## Repository Structure
 
 ```
 app/
-├── ena_test.py            # Main experiment script (10 independent runs)
-├── aggregate_metrics.py   # Aggregates results across exp_01/ – exp_10/
-├── plot_variance.py       # Generates reliability and stability plots
-├── latex/                 # Full LaTeX source for the paper
-└── requirements.txt       # Python dependencies
+├── src/
+│   ├── agents/
+│   │   ├── tools/
+│   │   │   ├── abstract.py              # AAgent — shared agent contract (act/train/set_learning)
+│   │   │   ├── baseline.py              # ABaseline — shared contract for single-model RL baselines
+│   │   │   └── normalizers.py           # Running/identity observation normalizers
+│   │   ├── ena/
+│   │   │   ├── ena.py                   # ENAgent — the Evolutionary Neuroplastic Agent
+│   │   │   ├── memory.py                # AgentMemory — return/plasticity history, observation normalizer
+│   │   │   ├── ENA.md                   # Implementation notes
+│   │   │   ├── skills/                  # One facade (main.py) + drivers (driver/) per mechanism:
+│   │   │   │                            #   trust, plasticity, mutation, crossover, hall_of_fame,
+│   │   │   │                            #   env_detection (dynamics_model), selection (bpr)
+│   │   │   └── tools/                   # Dynamics models, PM-CuSum, curves, weight projection, ...
+│   │   ├── dqn.py                       # DQN baseline
+│   │   ├── ppo.py                       # PPO-clip baseline (discrete + continuous)
+│   │   ├── sac.py                       # SAC baseline (continuous)
+│   │   ├── sac_discrete.py              # SAC-Discrete baseline
+│   │   └── random.py                    # Random-action floor
+│   ├── cartpole_ena_ablation.py      # CartPole skill ablation (shared study runner)
+│   ├── cartpole_ena_compute.py          # CartPole compute cost of Plasticity
+│   ├── cartpole_ena_plasticity_controller.py # CartPole Plasticity controller: linear vs. quadratic vs. fuzzy
+│   ├── cartpole_challenge.py            # CartPole: ENA vs. DQN / PPO / SAC-Discrete
+│   ├── half_cheetah.py                  # HalfCheetah: ENA vs. PPO / SAC
+│   └── tools/
+│       ├── metrics.py                   # Per-replicate metrics (reliability, stability gap, compute, adaptation) + plots
+│       ├── early_stopping.py            # Evaluation / stopping rule shared by the challenge protocols
+│       ├── aggregate_metrics.py         # Aggregates metrics across a study's replicates
+│       ├── detection_stats.py           # Environment-recognition numbers per phase (part of aggregation)
+│       ├── replot_replicate.py          # Redraws a replicate's training/test charts from its logs
+│       ├── paper_results.py             # Generates the paper's numbers, tables and figures
+│       ├── paper_config.py              # The paper's configuration numbers, read from the code that ran
+│       ├── sac_discrete_entropy_check.py # Measures SAC-Discrete's temperature per target-entropy ratio
+│       ├── plot_study_curves.py         # Per-episode curves across replicates
+│       ├── live_data.py                 # Reads the live_*.csv logs
+│       ├── live_dashboard.py            # Streamlit live convergence dashboard
+│       ├── live_monitor.py              # Matplotlib live convergence chart
+│       ├── visualization.py             # Multi-experiment progress reporting (terminal bar + ETA)
+│       └── benchmark_half_cheetah.py    # HalfCheetah throughput and study cost estimate
+├── tests/                               # pytest suite (mirrors src/)
+├── latex/                               # Paper source (build.sh, package_arxiv.sh, generated/)
+├── shell/                               # Format + lint and test helper scripts
+├── requirements.txt                     # Pinned Python dependencies
+└── .pylintrc                            # Lint configuration (see STANDARDS.md)
+docs/                                    # Plans, and the cloud runbook (CLOUD_RUN.md)
 hub/
-└── python/Dockerfile      # Docker environment for helper scripts
+├── python/Dockerfile                    # Experiment environment
+└── cloud/sync_results.sh                # Mirrors a study's outputs to object storage
+docker-compose.yml                       # ena_experiment and paper (TeX Live) services
 ```
+
+See [STANDARDS.md](STANDARDS.md) for coding conventions and a closer look at how these pieces fit together.
 
 ---
 
 ## How to Run
 
-### Option A — Google Colab (recommended)
+### Option A — Docker (recommended)
 
-Click the badge at the top of this page. No local setup required. The full experiment was originally executed on Colab using free GPU resources.
+**1. Build and start the container**
+```bash
+docker compose up -d
+```
 
-### Option B — Local
+**2. Open a shell inside it**
+```bash
+docker compose exec ena_experiment bash
+```
+
+The `app/` directory is bind-mounted to `/home/app` inside the container, so edits on the host are immediately reflected. Port `8501` (Streamlit's default) is mapped to the host, for the live dashboard described below.
+
+**3. Run a study** (each takes `--help`; `--workers` sets parallel replicates)
+```bash
+python src/cartpole_ena_ablation.py      # skill ablation
+python src/cartpole_challenge.py            # ENA vs. DQN / PPO / SAC-Discrete
+python src/half_cheetah.py                  # ENA vs. PPO / SAC
+```
+Studies run in batches: re-running with a larger `--num-experiments` skips replicates that are already complete. For cloud runs see `docs/CLOUD_RUN.md`.
+
+### Option B — Local Python
 
 **1. Install dependencies**
 ```bash
 pip install -r app/requirements.txt
 ```
 
-**2. Run the 10 independent experiments**
+**2. Run an experiment**
 ```bash
-python app/ena_test.py
+python app/src/cartpole_challenge.py
+# or
+python app/src/half_cheetah.py
 ```
-Each of the 10 runs creates its own fresh agent instances with independent random population seeds. Save the console output from each run into separate folders named `exp_01/outputs.txt`, `exp_02/outputs.txt`, and so on.
 
-**3. Aggregate results across all 10 experiments**
+**3. Aggregate results across repeated runs**
 ```bash
-python app/aggregate_metrics.py
+python app/src/tools/aggregate_metrics.py
 ```
-Reads all `exp_##/outputs.txt` files and computes mean, standard deviation, min, and max for every reported metric.
+Reads per-experiment output folders and computes mean, standard deviation, min, and max for every reported metric.
 
-**4. Generate variance plots**
+**4. Generate the paper's numbers, tables and figures**
 ```bash
-python app/plot_variance.py
+python app/src/tools/paper_results.py
 ```
-Produces `reliability_box.png` and `stability_bar.png` — the figures used in the paper.
+Writes `app/latex/generated/` and the figures in `app/latex/images/` from every study's outputs.
+
+---
+
+## Live Convergence Monitoring
+
+Every training run writes `live_training_{agent_name}.csv` to the experiment's output directory incrementally, one row per episode (score, plasticity, detected niche, ...), flushed immediately — so you can watch convergence while a run is still in progress instead of waiting for it to finish. The terminal progress bar also shows a live ETA per phase, e.g. `Training ENA-Combined (ETA 6m 22s)`, estimated from the average time per episode elapsed so far.
+
+Two ways to watch the CSV update live, run as a **separate process** from the training run (read-only, no risk to reproducibility):
+
+**Streamlit dashboard (recommended — auto-refreshing, in a browser):**
+```bash
+streamlit run app/src/tools/live_dashboard.py
+```
+Run this either directly on the host (simplest — `app/` is bind-mounted so the CSV paths are visible there too) or inside the container (`docker compose exec ena_experiment streamlit run src/tools/live_dashboard.py --server.headless true`, then open `http://localhost:8501` on the host — port `8501` is already mapped in `docker-compose.yml`). Pick a study, a replicate and an agent in the sidebar; the page refreshes every 5 seconds and downsamples long runs.
+
+**Matplotlib monitor (needs a real display — run on the host, not inside the container):**
+```bash
+python app/src/tools/live_monitor.py app/cartpole_ena_ablation_outputs/exp_1/live_training_ENA-Combined.csv
+```
+Polls the given CSV and keeps an updating chart on screen until interrupted (Ctrl+C). This will not work inside a headless docker container — matplotlib's interactive mode needs a display backend.
 
 ---
 
 ## Scripts
 
-### `ena_test.py`
-
-Main experiment script. Runs 10 independent training + testing cycles across all three ENA configurations (ENA-01, ENA-02, ENA-03). Each cycle initializes fresh agents with independent random population seeds, ensuring full statistical independence between runs.
-
-**Dependencies:** `gymnasium`, `matplotlib`, `numpy`, `pandas`, `seaborn`, `tensorflow`
-
----
-
-### `aggregate_metrics.py`
-
-Reads per-experiment result files and computes aggregate statistics. Expects results stored in folders named `exp_01/` through `exp_10/`, each containing an `outputs.txt` file in the following format:
-
-```
-Outputs
-Training:
---- ACADEMIC PERFORMANCE & RELIABILITY SUMMARY ---
-       Agent  Env_0 Avg  Env_1 Avg  Env_2 Avg Reliability (%)  Stability Gap (↓)  Efficiency (Score/s)
-ena_agent_01     311.73     468.60     353.81           63.5%             -124.2                 40.10
-ena_agent_02     478.69     468.44     355.88           81.2%               26.3                 67.44
-
-Test
---- ACADEMIC PERFORMANCE & RELIABILITY SUMMARY ---
-       Agent  Env_0 Avg  Env_1 Avg  Env_2 Avg  Env_3 Avg Reliability (%)  Stability Gap (↓)
-ena_agent_01     493.45      500.0     463.30      500.0           97.2%                0.0
-ena_agent_02     490.19      500.0     500.00      500.0           99.2%                0.0
-ena_agent_03     493.30      500.0     483.56      500.0           98.4%                0.0
-```
-
----
-
-### `plot_variance.py`
-
-Generates two publication-quality figures directly from the raw `exp_##/outputs.txt` files:
-
-- **`reliability_box.png`** — box plot of test-phase reliability distribution across 10 runs per configuration
-- **`stability_bar.png`** — bar chart of stability gap (mean ± std) per configuration
+| Script | What it does |
+|---|---|
+| `src/cartpole_ena_ablation.py` | CartPole skill ablation; also the shared study runner the other studies reuse (training, frozen test, live logs, metrics) |
+| `src/cartpole_ena_compute.py` | Compute cost of Plasticity: one ENA-Combined run at full search effort, against the ablation's replicate 1 of the same configuration at zero effort (ENA-HoF+EnvDetection) and with the ramp (ENA-Combined) |
+| `src/cartpole_ena_plasticity_controller.py` | ENA-Combined with the quadratic and the Mamdani fuzzy Plasticity controllers; the linear-ramp reference is the ablation's ENA-Combined (same replicates, paired) |
+| `src/cartpole_challenge.py` | ENA vs. DQN, PPO, SAC-Discrete under `--protocol fixed-budget` (default) or `first-solve` |
+| `src/half_cheetah.py` | Same comparison on HalfCheetah vs. PPO and SAC (protocol parameters provisional, see `docs/PLAN_half_cheetah.md`) |
+| `src/tools/aggregate_metrics.py` | Mean / std / min / max of every metric over a study's replicates, plus pairwise comparisons; also writes `detection_summary.txt` |
+| `src/tools/paper_config.py` | Every setting the paper states (ENA, physics, protocols) read from the built agents, environments and study scripts; called by `paper_results.py` |
+| `src/tools/sac_discrete_entropy_check.py` | Trains the comparison's SAC-Discrete per target-entropy ratio and logs its temperature and critic values (the evidence for the 0.5 ratio) |
+| `src/tools/detection_stats.py` | Environment recognition per phase for agents with env detection: unrecognized episodes, confirmed changes, episodes to the first one, Hall of Fame niches per environment |
+| `src/tools/replot_replicate.py` | Redraws finished replicates' `training.png` / `test.png` from their live CSVs (after a chart change) |
+| `src/tools/paper_results.py` | Every number, table and figure the paper quotes |
+| `src/tools/plot_study_curves.py` | Per-episode return across replicates, one panel per agent |
+| `src/tools/live_dashboard.py`, `live_monitor.py` | Live convergence views (see above) |
+| `src/tools/benchmark_half_cheetah.py` | Measures throughput on the current machine and estimates the HalfCheetah study's time and cost |
 
 ---
 
 ## Paper
 
-The full IEEE two-column paper is available as LaTeX source under `app/latex/`. To compile:
+The paper's LaTeX source is in `app/latex/` (IEEE two-column). Build it in Docker:
 
-1. Zip the `app/latex/` folder
-2. Upload to [Overleaf](https://www.overleaf.com) and compile with `pdflatex`
+```bash
+docker compose up -d --no-deps paper
+docker compose exec paper ./build.sh           # -> app/latex/build/main.pdf
+docker compose exec paper ./package_arxiv.sh   # -> app/latex/build/arxiv.tar.gz (refuses while TODOs remain)
+```
 
-All figures referenced in the paper are pre-rendered and stored in `app/latex/images/`.
+Numbers, tables and the results figures are generated by `src/tools/paper_results.py`; never edit `app/latex/generated/` by hand.
 
 ---
 
 ## Future Work
 
-Future work will expand the analysis beyond the preliminary 1D kinematic CartPole benchmark by scaling generation counts and population pools sequentially into deeper continuous domains. By mathematically eroding the initialization bottleneck, we plan to directly benchmark ENA's overarching rapid-learning mechanisms continuously against established baseline DRL frameworks (such as PPO or Deep Q-Networks) to validate absolute operational supremacy.
+HalfCheetah results (planned, `docs/PLAN_half_cheetah.md`); nonlinear, still gradient-free dynamics models for richer domains; evolution strategies as ENA's search operator; a learned specialist selector; and larger populations on accelerators.

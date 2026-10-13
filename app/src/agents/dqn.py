@@ -14,7 +14,7 @@ import tensorflow as tf
 from keras import optimizers
 
 # App imports
-from .baseline import ABaseline
+from .tools.baseline import ABaseline, transition
 
 # pylint: disable=too-many-instance-attributes
 class DQNAgent(ABaseline):
@@ -76,8 +76,8 @@ class DQNAgent(ABaseline):
 	# ABaseline interface
 	# ------------------------------------------------------------------
 
-	def set_learning(self, mode):
-		"""Switch between train and eval mode."""
+	def set_learning(self, mode, output_dir=None):
+		"""Switches between training and evaluation modes."""
 		self.learn = mode
 
 	def act(self, env, state):
@@ -85,10 +85,7 @@ class DQNAgent(ABaseline):
 		if self.learn:
 			epsilon = max(
 				self.epsilon_end,
-				self.epsilon_start
-				- (self.epsilon_start - self.epsilon_end)
-				* self.current_step
-				/ self.epsilon_decay_steps,
+				self.epsilon_start - (self.epsilon_start - self.epsilon_end) * self.current_step / self.epsilon_decay_steps,
 			)
 			if random.random() < epsilon:
 				action = env.action_space.sample()
@@ -103,22 +100,11 @@ class DQNAgent(ABaseline):
 	def train(self, **kwargs):
 		"""Store transition and run a gradient step on schedule."""
 		step_data = kwargs["step_data"]
-		self.replay_buffer.append(
-			(
-				step_data["state"],
-				step_data["action"],
-				step_data["reward"],
-				step_data["next_state"],
-				float(step_data["done"]),
-			)
-		)
+		self.replay_buffer.append(transition(step_data))
 
 		self.current_step += 1
 
-		if (
-			self.current_step >= self.learning_starts
-			and self.current_step % self.train_freq == 0
-		):
+		if self.current_step >= self.learning_starts and self.current_step % self.train_freq == 0:
 			self._gradient_step()
 
 		if self.current_step % self.target_update_freq == 0:
@@ -131,8 +117,12 @@ class DQNAgent(ABaseline):
 	def _greedy_action(self, state):
 		"""Return the action with the highest Q-value."""
 		obs = tf.convert_to_tensor(state[np.newaxis], dtype=tf.float32)
-		q_values = self.q_net(obs, training=False)
-		return int(tf.argmax(q_values, axis=1).numpy()[0])
+		return int(np.argmax(self._q_values(obs).numpy()[0]))
+
+	@tf.function
+	def _q_values(self, obs):
+		"""Compiled Q-network forward pass (one call per env-step, so eager overhead dominates otherwise)."""
+		return self.q_net(obs, training=False)
 
 	def _sync_target(self):
 		"""Hard-copy Q-network weights into the target network."""

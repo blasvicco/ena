@@ -10,8 +10,8 @@ import tensorflow as tf
 from keras import optimizers
 
 # App imports
-from .baseline import ABaseline
-from .normalizers import _IdentityNormalizer, _RunningNormalizer
+from .tools.baseline import ABaseline
+from .tools.normalizers import _IdentityNormalizer, _RunningNormalizer
 
 # pylint: disable=too-many-instance-attributes
 class PPOAgent(ABaseline):
@@ -20,7 +20,7 @@ class PPOAgent(ABaseline):
 	# Implements the actor-critic variant with Generalized Advantage Estimation (GAE)
 	# as described in Schulman et al. (2017).
 
-	# pylint: disable=too-many-arguments,too-many-positional-arguments
+	# pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
 	def __init__(
 		self,
 		brain,
@@ -35,8 +35,21 @@ class PPOAgent(ABaseline):
 		n_epochs=10,
 		n_steps=2048,
 		value_coef=0.5,
+		anneal_lr=True,
+		max_grad_norm=0.5,
+		log_std_init=-2.0,
+		reward_scaling="reward",
 	):
-		"""Initialize PPOAgent."""
+		"""Initialize PPOAgent.
+
+		anneal_lr: linear learning-rate decay to zero over the training budget, as in the paper.
+		max_grad_norm: global-norm gradient clip, applied to the actor's and the critic's gradients separately.
+		log_std_init: initial state-independent log std of the Gaussian policy (continuous only).
+		reward_scaling (continuous only): "reward" divides each reward by the running std of rewards;
+		"return" by the running std of the discounted return, reset at episode ends (SB3's VecNormalize).
+		"""
+		if reward_scaling not in ("reward", "return"):
+			raise ValueError(f"Unknown reward_scaling {reward_scaling!r}; expected 'reward' or 'return'")
 		super().__init__(brain, make_env)
 		self.learn = True
 		self.best_individual_idx = "PPO"
@@ -51,6 +64,10 @@ class PPOAgent(ABaseline):
 		self.entropy_coef = entropy_coef
 		self.value_coef = value_coef
 		self.initial_lr = learning_rate
+		self.anneal_lr = anneal_lr
+		self.max_grad_norm = max_grad_norm
+		self.reward_scaling = reward_scaling
+		self._discounted_return = 0.0
 
 		# Annealing state
 		self._total_updates = 0
@@ -61,11 +78,7 @@ class PPOAgent(ABaseline):
 		self.is_continuous = hasattr(tmp_env.action_space, "low")
 		self._mode = "continuous" if self.is_continuous else "discrete"
 		state_dim = int(tmp_env.observation_space.shape[0])
-		self.action_dim = (
-			int(tmp_env.action_space.shape[0])
-			if self.is_continuous
-			else int(tmp_env.action_space.n)
-		)
+		self.action_dim = int(tmp_env.action_space.shape[0]) if self.is_continuous else int(tmp_env.action_space.n)
 		actor_output_dim = self.action_dim
 		tmp_env.close()
 
@@ -75,9 +88,9 @@ class PPOAgent(ABaseline):
 
 		# State-independent log_std for Gaussian policy (continuous only)
 		if self.is_continuous:
-			# Initializing log_std to -2.0 (std ~ 0.14) is standard for MuJoCo
+			# log_std_init -2.0 (std ~ 0.14) by default, as in RL Baselines3 Zoo's tuned HalfCheetah PPO
 			self.log_std = tf.Variable(
-				tf.fill([self.action_dim], -2.0),
+				tf.fill([self.action_dim], float(log_std_init)),
 				trainable=True,
 			)
 
@@ -118,44 +131,78 @@ class PPOAgent(ABaseline):
 		total_steps = sum(episodes) * 1000
 		self._max_updates = max(1, total_steps // self.n_steps)
 
-	def set_learning(self, mode):
+	def set_total_steps(self, total_steps):
+		"""Size the learning-rate annealing horizon from an env-step budget instead of episodes."""
+		# Rounded up: a budget ends at an episode boundary, so a few steps past it can still complete a rollout.
+		self._max_updates = max(1, -(-int(total_steps) // self.n_steps))
+
+	def _scheduled_learning_rate(self):
+		"""The learning rate for the next update: constant, or annealed — never silently zero."""
+		if not self.anneal_lr:
+			return self.initial_lr
+		# An exhausted schedule used to clamp the rate to 0.0 and keep "training" a frozen policy (it
+		# happened under an env-step budget no one had told PPO about: 1.5M-step default vs. 7.5M).
+		if self._total_updates >= self._max_updates:
+			raise RuntimeError(
+				f"PPO learning-rate schedule exhausted after {self._max_updates} updates while still training; "
+				"size it with set_total_steps()/set_episodes() to the real budget, or use anneal_lr=False"
+			)
+		return self.initial_lr * (1.0 - self._total_updates / self._max_updates)
+
+	def set_learning(self, mode, output_dir=None):
 		"""Switch between train and eval mode."""
 		self.learn = mode
 
 	def act(self, env, state):
-		"""Sample action from the current policy."""
+		"""Sample an action from the current policy while learning; take the most likely one otherwise."""
 		state = self._obs_normalizer.normalize(state)
 		obs = tf.convert_to_tensor(state[np.newaxis], dtype=tf.float32)
-		logits = self.actor(obs, training=False)
-		value = self.critic(obs, training=False)
+		logits = self._actor_logits(obs)
 
-		action, log_prob = getattr(self, f"_sample_{self._mode}")(logits)
-
-		# Cache for train()
-		self._last_log_prob = float(tf.squeeze(log_prob).numpy())
-		self._last_value = float(value.numpy()[0, 0])
+		if self.learn:
+			action, log_prob = getattr(self, f"_sample_{self._mode}")(logits)
+			# Cache for train()
+			self._last_log_prob = float(np.squeeze(log_prob))
+			self._last_value = float(self._critic_value(obs).numpy()[0, 0])
+		else:
+			# Frozen evaluation: the policy's mode (Gaussian mean / most probable action).
+			action = np.clip(logits.numpy()[0], -1.0, 1.0) if self.is_continuous else int(np.argmax(logits.numpy()[0]))
 
 		next_obs, reward, terminated, truncated, _ = env.step(action)
 		return next_obs, reward, terminated, truncated, action
 
+	# Both samplers draw with NumPy: under tf.random.set_seed (seeded experiments), every eager
+	# tf.random call allocates per-call state that is never released (~36 KB/call measured), which
+	# grew a seeded PPO run to the container's memory limit within ~400k env-steps.
+
+	@tf.function
+	def _actor_logits(self, obs):
+		"""Compiled actor forward pass (one call per env-step, so eager overhead dominates otherwise)."""
+		return self.actor(obs, training=False)
+
+	@tf.function
+	def _critic_value(self, obs):
+		"""Compiled critic forward pass."""
+		return self.critic(obs, training=False)
+
 	def _sample_continuous(self, logits):
 		"""Sample action from Gaussian policy."""
-		mean = logits
-		log_std = tf.clip_by_value(self.log_std, -20.0, 2.0)
-		std = tf.exp(log_std)
-		noise = std * tf.random.normal(tf.shape(mean))
-		action_tensor = mean + noise
-		self._last_unclipped_action = action_tensor.numpy()[0]
-		log_prob = self._log_prob(logits, action_tensor)
+		mean = logits.numpy()[0]
+		std = np.exp(np.clip(self.log_std.numpy(), -20.0, 2.0))
+		self._last_unclipped_action = (mean + std * np.random.normal(size=mean.shape)).astype(np.float32)
+		log_prob = self._log_prob(logits, tf.convert_to_tensor(self._last_unclipped_action[np.newaxis]))
 		action = np.clip(self._last_unclipped_action, -1.0, 1.0)
 		return action, log_prob
 
 	def _sample_discrete(self, logits):
 		"""Sample action from categorical policy."""
-		dist = tf.random.categorical(logits, 1)
-		action = int(dist.numpy()[0, 0])
-		log_prob = self._log_prob(logits, action)
-		return action, log_prob
+		# Softmax and log-probability in NumPy: per-step eager TF ops on a tiny vector cost more than the math.
+		shifted = logits.numpy()[0].astype(np.float64)
+		shifted -= shifted.max()
+		log_probabilities = shifted - np.log(np.sum(np.exp(shifted)))
+		probabilities = np.exp(log_probabilities)
+		action = int(np.random.choice(len(probabilities), p=probabilities / probabilities.sum()))
+		return action, log_probabilities[action]
 
 	def train(self, **kwargs):
 		"""Buffer the transition; run PPO update when buffer is full."""
@@ -171,7 +218,7 @@ class PPOAgent(ABaseline):
 		if is_boundary and not terminated:
 			next_state = self._obs_normalizer.normalize(step_data["next_state"])
 			next_obs = tf.convert_to_tensor(next_state[np.newaxis], dtype=tf.float32)
-			trunc_value = float(self.critic(next_obs, training=False).numpy()[0, 0])
+			trunc_value = float(self._critic_value(next_obs).numpy()[0, 0])
 		else:
 			trunc_value = 0.0
 
@@ -187,10 +234,8 @@ class PPOAgent(ABaseline):
 				last_value = trunc_value
 			else:
 				next_state = self._obs_normalizer.normalize(step_data["next_state"])
-				last_obs = tf.convert_to_tensor(
-					next_state[np.newaxis], dtype=tf.float32
-				)
-				last_value = float(self.critic(last_obs, training=False).numpy()[0, 0])
+				last_obs = tf.convert_to_tensor(next_state[np.newaxis], dtype=tf.float32)
+				last_value = float(self._critic_value(last_obs).numpy()[0, 0])
 			self._update(last_value)
 			self._flush_buffer()
 
@@ -202,9 +247,15 @@ class PPOAgent(ABaseline):
 		self._buf_states.append(self._obs_normalizer.normalize(raw_state))
 		self._buf_actions.append(self._last_unclipped_action)
 
-		# Reward scaling: divide by running std (no mean subtraction)
+		# Reward scaling: divide by a running std (no mean subtraction), of the rewards or of the discounted return.
 		reward = step_data["reward"]
-		self._reward_normalizer.update(np.array([[reward]]))
+		if self.reward_scaling == "return":
+			self._discounted_return = self.gamma * self._discounted_return + reward
+			self._reward_normalizer.update(np.array([[self._discounted_return]]))
+			if step_data.get("done", False):
+				self._discounted_return = 0.0
+		else:
+			self._reward_normalizer.update(np.array([[reward]]))
 		scaled_reward = float(reward / np.sqrt(self._reward_normalizer.var[0] + 1e-8))
 		self._buf_rewards.append(scaled_reward)
 
@@ -228,11 +279,7 @@ class PPOAgent(ABaseline):
 		log_std = tf.clip_by_value(self.log_std, -20.0, 2.0)
 		std = tf.exp(log_std)
 		variance = tf.square(std)
-		log_prob_density = -0.5 * (
-			tf.square(action - mean) / (variance + 1e-8)
-			+ 2 * log_std
-			+ tf.math.log(2 * np.pi)
-		)
+		log_prob_density = -0.5 * (tf.square(action - mean) / (variance + 1e-8) + 2 * log_std + tf.math.log(2 * np.pi))
 		return tf.reduce_sum(log_prob_density, axis=-1)
 
 	def _log_prob_discrete(self, logits, action):
@@ -264,9 +311,8 @@ class PPOAgent(ABaseline):
 
 	def _update(self, last_value):
 		"""Run PPO gradient updates over the collected rollout."""
-		# 1. Linear LR Annealing
-		frac = 1.0 - (self._total_updates / self._max_updates)
-		self.optimizer.learning_rate.assign(self.initial_lr * max(frac, 0.0))
+		# 1. Learning rate (constant, or linearly annealed over the budget)
+		self.optimizer.learning_rate.assign(self._scheduled_learning_rate())
 		self._total_updates += 1
 
 		# 2. Compute Advantages
@@ -292,9 +338,7 @@ class PPOAgent(ABaseline):
 
 				# Normalize advantages at the micro-batch level
 				mb_adv = tf.gather(advantages_tf, batch_idx)
-				mb_adv = (mb_adv - tf.reduce_mean(mb_adv)) / (
-					tf.math.reduce_std(mb_adv) + 1e-8
-				)
+				mb_adv = (mb_adv - tf.reduce_mean(mb_adv)) / (tf.math.reduce_std(mb_adv) + 1e-8)
 
 				self._gradient_step(
 					tf.gather(states, batch_idx),
@@ -313,22 +357,16 @@ class PPOAgent(ABaseline):
 			values = tf.squeeze(self.critic(states, training=True), axis=1)
 
 			# Policy loss (clipped surrogate objective) — dispatched by mode
-			log_probs, entropy = getattr(self, f"_compute_policy_{self._mode}")(
-				logits, actions
-			)
+			log_probs, entropy = getattr(self, f"_compute_policy_{self._mode}")(logits, actions)
 
 			ratio = tf.exp(log_probs - old_log_probs)
 			clipped = tf.clip_by_value(ratio, 1 - self.clip_ratio, 1 + self.clip_ratio)
-			policy_loss = -tf.reduce_mean(
-				tf.minimum(ratio * advantages, clipped * advantages)
-			)
+			policy_loss = -tf.reduce_mean(tf.minimum(ratio * advantages, clipped * advantages))
 
 			# Value loss
 			value_loss = tf.reduce_mean(tf.square(returns - values))
 
-			loss = (
-				policy_loss + self.value_coef * value_loss - self.entropy_coef * entropy
-			)
+			loss = policy_loss + self.value_coef * value_loss - self.entropy_coef * entropy
 
 		# Split params and clip gradients separately to avoid value loss dominating
 		actor_params = getattr(self, f"_get_actor_params_{self._mode}")()
@@ -340,8 +378,8 @@ class PPOAgent(ABaseline):
 		actor_grads = grads[: len(actor_params)]
 		critic_grads = grads[len(actor_params) :]
 
-		actor_grads, _ = tf.clip_by_global_norm(actor_grads, 0.5)
-		critic_grads, _ = tf.clip_by_global_norm(critic_grads, 0.5)
+		actor_grads, _ = tf.clip_by_global_norm(actor_grads, self.max_grad_norm)
+		critic_grads, _ = tf.clip_by_global_norm(critic_grads, self.max_grad_norm)
 
 		self.optimizer.apply_gradients(zip(actor_grads + critic_grads, all_params))
 
@@ -365,9 +403,7 @@ class PPOAgent(ABaseline):
 		)
 		# Entropy bonus (encourages exploration)
 		probs = tf.nn.softmax(logits)
-		entropy = -tf.reduce_mean(
-			tf.reduce_sum(probs * tf.math.log(probs + 1e-8), axis=1)
-		)
+		entropy = -tf.reduce_mean(tf.reduce_sum(probs * tf.math.log(probs + 1e-8), axis=1))
 		return log_probs, entropy
 
 	def _get_actor_params_continuous(self):

@@ -1,0 +1,32 @@
+{
+  "stack": {
+    "name": "ena-experiment"
+  },
+  "aws": {
+    "account": "",
+    "region": "eu-west-1",
+    "construct": {
+      "ec2": {
+        "imageTag": "latest",
+        "instanceType": "c8g.xlarge",
+        "maxHours": 40,
+        "replicates": 20,
+        "syncMinutes": 15,
+        "volumeGb": 30
+      },
+      "ecr": {
+        "expire": 7,
+        "max": 5,
+        "name": "ena-experiment"
+      },
+      "net": {
+        "azs": 3,
+        "cidr": "10.40.0.0/16",
+        "name": "ena-experiment"
+      },
+      "s3": {
+        "name": "ena-experiment-w1"
+      }
+    }
+  }
+}

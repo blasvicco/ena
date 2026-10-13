@@ -1,0 +1,10 @@
+# Source files the cloud image ships (paths under app/src, a directory means its whole tree): the HalfCheetah study's
+# import closure, including the skill drivers ENA loads by name. hub/cloud/Dockerfile copies exactly these, and
+# tests/test_cloud_image.py checks that the study builds and runs from them alone.
+half_cheetah.py
+cartpole_ena_ablation.py
+agents
+tools/__init__.py
+tools/agent_health.py
+tools/metrics.py
+tools/visualization.py
