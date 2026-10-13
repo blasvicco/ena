@@ -1,28 +1,55 @@
 # ENA — Evolutionary Neuroplastic Agent
 
-> A gradient-free agent for non-stationary reinforcement learning that detects changes in the environment's physics and reuses the specialists it has archived for them.
-
----
-
-## Abstract
-
-Traditional Reinforcement Learning (RL) agents often struggle to adapt rapidly in non-stationary environments, suffering catastrophic forgetting when facing sudden physical shifts. Drawing inspiration from biological meta-learning and evolutionary diversity, this preliminary study introduces the Evolutionary Neuroplastic Agent (ENA). The ENA dynamically maintains an active population of multiple lightweight neural network policies (a "pool of specialists") instead of a monolithic model. By continuously evaluating each specialist iteratively through defined *Trust* and *Plasticity* heuristics, the ENA autonomously triggers localized evolutionary search algorithms and substitutes specialists during environmental changes. We empirically evaluate two mechanisms for governing these shifts: a Quadratic Ratio formulation and a normalized Fuzzy-logic heuristic model. Evaluating this framework in a continuously shifting 1D CartPole domain transitioning across sequential gravities (Earth, Mars, Jupiter), we execute an online meta-learning testing protocol comparing frozen neural behaviors sequentially across those bodies tracking into a hidden fourth phase (Neptune). We demonstrate that the Fuzzy-logic framework manages inter-environment stability gaps smoothly. However, the study identifies critical limitations: the ENA exhibits massive standard-deviation dependencies on initial population states, confirming that robust adaptation within tightly constrained genetic boundaries remains highly vulnerable to initial parameter clustering. Our findings position the ENA as a promising proof-of-concept for dynamic Quality-Diversity adaptation, warranting further benchmarking against standard deep RL alternatives in complex domains.
+> A gradient-free continual reinforcement learning agent that detects changes in the environment's physics and reuses archived specialist policies.
 
 ---
 
 ## What This Project Is
 
-ENA evolves a population of small neural-network policies without gradients and keeps proven specialists in a Hall of Fame, organized by the physics it detects. It is evaluated on two non-stationary domains, training on three environments in sequence without being told when they change, then tested frozen on five, two of them never seen:
+Gradient-trained RL agents forget a previous environment the moment they adapt to a new one. ENA (Evolutionary Neuroplastic Agent) avoids this by never computing a gradient. It evolves a population of small neural-network specialists, scores each with a *Trust* value, and scales its search effort (*Plasticity*) to how badly the current specialist is failing. Proven specialists are archived in a *Hall of Fame*, organized by the physics in which they succeeded, identified by a sequential change detector (*environment detection*). When a known physics returns, *Bayesian policy reuse* selects which archived specialist to deploy.
 
-- **CartPole** — training on Mars, Jupiter, Earth (gravity, pole mass and length change); the test adds Neptune and Brown-dwarf.
-- **HalfCheetah** — training on Mars-Slippery, Jupiter-Rough, Earth (gravity and ground friction); the test adds Ice-Floor and High-Wind.
+ENA is evaluated on two non-stationary domains — training on three environments in sequence, without being told when they change, then tested frozen on five (two never seen in training):
 
-The studies:
-- **Skill ablation** (`cartpole_ena_ablation.py`): each skill (Plasticity, Hall of Fame, environment detection) switched on and off, 30 replicates.
-- **Compute cost of Plasticity** (`cartpole_ena_compute.py`), and the **Plasticity controller** study (`cartpole_ena_plasticity_controller.py`): the linear ramp against quadratic and Mamdani fuzzy controllers, 30 replicates.
-- **Comparison with gradient-based agents** at an equal budget of environment steps: DQN, PPO and SAC-Discrete on CartPole (`cartpole_challenge.py`), PPO and SAC on HalfCheetah (`half_cheetah.py`).
+| Domain | Training sequence | Unseen test |
+|---|---|---|
+| **CartPole-v1** (discrete) | Mars-Light → Jupiter-Heavy → Earth-Standard | Neptune, Brown-dwarf |
+| **HalfCheetah-v5** (continuous, MuJoCo) | Earth-Standard → Heavy-Rough → Mars-Slippery | Ice-Floor, High-Wind |
 
-Metrics: test **reliability** (% of episodes at the success threshold), mean return per environment, **stability gap** at an environment switch, **steps to first solve** per environment, and **compute** (environment steps, wall-clock time).
+Physics that change: CartPole — gravity, pole mass, pole length; HalfCheetah — gravity, ground friction, wind.
+
+---
+
+## Studies
+
+| Study | Script | Replicates | What it measures |
+|---|---|---|---|
+| **Skill ablation** | `cartpole_ena_ablation.py` | 30 | Each skill (Plasticity, HoF, detection) switched on/off — 6 ENA variants + Random floor |
+| **Compute cost of Plasticity** | `cartpole_ena_compute.py` | 1 | Full-search vs. linear-ramp vs. zero controller — candidate steps and reliability |
+| **Plasticity controller** | `cartpole_ena_plasticity_controller.py` | 30 | Linear ramp vs. quadratic vs. Mamdani fuzzy controller |
+| **CartPole challenge** | `cartpole_challenge.py` | 50 | ENA vs. DQN, PPO, SAC-Discrete at equal environment-step budget |
+| **Chirp detector ablation** | `src/tools/detection_ablation.py` | 30 | Grid search over excitation signals × wavelet response features on scripted benchmark |
+| **Detection confirmation** | `src/tools/detection_benchmark.py` | 30 | Mexican-hat wavelet chirp confirmation on HalfCheetah & CartPole vs. transition models |
+| **HalfCheetah challenge** | `half_cheetah.py` | 20 | ENA vs. PPO, SAC at equal step budget (AWS cloud run, `c8g.xlarge`) |
+
+---
+
+## Key Results (CartPole)
+
+All numbers are test-phase means over independent replicates; exact values are generated by `src/tools/paper_results.py`.
+
+- **Skill ablation (30 replicates):** ENA-Combined reaches **~83% test reliability**, against ~39% for ENA-NoSkill. Skills are complementary: Plasticity is the largest single contributor; environment detection turns the archive into a usable memory.
+- **CartPole challenge (50 replicates):** ENA-Combined (**~84% test reliability**) vs. SAC-Discrete (~75%), PPO (~74%), DQN (~51%). The difference comes from forgetting: gradient-based agents' return on Jupiter (the environment trained before Earth) collapses at test (~52 for SAC-Discrete, ~22 for PPO); ENA's archived specialists retain ~461/500.
+- **Plasticity controller (30 replicates):** Quadratic controller reaches ~89%, fuzzy ~84% — no significant difference from the linear ramp at this sample size. The linear ramp is retained.
+- **Compute:** Full search uses ~57.9M candidate steps vs. ~4.2M for the linear ramp (~14×), with no meaningful gain in reliability.
+
+---
+
+## Key Results (HalfCheetah)
+
+- **Left-behind retention (20 replicates):** ENA-Combined retains **115.6%** (±16.6%) of its left-behind training return at test, against **39.2%** (±7.1%) for PPO and **34.4%** (±3.6%) for SAC ($p < 0.001$, Holm-corrected). Retention exceeds 100% because training averages exploratory search, whereas test deploys frozen elite specialists recalled from the Hall of Fame.
+- **Immunity to Catastrophic Forgetting:** On *Heavy-Rough* (trained second), SAC ends training with returns of ~7,557 but collapses to 1,301.1 at test; PPO ends at ~4,706 and collapses to 1,301.8. ENA-Combined sustains 2,417.1 by recalling its archived specialist.
+- **Wavelet Chirp Detection (30 confirmation seeds):** The Mexican-hat wavelet train with Haar wavelet packets catches 100% of switches with 0-episode delay, 0 false alarms, and meets benchmark targets on 29 of 30 seeds (96.7%), whereas transition-model detectors fail on 30 of 30 seeds (0%) due to policy-induced contact dynamics.
+- **Compute:** ENA trained in **~32.0 min** per replicate on AWS Graviton4 (`c8g.xlarge`), compared to **~115.3 min** for PPO and **~281.1 min** for SAC on identical hardware.
 
 ---
 
@@ -49,149 +76,363 @@ app/
 │   │   ├── sac.py                       # SAC baseline (continuous)
 │   │   ├── sac_discrete.py              # SAC-Discrete baseline
 │   │   └── random.py                    # Random-action floor
-│   ├── cartpole_ena_ablation.py      # CartPole skill ablation (shared study runner)
+│   ├── cartpole_ena_ablation.py         # CartPole skill ablation (shared study runner)
 │   ├── cartpole_ena_compute.py          # CartPole compute cost of Plasticity
-│   ├── cartpole_ena_plasticity_controller.py # CartPole Plasticity controller: linear vs. quadratic vs. fuzzy
+│   ├── cartpole_ena_plasticity_controller.py  # CartPole Plasticity controller comparison
 │   ├── cartpole_challenge.py            # CartPole: ENA vs. DQN / PPO / SAC-Discrete
-│   ├── half_cheetah.py                  # HalfCheetah: ENA vs. PPO / SAC
+│   ├── half_cheetah.py                  # HalfCheetah: ENA vs. PPO / SAC (run on AWS)
 │   └── tools/
-│       ├── metrics.py                   # Per-replicate metrics (reliability, stability gap, compute, adaptation) + plots
+│       ├── metrics.py                   # Per-replicate metrics (reliability, stability gap, compute, adaptation)
 │       ├── early_stopping.py            # Evaluation / stopping rule shared by the challenge protocols
 │       ├── aggregate_metrics.py         # Aggregates metrics across a study's replicates
-│       ├── detection_stats.py           # Environment-recognition numbers per phase (part of aggregation)
+│       ├── detection_benchmark.py       # Scripted environment-detection benchmark (HalfCheetah & CartPole)
+│       ├── detection_ablation.py        # HalfCheetah chirp detector ablation (grid search)
+│       ├── detection_replay.py          # Replays saved transitions to diagnose false alarms / dynamics models
+│       ├── detection_stats.py           # Environment-recognition numbers per phase
+│       ├── cheetah_results.py           # HalfCheetah-specific metrics (retention, end-of-phase)
+│       ├── half_cheetah_probe.py        # AWS timing and throughput probe runner
+│       ├── paper_results.py             # Generates every number, table and figure the paper quotes
+│       ├── paper_config.py              # Configuration numbers read from the code that ran
+│       ├── paper_stats.py               # Statistical helpers (Welch, Holm, Clopper-Pearson, Cohen's d)
+│       ├── paper_figures.py             # Generates publication-ready boxplots and test curves
+│       ├── sac_discrete_entropy_check.py  # SAC-Discrete temperature vs. target-entropy ratio
+│       ├── plot_study_curves.py         # Per-episode return curves across replicates
 │       ├── replot_replicate.py          # Redraws a replicate's training/test charts from its logs
-│       ├── paper_results.py             # Generates the paper's numbers, tables and figures
-│       ├── paper_config.py              # The paper's configuration numbers, read from the code that ran
-│       ├── sac_discrete_entropy_check.py # Measures SAC-Discrete's temperature per target-entropy ratio
-│       ├── plot_study_curves.py         # Per-episode curves across replicates
-│       ├── live_data.py                 # Reads the live_*.csv logs
+│       ├── live_data.py                 # Reads live_*.csv training logs
 │       ├── live_dashboard.py            # Streamlit live convergence dashboard
-│       ├── live_monitor.py              # Matplotlib live convergence chart
-│       ├── visualization.py             # Multi-experiment progress reporting (terminal bar + ETA)
-│       └── benchmark_half_cheetah.py    # HalfCheetah throughput and study cost estimate
+│       ├── live_monitor.py              # Matplotlib live convergence chart (host only)
+│       ├── agent_health.py              # Periodic health monitor for RL baselines (entropy, Q-values)
+│       ├── visualization.py             # Terminal progress bar with ETA
+│       └── benchmark_half_cheetah.py    # Throughput and study cost estimates
 ├── tests/                               # pytest suite (mirrors src/)
-├── latex/                               # Paper source (build.sh, package_arxiv.sh, generated/)
-├── shell/                               # Format + lint and test helper scripts
+├── latex/                               # Paper source (IEEEtran two-column, 17 pages)
+│   ├── sections/                        # 01_introduction … 08_appendix
+│   ├── generated/                       # Auto-generated by paper_results.py — never edit by hand
+│   └── images/                          # Figures generated by paper_results.py
+├── shell/                               # Format, lint and test helper scripts
 ├── requirements.txt                     # Pinned Python dependencies
-└── .pylintrc                            # Lint configuration (see STANDARDS.md)
-docs/                                    # Plans, and the cloud runbook (CLOUD_RUN.md)
+└── .pylintrc                            # Lint configuration
+infra/                                   # AWS CDK project for the HalfCheetah cloud run
+├── src/                                 # CDK stacks (TypeScript, ts-node, Zod-validated QoS)
+└── scripts/                             # push-image.sh (host); launch/status/download/probe/terminate (toolbox)
 hub/
-├── python/Dockerfile                    # Experiment environment
-└── cloud/sync_results.sh                # Mirrors a study's outputs to object storage
-docker-compose.yml                       # ena_experiment and paper (TeX Live) services
+├── python/Dockerfile                    # Experiment container (ena_experiment service)
+├── node/Dockerfile                      # Infra toolbox container (ena_infra service)
+└── cloud/Dockerfile                     # ARM64 image pushed to ECR for the AWS machines
+docker-compose.yml                       # ena_experiment, paper (TeX Live), ena_infra services
+docs/                                    # Plans and runbooks (CLOUD_RUN.md, PLAN_*.md)
 ```
 
-See [STANDARDS.md](STANDARDS.md) for coding conventions and a closer look at how these pieces fit together.
+See [STANDARDS.md](STANDARDS.md) for coding conventions and how these pieces fit together.
 
 ---
 
-## How to Run
+## How to Run the Experiments
 
-### Option A — Docker (recommended)
+### 1. Environment Setup
 
-**1. Build and start the container**
+#### Option A — Docker (Recommended)
+The repository includes a multi-service `docker-compose.yml` providing pinned Linux environments for running experiments, compiling the LaTeX paper, and managing cloud infrastructure.
+
 ```bash
-docker compose up -d
-```
+# 1. Start the experiment container
+docker compose up -d ena_experiment
 
-**2. Open a shell inside it**
-```bash
+# 2. Enter the container shell
 docker compose exec ena_experiment bash
 ```
+* The local `app/` directory is bind-mounted directly to `/home/app` inside the container.
+* Port `8501` is exposed for live Streamlit convergence dashboards.
 
-The `app/` directory is bind-mounted to `/home/app` inside the container, so edits on the host are immediately reflected. Port `8501` (Streamlit's default) is mapped to the host, for the live dashboard described below.
-
-**3. Run a study** (each takes `--help`; `--workers` sets parallel replicates)
-```bash
-python src/cartpole_ena_ablation.py      # skill ablation
-python src/cartpole_challenge.py            # ENA vs. DQN / PPO / SAC-Discrete
-python src/half_cheetah.py                  # ENA vs. PPO / SAC
-```
-Studies run in batches: re-running with a larger `--num-experiments` skips replicates that are already complete. For cloud runs see `docs/CLOUD_RUN.md`.
-
-### Option B — Local Python
-
-**1. Install dependencies**
+#### Option B — Local Python (Host)
+Ensure Python 3.11+ is installed, then install pinned dependencies:
 ```bash
 pip install -r app/requirements.txt
 ```
+When running commands locally from the repository root, invoke scripts via `python app/src/<script>.py`.
 
-**2. Run an experiment**
+---
+
+### 2. Common CLI Flags & Batch Execution
+
+All study runners reuse a common CLI interface built on `argparse`:
+
+| Flag | Default | Description |
+|---|---|---|
+| `--num-experiments <N>` | Script default | Number of independent experimental replicates (seed-controlled). |
+| `--workers <N>` | CPU count - 2 | Number of parallel worker processes to dispatch across available CPU cores. |
+| `--variants <v1,v2>` | All | Filter execution to specific agent variants or ablation rows. |
+| `--protocol <name>` | `fixed-budget` | Challenge protocol selection (e.g., `fixed-budget`). |
+| `--help` | — | Display all available study arguments and tunable hyperparameters. |
+
+> **Incremental Resumption:** All study runners check their designated output directory before starting each replicate. Completed replicates are automatically skipped. You can safely interrupt an ongoing run, restart it, or increase `--num-experiments` to expand statistical sample size without re-running existing seeds.
+
+---
+
+### 3. Step-by-Step Study Execution
+
+Run these commands inside the `ena_experiment` container (or prefix with `python app/src/` locally):
+
+#### Study 1: CartPole Skill Ablation (30 Replicates)
+Evaluates 6 ENA variants (Plasticity, Hall of Fame, Environment Detection on/off) plus the Random floor across 3 sequential training environments and 5 test environments.
 ```bash
-python app/src/cartpole_challenge.py
-# or
-python app/src/half_cheetah.py
+python src/cartpole_ena_ablation.py --num-experiments 30 --workers 6
+```
+*Outputs saved to:* `app/cartpole_ena_ablation_outputs/`
+
+#### Study 2: Compute Cost of Plasticity
+Compares full exploratory candidate evaluation vs. failure-scaled linear ramp vs. zero search effort.
+```bash
+python src/cartpole_ena_compute.py
+```
+*Outputs saved to:* `app/cartpole_ena_compute_outputs/`
+
+#### Study 3: Plasticity Controller Comparison (30 Replicates)
+Evaluates the linear ramp controller against quadratic and Mamdani fuzzy logic controllers.
+```bash
+python src/cartpole_ena_plasticity_controller.py --num-experiments 30 --workers 6
+```
+*Outputs saved to:* `app/cartpole_ena_plasticity_controller_outputs/`
+
+#### Study 4: CartPole Baseline Challenge (50 Replicates)
+Compares ENA-Combined against DQN, PPO, and SAC-Discrete under an equal environment-step interaction budget.
+```bash
+python src/cartpole_challenge.py --num-experiments 50 --workers 6
+```
+*Outputs saved to:* `app/cartpole_challenge_outputs/`
+
+#### Study 5: Wavelet Chirp Detection Benchmark & Ablation (30 Seeds)
+Evaluates change detection under non-stationary contact dynamics with scripted gaits:
+```bash
+# 1. Grid ablation (Wavelet excitation shapes × DWT/SWT/packet response features):
+python src/tools/detection_ablation.py
+
+# 2. Benchmark confirmation on HalfCheetah and CartPole (McNemar paired tests):
+python src/tools/detection_benchmark.py
+```
+*Outputs saved to:* `app/detection_ablation_outputs/` and `app/detection_ablation_selection_outputs/`
+
+#### Study 6: HalfCheetah Continuous Control Challenge (20 Replicates)
+* **Local Test (Single Replicate / Smoke Test):**
+  ```bash
+  python src/half_cheetah.py --num-experiments 1
+  ```
+* **Distributed Cloud Run (AWS Graviton4 `c8g.xlarge`):**  
+  To execute all 20 replicates in parallel using AWS CDK, see [HalfCheetah — Cloud Run (AWS)](#halfcheetah--cloud-run-aws) below and [infra/README.md](infra/README.md).
+
+---
+
+## Adding New Skills or Drivers (Extensibility Guide)
+
+ENA follows a strict **Facade + Pluggable Strategy** pattern for all cognitive mechanisms. `ena.py` acts solely as an orchestrator; it contains no hard-coded algorithm branches.
+
+### The Architectural Pattern
+
+Every skill resides in `app/src/agents/ena/skills/<skill_name>/` and follows an identical structure:
+
+```
+app/src/agents/ena/skills/<skill_name>/
+├── __init__.py
+├── main.py              # Skill Facade: resolves driver by name, holds cross-driver invariants
+└── driver/
+    ├── __init__.py
+    ├── abstract.py      # ADriver(ABC): defines the required @abstractmethod interface
+    ├── <driver_a>.py    # class Instance(ADriver): concrete strategy A
+    ├── <driver_b>.py    # class Instance(ADriver): concrete strategy B
+    └── none.py          # Inert / disabled implementation for clean ablation
 ```
 
-**3. Aggregate results across repeated runs**
-```bash
-python app/src/tools/aggregate_metrics.py
-```
-Reads per-experiment output folders and computes mean, standard deviation, min, and max for every reported metric.
+1. **Facade (`main.py`):** Accepts `driver: str` and keyword arguments. Dynamically imports `agents.ena.skills.<skill_name>.driver.<driver>` via `importlib` and instantiates `self._instance = module.Instance(**kwargs)`.
+2. **Abstract Contract (`driver/abstract.py`):** Defines `class ADriver(ABC)` specifying public method signatures with type hints.
+3. **Concrete Driver (`driver/<driver_name>.py`):** Inherits from `ADriver` and defines `class Instance(ADriver)`. The file name is the driver's unique identifier.
 
-**4. Generate the paper's numbers, tables and figures**
+---
+
+### How to Add a New Driver to an Existing Skill
+
+To add a new algorithm or heuristic to an existing skill (e.g., adding an `exponential` controller to `plasticity`):
+
+1. **Create the driver file:**  
+   Create `app/src/agents/ena/skills/plasticity/driver/exponential.py`.
+2. **Implement `class Instance` inheriting from `ADriver`:**
+   ```python
+   # app/src/agents/ena/skills/plasticity/driver/exponential.py
+   from agents.ena.skills.plasticity.driver.abstract import ADriver
+
+   class Instance(ADriver):
+       """Exponential plasticity controller: scales search effort exponentially with error."""
+
+       def __init__(self, beta: float = 2.0) -> None:
+           self.beta = beta
+
+       def compute(self, reward: float, memory) -> float:
+           normalized_error = 1.0 - memory.normalize_reward(reward)
+           return float(normalized_error ** self.beta)
+   ```
+3. **Use the new driver immediately:**  
+   Pass `plasticity_algorithm="exponential"` when initializing `ENAgent`. The facade automatically resolves and loads your driver without modifying `main.py` or `ena.py`.
+
+---
+
+### How to Add a Completely New Skill to ENA
+
+To introduce a new cognitive mechanism to the agent (e.g., `curiosity` or `communication`):
+
+1. **Create the skill directory structure:**
+   ```bash
+   mkdir -p app/src/agents/ena/skills/curiosity/driver
+   touch app/src/agents/ena/skills/curiosity/__init__.py
+   touch app/src/agents/ena/skills/curiosity/driver/__init__.py
+   ```
+2. **Define the interface in `driver/abstract.py`:**
+   ```python
+   # app/src/agents/ena/skills/curiosity/driver/abstract.py
+   from abc import ABC, abstractmethod
+
+   class ADriver(ABC):
+       @abstractmethod
+       def calculate_bonus(self, state, next_state) -> float:
+           """Return an exploration bonus based on state novelty."""
+   ```
+3. **Implement concrete drivers:**
+   * Create `driver/none.py` with `class Instance(ADriver)` returning `0.0` (for ablation).
+   * Create `driver/rnd.py` with `class Instance(ADriver)` implementing the active algorithm.
+4. **Implement the Facade in `main.py`:**
+   ```python
+   # app/src/agents/ena/skills/curiosity/main.py
+   import importlib
+
+   class Curiosity:
+       def __init__(self, driver: str, **kwargs) -> None:
+           try:
+               module = importlib.import_module(f"agents.ena.skills.curiosity.driver.{driver}")
+           except ModuleNotFoundError as error:
+               raise ValueError(f"Unknown curiosity driver: {driver!r}") from error
+           self._instance = module.Instance(**kwargs)
+
+       def calculate_bonus(self, state, next_state, learn: bool) -> float:
+           if not learn:
+               return 0.0  # Invariant: no intrinsic bonuses during evaluation
+           return self._instance.calculate_bonus(state, next_state)
+   ```
+5. **Register the skill in `ENAgent` (`app/src/agents/ena/ena.py`):**
+   * Add `curiosity_algorithm="none"` to `ENAgent.__init__`.
+   * Instantiate and store it in `self._skills`:
+     ```python
+     self._skills["curiosity"] = Curiosity(curiosity_algorithm, **curiosity_kwargs)
+     ```
+   * Invoke `self._skills["curiosity"].calculate_bonus(...)` at the appropriate lifecycle hook in `ena.py`.
+6. **Add Unit Tests:**  
+   Add test coverage in `app/tests/` verifying driver resolution, parameter passing, and `none` fallback.
+
+---
+
+## HalfCheetah — Cloud Run (AWS)
+
+The HalfCheetah study (`half_cheetah.py`) runs once in AWS: 20 replicates, one per `c8g.xlarge` (4 vCPU Graviton4 ARM, ~7.8 h each, ~$27 total). See `infra/README.md` and `docs/CLOUD_RUN.md` for the full procedure.
+
+**To download the results** (once the machines have finished):
 ```bash
-python app/src/tools/paper_results.py
+# 1. Start the infra toolbox container (mounts ~/.aws read-only and app/half_cheetah_outputs as /home/outputs)
+docker compose up -d ena_infra
+
+# 2. Sync s3://<bucket>/ → app/half_cheetah_outputs/
+docker compose exec ena_infra bash /home/scripts/download.sh
+
+# 3. Regenerate the paper's numbers, tables and figures
+docker compose exec ena_experiment python src/tools/paper_results.py
 ```
-Writes `app/latex/generated/` and the figures in `app/latex/images/` from every study's outputs.
+
+---
+
+## Generating the Paper's Numbers
+
+All numbers, tables and figures the paper quotes are generated from the study outputs:
+
+```bash
+docker compose exec ena_experiment python src/tools/paper_results.py
+```
+
+This writes `app/latex/generated/results.tex` (one `\resdef{key}{value}` per number) and all `table_*.tex` files, plus the figures in `app/latex/images/`. Never edit those files by hand; re-run the script whenever a study gains replicates.
+
+---
+
+## Building the Paper
+
+```bash
+docker compose up -d --no-deps paper
+docker compose exec paper ./build.sh             # → app/latex/build/main.pdf
+docker compose exec paper ./package_arxiv.sh     # → app/latex/build/arxiv.tar.gz (refuses while \todo{}s remain)
+```
 
 ---
 
 ## Live Convergence Monitoring
 
-Every training run writes `live_training_{agent_name}.csv` to the experiment's output directory incrementally, one row per episode (score, plasticity, detected niche, ...), flushed immediately — so you can watch convergence while a run is still in progress instead of waiting for it to finish. The terminal progress bar also shows a live ETA per phase, e.g. `Training ENA-Combined (ETA 6m 22s)`, estimated from the average time per episode elapsed so far.
+Every training run writes `live_training_{agent_name}.csv` incrementally (one row per episode, flushed immediately).
 
-Two ways to watch the CSV update live, run as a **separate process** from the training run (read-only, no risk to reproducibility):
-
-**Streamlit dashboard (recommended — auto-refreshing, in a browser):**
+**Streamlit dashboard (recommended):**
 ```bash
 streamlit run app/src/tools/live_dashboard.py
+# or inside the container:
+docker compose exec ena_experiment streamlit run src/tools/live_dashboard.py --server.headless true
+# then open http://localhost:8501
 ```
-Run this either directly on the host (simplest — `app/` is bind-mounted so the CSV paths are visible there too) or inside the container (`docker compose exec ena_experiment streamlit run src/tools/live_dashboard.py --server.headless true`, then open `http://localhost:8501` on the host — port `8501` is already mapped in `docker-compose.yml`). Pick a study, a replicate and an agent in the sidebar; the page refreshes every 5 seconds and downsamples long runs.
 
-**Matplotlib monitor (needs a real display — run on the host, not inside the container):**
+**Matplotlib monitor (host only — needs a display):**
 ```bash
 python app/src/tools/live_monitor.py app/cartpole_ena_ablation_outputs/exp_1/live_training_ENA-Combined.csv
 ```
-Polls the given CSV and keeps an updating chart on screen until interrupted (Ctrl+C). This will not work inside a headless docker container — matplotlib's interactive mode needs a display backend.
 
 ---
 
-## Scripts
+## Scripts Reference
 
 | Script | What it does |
 |---|---|
-| `src/cartpole_ena_ablation.py` | CartPole skill ablation; also the shared study runner the other studies reuse (training, frozen test, live logs, metrics) |
-| `src/cartpole_ena_compute.py` | Compute cost of Plasticity: one ENA-Combined run at full search effort, against the ablation's replicate 1 of the same configuration at zero effort (ENA-HoF+EnvDetection) and with the ramp (ENA-Combined) |
-| `src/cartpole_ena_plasticity_controller.py` | ENA-Combined with the quadratic and the Mamdani fuzzy Plasticity controllers; the linear-ramp reference is the ablation's ENA-Combined (same replicates, paired) |
-| `src/cartpole_challenge.py` | ENA vs. DQN, PPO, SAC-Discrete under `--protocol fixed-budget` (default) or `first-solve` |
-| `src/half_cheetah.py` | Same comparison on HalfCheetah vs. PPO and SAC (protocol parameters provisional, see `docs/PLAN_half_cheetah.md`) |
-| `src/tools/aggregate_metrics.py` | Mean / std / min / max of every metric over a study's replicates, plus pairwise comparisons; also writes `detection_summary.txt` |
-| `src/tools/paper_config.py` | Every setting the paper states (ENA, physics, protocols) read from the built agents, environments and study scripts; called by `paper_results.py` |
-| `src/tools/sac_discrete_entropy_check.py` | Trains the comparison's SAC-Discrete per target-entropy ratio and logs its temperature and critic values (the evidence for the 0.5 ratio) |
-| `src/tools/detection_stats.py` | Environment recognition per phase for agents with env detection: unrecognized episodes, confirmed changes, episodes to the first one, Hall of Fame niches per environment |
-| `src/tools/replot_replicate.py` | Redraws finished replicates' `training.png` / `test.png` from their live CSVs (after a chart change) |
-| `src/tools/paper_results.py` | Every number, table and figure the paper quotes |
+| `src/cartpole_ena_ablation.py` | CartPole skill ablation; also the shared study runner all other studies reuse |
+| `src/cartpole_ena_compute.py` | Compute cost of Plasticity: full-search vs. linear ramp vs. zero controller |
+| `src/cartpole_ena_plasticity_controller.py` | ENA-Combined with quadratic and Mamdani fuzzy controllers; linear-ramp reference is the ablation's ENA-Combined |
+| `src/cartpole_challenge.py` | ENA vs. DQN, PPO, SAC-Discrete under equal step budget |
+| `src/half_cheetah.py` | Same comparison on HalfCheetah vs. PPO and SAC (AWS cloud run) |
+| `src/tools/detection_ablation.py` | HalfCheetah chirp detector ablation (excitation × response feature grid search) |
+| `src/tools/detection_benchmark.py` | Standalone change-detection benchmark on HalfCheetah and CartPole across 30 confirmation seeds |
+| `src/tools/detection_replay.py` | Replays transitions through transition models and chirp detectors to diagnose errors |
+| `src/tools/half_cheetah_probe.py` | AWS Graviton instance timing probes measuring throughput (steps/s) and projected costs |
+| `src/tools/aggregate_metrics.py` | Mean / std / min / max of every metric over a study's replicates |
+| `src/tools/paper_results.py` | Every number, table and figure the paper quotes — re-run after any study gains replicates |
+| `src/tools/paper_config.py` | Every setting the paper states, read from the built agents and study scripts |
+| `src/tools/paper_stats.py` | Statistical helpers: Welch t-test, Holm correction, Clopper-Pearson CI, Cohen's d |
+| `src/tools/paper_figures.py` | Standalone publication figure generator (reliability boxplots, episode curves) |
+| `src/tools/cheetah_results.py` | HalfCheetah-specific metrics: end-of-phase training return, retention, forgetting table |
+| `src/tools/sac_discrete_entropy_check.py` | Trains SAC-Discrete per target-entropy ratio, logs temperature / critic values |
+| `src/tools/detection_stats.py` | Environment recognition per phase: unrecognized episodes, confirmed changes, HoF niches |
+| `src/tools/replot_replicate.py` | Redraws finished replicates' charts from their live CSVs after a chart change |
 | `src/tools/plot_study_curves.py` | Per-episode return across replicates, one panel per agent |
-| `src/tools/live_dashboard.py`, `live_monitor.py` | Live convergence views (see above) |
-| `src/tools/benchmark_half_cheetah.py` | Measures throughput on the current machine and estimates the HalfCheetah study's time and cost |
+| `src/tools/benchmark_half_cheetah.py` | Throughput measurement and HalfCheetah study cost estimate |
+| `src/tools/live_dashboard.py` | Streamlit live convergence dashboard |
+| `src/tools/live_monitor.py` | Matplotlib live convergence chart (host only) |
+| `src/tools/agent_health.py` | Periodic health monitor for RL baselines (entropy, Q-values) |
 
 ---
 
-## Paper
+## Metrics
 
-The paper's LaTeX source is in `app/latex/` (IEEE two-column). Build it in Docker:
-
-```bash
-docker compose up -d --no-deps paper
-docker compose exec paper ./build.sh           # -> app/latex/build/main.pdf
-docker compose exec paper ./package_arxiv.sh   # -> app/latex/build/arxiv.tar.gz (refuses while TODOs remain)
-```
-
-Numbers, tables and the results figures are generated by `src/tools/paper_results.py`; never edit `app/latex/generated/` by hand.
+| Metric | Definition |
+|---|---|
+| **Reliability** | % of test episodes whose return reaches the success threshold, over all 5 test environments |
+| **Mean return** | Per environment, over all its test episodes |
+| **Stability gap** | Mean return of the last N episodes before an environment switch minus the first N after it |
+| **Steps to first solve** | Training steps until the frozen evaluation mean first reaches the success threshold |
+| **Retention** | Test return as a percentage of the end-of-phase training return (HalfCheetah) |
+| **Compute** | Training environment steps, ENA's candidate-evaluation steps, wall-clock training time |
 
 ---
 
 ## Future Work
 
-HalfCheetah results (planned, `docs/PLAN_half_cheetah.md`); nonlinear, still gradient-free dynamics models for richer domains; evolution strategies as ENA's search operator; a learned specialist selector; and larger populations on accelerators.
+- **Hybrid gradient-free and gradient-based learners:** Combining fast, sample-efficient gradient updates within a stationary niche with ENA's gradient-free neuroplastic candidate search and Hall of Fame specialist archiving across environmental shifts to eliminate the sample-efficiency gap while maintaining complete immunity to catastrophic forgetting.
+- **Nonlinear dynamics models:** Replacing linear models with expressive, still gradient-free dynamics models for richer environments (linear models conflate Earth and Neptune in CartPole; they fail on HalfCheetah where the chirp is used instead).
+- **Evolution strategies:** Incorporating ES as ENA's search operator (Nisioti et al., 2026 demonstrated effective trade-offs between adaptation and forgetting).
+- **Learned specialist selection:** A contextual bandit mapping the detector's spectral/evidence features directly to the candidate gladiator to deploy.
+- **Accelerated parallel candidate evaluation:** Exploiting hardware accelerators to evaluate candidate populations concurrently.
