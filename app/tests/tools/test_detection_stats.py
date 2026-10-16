@@ -1,8 +1,9 @@
 """Tests for detection_stats.py — per-phase environment-recognition numbers from the live logs."""
 
-# Libs imports
+# General imports
 import math
 
+# Libs imports
 import pandas as pd
 import pytest
 
@@ -10,12 +11,16 @@ import pytest
 from helpers import step
 from tools.detection_stats import phase_detection, niches_per_env, replicate_detection, study_detection, summarize, write_detection_report
 
-NICHES_TXT = """Niche ID   | Env Name             | Total Gladiators
----------------------------------------------------
-0          | Mars-Light           | 5
-1          | Mars-Light           | 5
-2          | Earth-Standard       | 4
-"""
+NICHES_TXT = "\n".join(
+	[
+		"Niche ID   | Env Name             | Total Gladiators",
+		"---------------------------------------------------",
+		"0          | Mars-Light           | 5",
+		"1          | Mars-Light           | 5",
+		"2          | Earth-Standard       | 4",
+		"",
+	]
+)
 
 
 def _history(envs, niches, shifts):
@@ -31,15 +36,12 @@ def _history(envs, niches, shifts):
 	)
 
 
-def _write_replicate(
-	exp_dir, agent, training, testing, niches_txt=NICHES_TXT, complete=True
-):  # pylint: disable=too-many-arguments,too-many-positional-arguments
-	"""A replicate directory with the agent's logs, niche report and outputs.txt."""
+def _write_replicate(exp_dir, agent, training, testing, niches_txt=NICHES_TXT):
+	"""A replicate directory with the agent's logs and niche report."""
 	exp_dir.mkdir(parents=True, exist_ok=True)
 	training.to_csv(exp_dir / f"live_training_{agent}.csv", index=False)
 	testing.to_csv(exp_dir / f"live_testing_{agent}.csv", index=False)
 	(exp_dir / f"niches_{agent}.txt").write_text(niches_txt, encoding="utf-8")
-	(exp_dir / "outputs.txt").write_text("--- Experiment 1 Test Results ---" if complete else "header only", encoding="utf-8")
 
 
 TRAINING = _history(["Mars"] * 3 + ["Earth"] * 4, [-1, 0, 0, 0, -1, 2, 2], [False, False, False, False, True, False, False])
@@ -84,13 +86,13 @@ def test_replicate_detection_returns_one_row_per_phase_and_metric(tmp_path) -> N
 		assert ("test", "Brown", "niches") not in frame.index
 
 
-def test_study_detection_keeps_complete_replicates_of_agents_with_env_detection(tmp_path) -> None:
-	"""Incomplete replicates and agents without a recognizer (constant niche id, never fires) are left out."""
-	with step("Arrange: two complete replicates and an unfinished one; ENA-Combined detects, ENA-HoF doesn't."):
-		for name, complete in (("exp_1", True), ("exp_2", True), ("exp_3", False)):
-			_write_replicate(tmp_path / name, "ENA-Combined", TRAINING, TESTING, complete=complete)
+def test_study_detection_keeps_the_agents_with_env_detection(tmp_path) -> None:
+	"""Agents without a recognizer (constant niche id, never fires) are left out."""
+	with step("Arrange: two replicates; ENA-Combined detects, ENA-HoF doesn't."):
+		for name in ("exp_1", "exp_2"):
+			_write_replicate(tmp_path / name, "ENA-Combined", TRAINING, TESTING)
 			quiet = TESTING.assign(detected_env_id=0, env_shift_detected=False)
-			_write_replicate(tmp_path / name, "ENA-HoF", quiet, quiet, complete=complete)
+			_write_replicate(tmp_path / name, "ENA-HoF", quiet, quiet)
 
 	with step("Act: collect the study."):
 		frame = study_detection(str(tmp_path))
@@ -120,17 +122,15 @@ def test_summarize_gives_mean_std_and_replicate_count_per_agent_phase_env_metric
 
 
 def test_write_detection_report_lists_every_agent_phase_and_env(tmp_path) -> None:
-	"""The merging step's text report, next to aggregate_summary.txt; nothing is written without detection data."""
-	with step("Arrange: one replicate, and an empty study."):
+	"""The merging step's text report, next to aggregate_summary.txt."""
+	with step("Arrange: one replicate."):
 		_write_replicate(tmp_path / "study" / "exp_1", "ENA-Combined", TRAINING, TESTING)
-		(tmp_path / "empty").mkdir()
 
-	with step("Act: write both reports."):
+	with step("Act: write the report."):
 		written = write_detection_report(str(tmp_path / "study"))
-		nothing = write_detection_report(str(tmp_path / "empty"))
 
-	with step("Assert: the study's report names the agent, both phases and the Brown row; the empty study gets none."):
+	with step("Assert: the report names the agent, both phases and the Brown row."):
 		report = (tmp_path / "study" / "detection_summary.txt").read_text(encoding="utf-8")
-		assert written and nothing is None
+		assert written.endswith("detection_summary.txt")
 		assert "ENA-Combined" in report and "Training" in report and "Test" in report and "Brown" in report
 		assert not (tmp_path / "empty" / "detection_summary.txt").exists()

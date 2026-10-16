@@ -1,11 +1,13 @@
 """EN Agent"""
 # General imports
+from typing import Callable
 import random
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 # Libs imports
+import gymnasium as gym
 import numpy as np
 import tensorflow as tf
 
@@ -39,8 +41,8 @@ class ENAgent(AAgent):
 	# pylint: disable=too-many-arguments,too-many-locals,too-many-positional-arguments,dangerous-default-value
 	def __init__(
 		self,
-		brain,
-		make_env,
+		brain: Callable,
+		make_env: Callable[..., gym.Env],
 		selection_driver: str = "bpr",
 		max_episode_steps: int = None,
 		return_scale: float = None,
@@ -149,7 +151,7 @@ class ENAgent(AAgent):
 		self.candidate_env_steps = 0
 		self._env_steps_lock = threading.Lock()
 
-	def act(self, env, state: np.ndarray) -> tuple:
+	def act(self, env: gym.Env, state: np.ndarray) -> tuple:
 		"""Act as the ENAgent: select, execute, memorize, and monitor for an environment shift."""
 		if not self._episode_started:
 			self.__start_episode()
@@ -177,13 +179,11 @@ class ENAgent(AAgent):
 		"""Per-episode plasticity values recorded so far."""
 		return self.memory.plasticity_history
 
-	def evaluation_episode(self, env) -> tuple:
-		"""Play one full frozen episode with the highest-trust individual on env; return (score, steps).
-
-		Side-effect free for training: no trust, memory, selection or env-detection update, and the
-		steps are not added to played_env_steps/candidate_env_steps (callers report them separately).
-		The highest-trust individual is the one training-time selection exploits.
-		"""
+	def evaluation_episode(self, env: gym.Env) -> tuple:
+		"""Play one full frozen episode with the highest-trust individual on env; return (score, steps)."""
+		# Side-effect free for training: no trust, memory, selection or env-detection update, and the
+		# steps are not added to played_env_steps/candidate_env_steps (callers report them separately).
+		# The highest-trust individual is the one training-time selection exploits.
 		best = max(self.population, key=lambda individual: individual["trust"])
 		score, steps, _done = self.__run_individual(best, env, None, None)
 		return score, steps
@@ -200,8 +200,9 @@ class ENAgent(AAgent):
 
 	@property
 	def known_niche_ids(self) -> set:
-		"""Niche IDs already established, distinguishing a genuinely new niche from one merely
-		appearing for the first time in a slice of history (e.g. a test-phase chart)."""
+		"""Return the niche IDs already established (a niche new to a chart's slice may not be new to the agent)."""
+		# Niche IDs already established, distinguishing a genuinely new niche from one merely
+		# appearing for the first time in a slice of history (e.g. a test-phase chart).
 		return self._skills["env_detection"].known_niche_ids
 
 	@property
@@ -258,8 +259,8 @@ class ENAgent(AAgent):
 			self._skills["hall_of_fame"].save_niche_details(output_dir, self.get_name())
 
 	# pylint: disable=too-many-locals
-	def train(self, **kwargs) -> None:
-		"""Handles the evolutionary search."""
+	def train(self, **kwargs: object) -> None:
+		"""Run the evolutionary search after a training episode."""
 		env, step_data = kwargs["env"], kwargs["step_data"]
 		if not step_data["done"]:
 			return
@@ -385,9 +386,10 @@ class ENAgent(AAgent):
 		self._episode_started = False
 
 	def __run_chirp(self, env) -> np.ndarray:
-		"""Play the detector's fixed chirp in the real environment from a fresh reset; return its observations
-		(start observation first, padded with the last one if the chirp ends early). The environment's random
-		stream is restored afterwards, so the runner's next episode starts exactly as without the chirp."""
+		"""Play the detector's chirp in the real environment from a fresh reset and return its observations."""
+		# Play the detector's fixed chirp in the real environment from a fresh reset; return its observations
+		# (start observation first, padded with the last one if the chirp ends early). The environment's random
+		# stream is restored afterwards, so the runner's next episode starts exactly as without the chirp.
 		actions = self._skills["env_detection"].chirp_actions
 		random_state = env.unwrapped.np_random.bit_generator.state
 		observation, _ = env.reset()
@@ -404,8 +406,9 @@ class ENAgent(AAgent):
 		return np.asarray(observations)
 
 	def __hold_olympics(self, env) -> None:
-		"""An Olympiad of the current niche's gladiators (the olympic Hall of Fame driver decides and judges; the agent plays:
-		each competitor's full episodes in a clone of the current environment, counted as candidate steps)."""
+		"""Hold an Olympiad of the current niche's gladiators, each playing full episodes in a clone of the environment."""
+		# An Olympiad of the current niche's gladiators (the olympic Hall of Fame driver decides and judges; the agent plays:
+		# each competitor's full episodes in a clone of the current environment, counted as candidate steps).
 		env_params = {key: getattr(env.unwrapped, key) for key in self.physics if hasattr(env.unwrapped, key)}
 
 		def play(records: list, seeds: list) -> list:

@@ -1,6 +1,8 @@
 """Visualization module for ENA Experiments"""
 
 # General imports
+from typing import Callable, TextIO
+from queue import Empty, Queue
 import threading
 import time
 
@@ -24,10 +26,10 @@ console = Console()
 class ProgressReporter:
 	"""Centralized progress reporter for parallel experiments."""
 
-	def __init__(self, queue, total_experiments, min_interval: float = 60.0):
-		"""Initialize ProgressReporter. Off a terminal (a redirected log, a remote run) the live bar never reaches the
-		file, so each status change is also printed as a plain line, at most one per replicate per min_interval seconds
-		(a replicate's end always)."""
+	def __init__(self, queue: Queue | None, total_experiments: int, min_interval: float = 60.0) -> None:
+		"""Initialize ProgressReporter."""
+		# Off a terminal (a redirected log, a remote run) the live bar never reaches the file, so each status change is also printed as a plain line,
+		# at most one per replicate per min_interval seconds (a replicate's end always).
 		self.queue = queue
 		self.total_experiments = total_experiments
 		self.stop_event = threading.Event()
@@ -44,7 +46,7 @@ class ProgressReporter:
 		self._last_plain[experiment_id] = now
 		print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {Text.from_markup(description).plain}", flush=True)
 
-	def run(self):  # pylint: disable=too-many-locals
+	def run(self) -> None:  # pylint: disable=too-many-locals
 		"""Main loop for the reporter thread."""
 		with Progress(
 			SpinnerColumn(),
@@ -121,13 +123,55 @@ class ProgressReporter:
 
 							finished_ids.add(experiment_id)
 							completed_count += 1
-				except:  # pylint: disable=bare-except
-					continue
+				except Empty:
+					continue  # no update within the timeout: check stop_event again
+				except (EOFError, BrokenPipeError):
+					break  # the study's manager has shut its queue down
 
 
-def vprint(message, file=None):
+def vprint(message: str, file: TextIO | None = None) -> None:
 	"""Print to stdout if no file is provided, or only to the file if provided."""
 	if file is None:
 		console.print(message)
 	else:
 		print(message, file=file, flush=True)  # a run's outputs.txt is readable while it goes
+
+
+def post_update(experiment_id: int, queue: Queue | None, status: str = None, progress: int = 0, done: bool = False) -> None:
+	"""Post update to the reporting queue."""
+	if queue:
+		queue.put(
+			{
+				"done": done,
+				"exp_id": experiment_id,
+				"progress": progress,
+				"status": status,
+			}
+		)
+
+
+def format_duration(seconds: float) -> str:
+	"""Format a duration in seconds as e.g. '1h 55m 31s', '6m 22s', or '42s'."""
+	hours, remainder = divmod(int(seconds), 3600)
+	minutes, secs = divmod(remainder, 60)
+	if hours:
+		return f"{hours}h {minutes}m {secs}s"
+	if minutes:
+		return f"{minutes}m {secs}s"
+	return f"{secs}s"
+
+
+def make_eta_reporter(experiment_id: int, queue: Queue | None, label: str, agent_name: str, start_time: float) -> Callable[[int, int], None]:
+	"""Build a play() on_episode callback that reports a live ETA via the status queue."""
+	# Estimated from the average time per episode elapsed so far this phase.
+
+	def _report(episode_num: int, total_episodes: int) -> None:
+		"""Post the current ETA, skipping the first and last episode (no rate yet / done)."""
+		if episode_num <= 0 or episode_num >= total_episodes:
+			return
+		elapsed = time.time() - start_time
+		remaining = (elapsed / episode_num) * (total_episodes - episode_num)
+		eta_str = format_duration(remaining)
+		post_update(experiment_id, queue, status=f"{label} {agent_name} (ETA {eta_str})")
+
+	return _report

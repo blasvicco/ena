@@ -2,35 +2,29 @@
 
 # Libs imports
 import numpy as np
-import pandas as pd
 
 # App imports
 from helpers import step
 import half_cheetah
+from cartpole_ena_ablation import play, seed_experiment
 from tools import detection_replay
-from tools.detection_replay import EVALUATE, OBSERVE, START, check_replay, replay, summarize
-from tools.half_cheetah_probe import probe
+from tools.detection_replay import EVALUATE, OBSERVE, START, Recorder, check_replay, parse_overrides, replay, summarize
 
 
 def test_replay_with_the_recorded_settings_reproduces_a_real_chirp_run(tmp_path) -> None:
 	"""Record a short live ENA run, replay it with the same settings: the confirmed changes match episode by episode."""
 	with step("Arrange: a tiny ENA chirp (small population, short phases) that records its detector."):
-		probe(
-			"ENA-Combined",
-			["Earth-Standard", "Heavy-Rough"],
-			6_000,
-			1,
-			str(tmp_path),
-			ena_overrides={"pop_size": 4, "max_eval_steps": 20},
-			record_detection=True,
-		)
+		seed_experiment(0)
+		agent = half_cheetah.build_agent("ENA-Combined", max_agent_threads=1, pop_size=4, max_eval_steps=20)
+		recorder = Recorder(agent._skills["env_detection"])  # pylint: disable=protected-access
+		training = play(agent, half_cheetah.make_training_worlds()[:2], [None, None], steps_per_env=[6_000, 6_000], env_seed=0)
+		recorder.save(str(tmp_path / "detection.npz"))
 		recording = dict(np.load(tmp_path / "detection.npz"))
 
 	with step("Act: replay with the study's detection settings."):
 		replayed = replay(recording, recording["states"].shape[1], recording["actions"].shape[1], half_cheetah.ENA_DETECTION)
 
 	with step("Assert: one row per training episode, the recorded changes reproduced, a summary per environment."):
-		training = pd.read_csv(tmp_path / "live_training.csv")
 		assert len(replayed) == len(training)
 		assert check_replay(recording, replayed)
 		assert list(summarize(replayed, training["env_id"]).index) == ["Earth-Standard", "Heavy-Rough", "all"]
@@ -96,3 +90,28 @@ def _memory():
 	return type(
 		"Memory", (), {"obs_normalizer": type("Normalizer", (), {"reset": lambda self: None})(), "clear_training_history": lambda self: None}
 	)()
+
+
+def test_parse_overrides_casts_numbers_and_keeps_text() -> None:
+	"""Calibration overrides from the command line."""
+	with step("Act/Assert: int, float and text values."):
+		assert parse_overrides(["pop_size=50", "mutation_noise=0.2", "selection_driver=bpr"]) == {
+			"pop_size": 50,
+			"mutation_noise": 0.2,
+			"selection_driver": "bpr",
+		}
+
+
+def test_parse_overrides_nests_dotted_keys() -> None:
+	"""Dotted keys build the nested settings a driver takes (recognizer_probe.features.wavelet=db4)."""
+	with step("Act/Assert: two levels of nesting next to a flat key."):
+		assert parse_overrides(["recognizer_probe.excitation=impulse", "recognizer_probe.features.wavelet=db4", "pop_size=50"]) == {
+			"recognizer_probe": {"excitation": "impulse", "features": {"wavelet": "db4"}},
+			"pop_size": 50,
+		}
+
+
+def test_parse_overrides_reads_layer_sizes() -> None:
+	"""brain_hidden=32x16 on the command line: one size per hidden layer."""
+	with step("Act/Assert: a tapered brain next to a plain int."):
+		assert parse_overrides(["brain_hidden=32x16", "pop_size=50"]) == {"brain_hidden": (32, 16), "pop_size": 50}

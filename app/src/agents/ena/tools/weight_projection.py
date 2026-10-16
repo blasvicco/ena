@@ -3,8 +3,11 @@
 # Libs imports
 import numpy as np
 
+# App imports
+from agents.tools.normalizers import _RunningNormalizer
 
-def project_individual_weights(individual: dict, obs_normalizer, max_eval_steps: float) -> None:
+
+def project_individual_weights(individual: dict, obs_normalizer: _RunningNormalizer, max_eval_steps: float) -> None:
 	"""Analytically re-scale an individual's first Dense layer to match obs_normalizer's current mean/variance, without retraining."""
 	# Needed because an individual's weights are implicitly tuned to whatever normalization
 	# was in effect when they were last aligned, and the live normalizer keeps drifting as

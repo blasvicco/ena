@@ -1,10 +1,14 @@
 """No-op Hall of Fame driver — disables specialist archiving/recall entirely."""
 
 # General imports
+from typing import Callable
 import os
 
 # App imports
 from agents.ena.skills.hall_of_fame.driver.abstract import ADriver
+from agents.ena.memory import AgentMemory
+from agents.ena.skills.env_detection.main import EnvironmentRecognizer
+from agents.tools.normalizers import _RunningNormalizer
 
 
 class Instance(ADriver):
@@ -22,17 +26,33 @@ class Instance(ADriver):
 		return False
 
 	# pylint: disable=too-many-arguments,too-many-positional-arguments
-	def update(self, winner: dict, current_trust: float, population: list, memory, recognizer, obs_normalizer, env_name: str = "Unknown") -> None:
+	def update(
+		self,
+		winner: dict,
+		current_trust: float,
+		population: list,
+		memory: AgentMemory,
+		recognizer: EnvironmentRecognizer | None,
+		obs_normalizer: _RunningNormalizer,
+		env_name: str = "Unknown",
+	) -> None:
 		"""No-op: this driver never inducts a winner."""
 
-	def inject_gladiators(self, population: list, pop_size: int, obs_normalizer, restore_trust: bool = True, admit=None) -> None:
+	def inject_gladiators(
+		self,
+		population: list,
+		pop_size: int,
+		obs_normalizer: _RunningNormalizer,
+		restore_trust: bool = True,
+		admit: Callable[[dict], bool] | None = None,
+	) -> None:
 		"""No-op: there is nothing archived to re-introduce."""
 
 	def records_in_niche(self, niche_id: int) -> list:
 		"""Nothing is archived."""
 		return []
 
-	def record(self, individual_id: str):
+	def record(self, individual_id: str) -> dict | None:
 		"""Nothing is archived."""
 		return None
 

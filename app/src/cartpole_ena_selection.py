@@ -12,7 +12,7 @@ from cartpole_ena_ablation import NUM_EXPERIMENTS, ABLATION_VARIANTS, parse_args
 # selection driver swapped. Every driver selects identically during training (epsilon-greedy by
 # Trust), so each row trains exactly the ablation's ENA-Combined and differs only at test: the
 # BPR reference is cartpole_ena_ablation.py's own ENA-Combined, not repeated here (the comparison
-# is paired by replicate). Comparisons and reporting rule fixed in docs/PLAN_ena_selection.md before results exist.
+# is paired by replicate). Comparisons and reporting rule were fixed before the results existed.
 _COMBINED = next(row for row in ABLATION_VARIANTS if row["name"] == "ENA-Combined")
 
 SELECTION_VARIANTS = [

@@ -4,8 +4,10 @@
 import numpy as np
 
 # App imports
-from agents.ena.skills.plasticity.driver.abstract import ADriver
+from agents.ena.skills.failure_signal.driver.abstract import ADriver
 from agents.ena.tools.fuzzy_inference import FuzzyVariable, LeftShoulder, MamdaniController, RightShoulder, Triangle
+from agents.ena.memory import AgentMemory
+
 
 # Inputs:
 #   performance p in [0, 1] — the episode score relative to the recent range, normalized exactly as
@@ -39,7 +41,7 @@ class Instance(ADriver):  # pylint: disable=too-few-public-methods
 	def __init__(self) -> None:
 		self._controller = MamdaniController({"performance": PERFORMANCE, "trend": TREND}, PLASTICITY, RULES)
 
-	def compute(self, reward: float, memory) -> float:
+	def value(self, reward: float, memory: AgentMemory) -> float:
 		"""Return the plasticity factor for the given reward."""
 		if len(memory.reward_history) < 10:
 			return 1.0

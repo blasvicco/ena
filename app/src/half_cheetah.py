@@ -6,6 +6,7 @@
 # pylint: disable=duplicate-code
 
 # General imports
+from queue import Queue
 import argparse
 import functools
 import os
@@ -19,18 +20,19 @@ from keras.layers import Dense
 
 # App imports
 from agents import ENAgent, PPOAgent, SACAgent
+from agents.tools.abstract import AAgent
 from cartpole_ena_ablation import (
 	MAX_WORKERS,
 	ABLATION_VARIANTS,
 	build_seeded,
 	parse_args,
-	post_update,
 	run_study,
 	seed_experiment,
 	select_variants,
 	train_and_test,
 )
-from tools.visualization import vprint
+from tools.visualization import post_update, vprint
+
 
 # Constants
 NUM_EXPERIMENTS = 20  # author, 2026-10-12: 20 replicates in one go (detects d >= 1.0 at 80% power, alpha 0.05 / 2)
@@ -58,12 +60,12 @@ CHALLENGE_AGENTS = [{"name": ENA_NAME}, {"name": "PPO"}, {"name": "SAC"}]
 
 # Helper methods
 def make_env(
-	friction=0.4,
-	gravity=-9.8,
-	name="Earth",
-	render_mode=None,
-	wind=(0, 0, 0),
-):
+	friction: float = 0.4,
+	gravity: float = -9.8,
+	name: str = "Earth",
+	render_mode: str | None = None,
+	wind: tuple = (0, 0, 0),
+) -> gym.Env:
 	"""Create a HalfCheetah-v5 world with custom physics (gravity, ground friction, wind)."""
 	env = gym.make("HalfCheetah-v5", render_mode=render_mode)
 	model = env.unwrapped.model
@@ -117,10 +119,12 @@ def make_test_worlds(worlds: list) -> list:
 
 
 class Normc(initializers.Initializer):
-	"""normc (Salimans et al., 2017, evolution-strategies-starter's normc_initializer): Gaussian weights, each unit's
-	incoming weight vector (a kernel column) rescaled to norm std. Draws follow Keras' global seed."""
+	"""Initialize weights the normc way: Gaussian, each unit's incoming weights rescaled to norm std (Salimans et al., 2017)."""
 
-	def __init__(self, std: float = 1.0):
+	# normc (Salimans et al., 2017, evolution-strategies-starter's normc_initializer): Gaussian weights, each unit's
+	# incoming weight vector (a kernel column) rescaled to norm std. Draws follow Keras' global seed.
+
+	def __init__(self, std: float = 1.0) -> None:
 		self.std = std
 
 	def __call__(self, shape, dtype=None):
@@ -132,13 +136,14 @@ class Normc(initializers.Initializer):
 
 
 def ena_brain(action_dim: int, state_dim: int, hidden: int | tuple = ENA_BRAIN_HIDDEN) -> Sequential:
-	"""Build a ENA-NN for continuous control: the ES MuJoCo policy network (Salimans et al., 2017), two tanh hidden layers
-	with normc weights and zero biases, and a tanh output in the [-1, 1] action range. hidden is both layers' size, or one
-	size per layer (32, 16).
-
-	One deviation: the output layer keeps normc std 1.0 instead of their 0.01. ES perturbs a single central policy, so a
-	near-still start costs it nothing; ENA's first population should already act, with varied gaits for selection to tell
-	apart (on normalized observations, initial actions are about +-0.5: moving, not saturated)."""
+	"""Build ENA's continuous-control network: the ES MuJoCo policy (Salimans et al., 2017), tanh layers with normc weights."""
+	# Build a ENA-NN for continuous control: the ES MuJoCo policy network (Salimans et al., 2017), two tanh hidden layers
+	# with normc weights and zero biases, and a tanh output in the [-1, 1] action range. hidden is both layers' size, or one
+	# size per layer (32, 16).
+	#
+	# One deviation: the output layer keeps normc std 1.0 instead of their 0.01. ES perturbs a single central policy, so a
+	# near-still start costs it nothing; ENA's first population should already act, with varied gaits for selection to tell
+	# apart (on normalized observations, initial actions are about +-0.5: moving, not saturated).
 	sizes = (hidden, hidden) if isinstance(hidden, int) else tuple(hidden)
 	return Sequential(
 		[
@@ -205,8 +210,9 @@ SAC_SETTINGS = {
 
 
 def mlp_brain(action_dim: int, state_dim: int, hidden: tuple = (256, 256)) -> Model:
-	"""256x256 ReLU MLP with Keras' default (Glorot) initialization: SAC's actor and critics, and PPO's policy and
-	value networks (the zoo's PPO disables orthogonal initialization)."""
+	"""Build the 256x256 ReLU MLP with Glorot initialization used by SAC's and PPO's networks."""
+	# 256x256 ReLU MLP with Keras' default (Glorot) initialization: SAC's actor and critics, and PPO's policy and
+	# value networks (the zoo's PPO disables orthogonal initialization).
 	inputs = Input(shape=(state_dim,))
 	hidden_tensor = inputs
 	for units in hidden:
@@ -230,8 +236,8 @@ ENA_DETECTION = {
 }
 
 
-# ENA's search on HalfCheetah (no prior paper: set by the calibration recorded in docs/PLAN_half_cheetah.md).
-# The search settings, frozen from the tuning probes (tools/half_cheetah_probe.py; seeds 200+, disjoint from the
+# ENA's search on HalfCheetah (no prior paper: set by calibration on tuning seeds).
+# The search settings, frozen from the tuning probes (seeds 200+, disjoint from the
 # study's), the rest as CartPole's. Of a 24-configuration screen (brain 32x16 / 32x8, mutation rate 0.05 / 0.1 / 0.25,
 # depth 100 / 200, 1M / 2M steps per environment), evaluation depth was the only large effect (200 over 100); 32x16,
 # rate 0.25, depth 200 was the best configuration at the study's 1M budget, with the best retention of Mars among the
@@ -257,9 +263,10 @@ ENA_HALL_OF_FAME = {
 }
 
 
-def build_ena_agent(max_agent_threads: int, brain_hidden: int | tuple = ENA_BRAIN_HIDDEN, **overrides) -> ENAgent:
-	"""ENA-Combined (the ablation's skill set) with HalfCheetah's physics context, calibrated detection and search settings;
-	overrides replace any ENAgent argument (the calibration probes use them)."""
+def build_ena_agent(max_agent_threads: int, brain_hidden: int | tuple = ENA_BRAIN_HIDDEN, **overrides: object) -> ENAgent:
+	"""Build ENA-Combined with HalfCheetah's physics context and calibrated detection and search settings."""
+	# ENA-Combined (the ablation's skill set) with HalfCheetah's physics context, calibrated detection and search settings;
+	# overrides replace any ENAgent argument (the calibration probes use them).
 	skills = next(row for row in ABLATION_VARIANTS if row["name"] == ENA_NAME)
 	settings = {
 		**ENA_SETTINGS,
@@ -274,7 +281,7 @@ def build_ena_agent(max_agent_threads: int, brain_hidden: int | tuple = ENA_BRAI
 	return ENAgent(brain=brain, make_env=make_env, max_threads=max_agent_threads, physics=["gravity", "friction", "wind"], **settings)
 
 
-def build_agent(name: str, max_agent_threads: int, **ena_overrides):
+def build_agent(name: str, max_agent_threads: int, **ena_overrides: object) -> AAgent:
 	"""One challenge agent by name; its training length comes from the stopping rule (ena_overrides: calibration only)."""
 	if name == ENA_NAME:
 		agent = build_ena_agent(max_agent_threads, **ena_overrides)
@@ -301,10 +308,9 @@ def hardware_line(ena_threads: int) -> str:
 	return f"Hardware: {platform.system()} {cpu}, {os.cpu_count()} cores; TensorFlow threads {tensorflow}; ENA threads {ena_threads}"
 
 
-def run_experiment(experiment_id: int, output_dir: str, queue, variants: list, include_random: bool) -> None:
-	"""Run one replicate: every agent trained to the same env-step budget per environment, then a frozen test.
-
-	include_random is the shared runner's flag; this study has no Random floor, so asking for it is an error."""
+def run_experiment(experiment_id: int, output_dir: str, queue: Queue | None, variants: list, include_random: bool) -> None:
+	"""Run one replicate: every agent trained to the same env-step budget per environment, then a frozen test."""
+	# include_random is the shared runner's flag; this study has no Random floor, so asking for it is an error.
 	if include_random:
 		raise ValueError("The HalfCheetah study has no Random floor")
 	names = [row["name"] for row in variants]

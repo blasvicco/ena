@@ -46,10 +46,9 @@ def test_output_stays_within_bounds(trend) -> None:
 
 @pytest.mark.parametrize("trend", [-300.0, -200.0, -100.0, 0.0, 200.0])
 def test_worse_scores_never_get_meaningfully_less_plasticity(trend) -> None:
-	"""Approximately monotonic in the score at a fixed trend: doing worse never reduces search effort by more
-	than 0.02. Exact monotonicity isn't a property of Mamdani max-min inference: where two rules with the same
-	consequent cross (LOW->HIGH fading as MEDIUM-and-FALLING->HIGH rises), their max dips and the centroid
-	moves briefly toward MEDIUM (measured: at most +0.012, scores 150-210, trend -200)."""
+	"""Approximately monotonic in the score at a fixed trend: doing worse never reduces search effort by more than 0.02."""
+	# Exact monotonicity isn't a property of Mamdani max-min inference: where two rules with the same consequent cross (LOW->HIGH fading as MEDIUM-
+	# and-FALLING->HIGH rises), their max dips and the centroid moves briefly toward MEDIUM (measured: at most +0.012, scores 150-210, trend -200).
 	with step("Act/Assert: never rises by more than 0.02 over an ascending score sweep, and falls overall."):
 		values = [_plasticity(score, trend) for score in np.linspace(0, 500, 51)]
 		assert all(later <= earlier + 0.02 for earlier, later in zip(values, values[1:]))

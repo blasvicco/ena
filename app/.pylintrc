@@ -51,7 +51,7 @@ notes=FIXME,TODO
 min-similarity-lines=4
 ignore-comments=yes
 ignore-docstrings=yes
-ignore-imports=no
+ignore-imports=yes
 
 [VARIABLES]
 init-import=no

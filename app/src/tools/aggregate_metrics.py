@@ -15,11 +15,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # App imports
 # pylint: disable=wrong-import-position
 from tools.detection_stats import write_detection_report
+from tools.replicates import get_experiment_directories
 
 PERFORMANCE_MARKER = "--- ACADEMIC PERFORMANCE & RELIABILITY SUMMARY ---"
 COMPUTE_COST_MARKER = "--- COMPUTE-COST SUMMARY (candidate evaluation, training phase) ---"
 ADAPTATION_MARKER = "--- ADAPTATION SUMMARY (training, early-stopped per environment) ---"
 PHASES = ["Training", "Compute Cost", "Adaptation", "Test"]
+# The summary metrics every performance table ends with (tools/metrics.calculate_paper_metrics).
+SUMMARY_HEADERS = ["Reliability (%)", "Stability Gap (↓)", "Efficiency (Score/s)"]
 # Anchored to this file's own location (app/src/tools/ -> app/), not the caller's cwd, so the
 # default target is found regardless of where this script is invoked from.
 DEFAULT_OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "cartpole_ena_ablation_outputs")
@@ -27,44 +30,10 @@ DEFAULT_OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirnam
 
 # pylint: disable=too-many-locals
 def parse_consolidated_table(lines: list) -> pd.DataFrame:
-	"""Parse a performance-summary table (Agent + per-env Avg columns + suffix metrics) into a DataFrame."""
-	if not lines:
-		return None
-
-	header_line = lines[0]
-	# Predefined non-environment headers (ordered as they appear at the end).
-	suffix_headers = ["Reliability (%)", "Stability Gap (↓)", "Efficiency (Score/s)"]
-	env_headers = re.findall(r"(\S+ Avg)", header_line)
-	present_suffixes = [suffix for suffix in suffix_headers if suffix in header_line]
-
-	headers = ["Agent"] + env_headers + present_suffixes
-	num_expected_cols = len(headers)
-
-	data = []
-	for line in lines[1:]:
-		line_text = line.strip()
-		if not line_text:
-			continue
-
-		# Split by at least 2 spaces to handle names with single spaces.
-		parts = re.split(r"\s{2,}", line_text)
-
-		if len(parts) != num_expected_cols:
-			# Fixed-width alignment can collapse to single spaces between narrow columns —
-			# fall back to positional parsing: suffixes are the last N tokens, envs the next
-			# M, and the agent name is whatever whitespace-split tokens remain at the start.
-			all_parts = line_text.split()
-			num_suffixes = len(present_suffixes)
-			num_envs = len(env_headers)
-
-			if len(all_parts) >= num_expected_cols:
-				suffix_data = all_parts[-num_suffixes:] if num_suffixes > 0 else []
-				env_data = all_parts[-(num_suffixes + num_envs) : -num_suffixes] if num_suffixes > 0 else all_parts[-num_envs:]
-				agent_name = " ".join(all_parts[: -(num_suffixes + num_envs)])
-				data.append([agent_name] + env_data + suffix_data)
-		else:
-			data.append(parts)
-
+	"""Parse a performance-summary table (Agent + per-env Avg columns + summary metrics) into a DataFrame."""
+	# Columns are separated by at least two spaces, so agent names may hold single spaces.
+	headers = ["Agent"] + re.findall(r"(\S+ Avg)", lines[0]) + SUMMARY_HEADERS
+	data = [re.split(r"\s{2,}", line.strip()) for line in lines[1:]]
 	dataframe = pd.DataFrame(data, columns=headers)
 	for column in dataframe.columns:
 		if column == "Agent":
@@ -76,23 +45,10 @@ def parse_consolidated_table(lines: list) -> pd.DataFrame:
 
 def parse_compute_cost_table(lines: list) -> pd.DataFrame:
 	"""Parse the COMPUTE-COST SUMMARY table (Agent, Avg Eval Depth, Avg Candidates/Gen, Total Candidate Env-Steps)."""
-	if not lines:
-		return None
-
 	headers = ["Agent", "Avg Eval Depth", "Avg Candidates/Gen", "Total Candidate Env-Steps"]
 	num_metrics = len(headers) - 1
 
-	data = []
-	for line in lines[1:]:
-		line_text = line.strip()
-		if not line_text:
-			continue
-		all_parts = line_text.split()
-		if len(all_parts) <= num_metrics:
-			continue
-		metric_values = all_parts[-num_metrics:]
-		agent_name = " ".join(all_parts[:-num_metrics])
-		data.append([agent_name] + metric_values)
+	data = [[" ".join(parts[:-num_metrics])] + parts[-num_metrics:] for parts in (line.split() for line in lines[1:])]
 
 	dataframe = pd.DataFrame(data, columns=headers)
 	# Only this table's values carry thousands separators (e.g. "7,745,982").
@@ -105,37 +61,19 @@ def parse_compute_cost_table(lines: list) -> pd.DataFrame:
 	return dataframe
 
 
-def get_experiment_directories(output_dir: str) -> list:
-	"""Find and numerically sort all experiment directories (exp_*) under output_dir."""
-	if not os.path.exists(output_dir):
-		return []
-
-	directories = [
-		directory for directory in os.listdir(output_dir) if directory.startswith("exp_") and os.path.isdir(os.path.join(output_dir, directory))
-	]
-	directories.sort(key=lambda item: int(re.search(r"\d+", item).group()) if re.search(r"\d+", item) else 0)
-	return directories
-
-
 def parse_adaptation_table(lines: list) -> pd.DataFrame:
 	"""Parse the ADAPTATION SUMMARY table: Agent plus whitespace-free numeric columns (thousands separators allowed)."""
-	if not lines:
-		return None
 	headers = lines[0].split()
 	num_metrics = len(headers) - 1
-	data = []
-	for line in lines[1:]:
-		parts = line.split()
-		if len(parts) <= num_metrics:
-			continue
-		data.append([" ".join(parts[:-num_metrics])] + [float(value.replace(",", "")) for value in parts[-num_metrics:]])
+	data = [
+		[" ".join(parts[:-num_metrics])] + [float(value.replace(",", "")) for value in parts[-num_metrics:]]
+		for parts in (line.split() for line in lines[1:])
+	]
 	return pd.DataFrame(data, columns=headers)
 
 
 def _table_after(block: str, marker: str) -> list:
-	"""The table lines following marker in block, up to the first blank line (empty if absent)."""
-	if marker not in block:
-		return []
+	"""Return the table lines following marker in block, up to the first blank line."""
 	lines = []
 	for line in block.split(marker, 1)[1].strip("\n").split("\n"):
 		if not line.strip():
@@ -145,47 +83,12 @@ def _table_after(block: str, marker: str) -> list:
 
 
 def process_experiment_file(file_path: str) -> tuple:
-	"""Split an outputs.txt into its train-performance, compute-cost, and test-performance line-groups."""
-	try:
-		with open(file_path, "r", encoding="utf-8") as file_handle:
-			content = file_handle.read()
-	except OSError as error:
-		print(f"Error reading {file_path}: {error}")
-		return None, None, None, None
-
-	sections = content.split(PERFORMANCE_MARKER)
-	if len(sections) < 3:
-		return None, None, None, None
-
-	train_block, test_block = sections[1], sections[2]
-
-	# The train table itself always ends at the next blank line, regardless of what follows
-	# (the compute-cost table for an experiment with ENA agents, or straight to the next
-	# phase's own trailer for one without) — stop there rather than taking the whole block,
-	# or a compute-cost-free experiment would swallow its own "Test Results" trailer as a
-	# bogus extra performance row.
-	train_lines = []
-	for line in train_block.strip("\n").split("\n"):
-		if not line.strip():
-			break
-		train_lines.append(line.strip())
-
-	# The (ENA-only) compute-cost table, if present, follows the train table before the next
-	# phase's own content — extracted independently of train_lines above, same "stop at the
-	# first blank line" rule.
-	compute_cost_lines = []
-	if COMPUTE_COST_MARKER in train_block:
-		_, cost_block = train_block.split(COMPUTE_COST_MARKER, 1)
-		for line in cost_block.strip("\n").split("\n"):
-			if not line.strip():
-				break
-			compute_cost_lines.append(line.strip())
-
+	"""Split an outputs.txt into its train-performance, compute-cost, test-performance and adaptation tables."""
+	with open(file_path, "r", encoding="utf-8") as file_handle:
+		_header, train_block, test_block = file_handle.read().split(PERFORMANCE_MARKER)
+	train_lines = _table_after(PERFORMANCE_MARKER + train_block, PERFORMANCE_MARKER)
 	test_lines = [line.strip() for line in test_block.strip().split("\n") if line.strip()]
-	# The (early-stopped studies only) adaptation table is printed during training, after the compute-cost table.
-	adaptation_lines = _table_after(train_block, ADAPTATION_MARKER)
-
-	return train_lines, compute_cost_lines, test_lines, adaptation_lines
+	return train_lines, _table_after(train_block, COMPUTE_COST_MARKER), test_lines, _table_after(train_block, ADAPTATION_MARKER)
 
 
 # pylint: disable=too-many-locals
@@ -197,10 +100,6 @@ def write_summary_report(all_results: dict, output_path: str, experiment_count: 
 
 		for phase in PHASES:
 			output_file.write(f"--- {phase} Phase ---\n")
-			if not all_results.get(phase):
-				output_file.write("No data found for this phase.\n\n")
-				continue
-
 			combined = pd.concat(all_results[phase], ignore_index=True)
 			agents = combined["Agent"].unique()
 
@@ -242,8 +141,6 @@ def write_comparison_report(all_results: dict, agent_a: str, agent_b: str, outpu
 		output_file.write("=" * 60 + "\n\n")
 
 		for phase in PHASES:
-			if not all_results.get(phase):
-				continue
 			combined = pd.concat(all_results[phase], ignore_index=True)
 			if agent_a not in combined["Agent"].values or agent_b not in combined["Agent"].values:
 				continue
@@ -266,136 +163,43 @@ def write_comparison_report(all_results: dict, agent_a: str, agent_b: str, outpu
 	print(f"Wrote comparison report to {output_path}")
 
 
-def parse_exclusions(exclude: list) -> dict:
-	"""Turn ["DIR:AGENT", ...] into {normalized DIR: {AGENT, ...}}."""
-	exclusions = {}
-	for entry in exclude or []:
-		directory, separator, agent_name = entry.rpartition(":")
-		if not separator or not directory or not agent_name:
-			raise ValueError(f"--exclude entries must look like DIR:AGENT, got {entry!r}")
-		exclusions.setdefault(os.path.normpath(directory), set()).add(agent_name)
-	return exclusions
-
-
-def _drop_agents(dataframe, agent_names: set):
-	"""Remove the given agents' rows from a parsed table (None passes through)."""
-	if dataframe is None or not agent_names:
-		return dataframe
-	return dataframe[~dataframe["Agent"].isin(agent_names)]
-
-
-def aggregate(output_dirs: list, compare: list = None, exclude: list = None) -> None:
-	"""Aggregate every exp_* replicate's metrics found under one or more output_dirs into one report."""
-	# Pooling more than one study's directory (e.g. an older ablation study plus a newer one
-	# sharing a row's exact config, so it doesn't need to be re-run) is the whole point of
-	# accepting a list here — results still land in the first directory given. exclude
-	# ("DIR:AGENT" entries) drops an agent from one directory only — e.g. an older study's row
-	# that a newer study re-ran with a changed config.
-	primary_dir = output_dirs[0]
-	report_path = os.path.join(primary_dir, "aggregate_summary.txt")
-	all_results, parsed_count, total_dirs_found = collect_results(output_dirs, exclude)
-
-	if not parsed_count:
-		print("No valid experiment data parsed.")
-		return
-
-	write_summary_report(all_results, report_path, parsed_count)
-	print(f"Successfully aggregated {parsed_count}/{total_dirs_found} experiments into {report_path}")
-	detection_path = write_detection_report(primary_dir)
-	if detection_path:
-		print(f"Environment recognition summarized into {detection_path}")
-
+def aggregate(output_dir: str, compare: list = None) -> None:
+	"""Aggregate every replicate's metrics in a study directory into its aggregate_summary.txt (and detection_summary.txt)."""
+	all_results = collect_results(output_dir)
+	report_path = os.path.join(output_dir, "aggregate_summary.txt")
+	write_summary_report(all_results, report_path, len(get_experiment_directories(output_dir)))
+	print(f"Aggregated {output_dir} into {report_path}")
+	print(f"Environment recognition summarized into {write_detection_report(output_dir)}")
 	if compare:
 		agent_a, agent_b = compare
-		compare_path = os.path.join(primary_dir, f"compare_{agent_a}_vs_{agent_b}.txt")
-		write_comparison_report(all_results, agent_a, agent_b, compare_path)
+		write_comparison_report(all_results, agent_a, agent_b, os.path.join(output_dir, f"compare_{agent_a}_vs_{agent_b}.txt"))
 
 
-# pylint: disable=too-many-locals,too-many-branches
-def collect_results(output_dirs: list, exclude: list = None) -> tuple:
-	"""Parse every complete exp_* replicate under output_dirs: ({phase: [per-replicate DataFrames]}, parsed, found)."""
-	exclusions = parse_exclusions(exclude)
-	multi_source = len(output_dirs) > 1
-
+def collect_results(output_dir: str) -> dict:
+	"""Parse every replicate of a study directory: {phase: [per-replicate DataFrames, each with its Exp label]}."""
 	all_results = {phase: [] for phase in PHASES}
-	parsed_count = 0
-	total_dirs_found = 0
-
-	for output_dir in output_dirs:
-		exp_dirs = get_experiment_directories(output_dir)
-		if not exp_dirs:
-			print(f"No experiment outputs found in {output_dir}.")
-			continue
-		total_dirs_found += len(exp_dirs)
-		# Both studies independently number exp_1, exp_2, ... — qualify with the source
-		# directory once pooling more than one, so the Exp column stays unambiguous.
-		exp_label_prefix = f"{os.path.basename(os.path.normpath(output_dir))}/" if multi_source else ""
-		excluded_agents = exclusions.get(os.path.normpath(output_dir), set())
-
-		for exp_dir in exp_dirs:
-			exp_label = f"{exp_label_prefix}{exp_dir}"
-			file_path = os.path.join(output_dir, exp_dir, "outputs.txt")
-			if not os.path.exists(file_path):
-				print(f"Warning: {exp_label} has no outputs.txt yet — skipped.")
-				continue
-
-			train_lines, compute_cost_lines, test_lines, adaptation_lines = process_experiment_file(file_path)
-			if train_lines is None:
-				print(f"Warning: {exp_label} doesn't have a complete train+test section yet (still running?) — skipped.")
-				continue
-
-			# One malformed/truncated (e.g. still-in-progress) experiment file shouldn't abort
-			# aggregating the rest — this regex-based parser can fail in many small ways on
-			# unexpected input, so it's caught broadly here and the file is skipped with a warning.
-			try:
-				train_dataframe = _drop_agents(parse_consolidated_table(train_lines), excluded_agents)
-				compute_cost_dataframe = _drop_agents(parse_compute_cost_table(compute_cost_lines), excluded_agents)
-				test_dataframe = _drop_agents(parse_consolidated_table(test_lines), excluded_agents)
-				adaptation_dataframe = _drop_agents(parse_adaptation_table(adaptation_lines), excluded_agents)
-				if adaptation_dataframe is not None:
-					adaptation_dataframe["Exp"] = exp_label
-					all_results["Adaptation"].append(adaptation_dataframe)
-
-				if train_dataframe is not None:
-					train_dataframe["Exp"] = exp_label
-					all_results["Training"].append(train_dataframe)
-				if compute_cost_dataframe is not None:
-					compute_cost_dataframe["Exp"] = exp_label
-					all_results["Compute Cost"].append(compute_cost_dataframe)
-				if test_dataframe is not None:
-					test_dataframe["Exp"] = exp_label
-					all_results["Test"].append(test_dataframe)
-				parsed_count += 1
-			except Exception as error:  # pylint: disable=broad-except
-				print(f"Warning: Failed to parse {file_path}: {error}")
-
-	return all_results, parsed_count, total_dirs_found
+	for exp_dir in get_experiment_directories(output_dir):
+		tables = process_experiment_file(os.path.join(output_dir, exp_dir, "outputs.txt"))
+		parsers = (parse_consolidated_table, parse_compute_cost_table, parse_consolidated_table, parse_adaptation_table)
+		for phase, parser, lines in zip(("Training", "Compute Cost", "Test", "Adaptation"), parsers, tables):
+			dataframe = parser(lines)
+			dataframe["Exp"] = exp_dir
+			all_results[phase].append(dataframe)
+	return all_results
 
 
 def main() -> None:
 	"""Parse CLI arguments and run the aggregation."""
 	parser = argparse.ArgumentParser(description=__doc__)
-	parser.add_argument(
-		"--output-dir",
-		nargs="+",
-		default=[DEFAULT_OUTPUT_DIR],
-		help="One or more directories containing exp_* replicate subdirectories; results are pooled across all given.",
-	)
+	parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR, help="The study directory holding the exp_* replicates.")
 	parser.add_argument(
 		"--compare",
 		nargs=2,
 		metavar=("AGENT_A", "AGENT_B"),
 		help="Also write a metric-by-metric delta + significance comparison between these two agents.",
 	)
-	parser.add_argument(
-		"--exclude",
-		nargs="+",
-		default=[],
-		metavar="DIR:AGENT",
-		help="Drop AGENT's rows from DIR only (e.g. an older study's row that a newer study re-ran).",
-	)
 	args = parser.parse_args()
-	aggregate(args.output_dir, compare=args.compare, exclude=args.exclude)
+	aggregate(args.output_dir, compare=args.compare)
 
 
 if __name__ == "__main__":

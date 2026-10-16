@@ -3,6 +3,13 @@
 # General imports
 from abc import ABC, abstractmethod
 
+# Libs imports
+import numpy as np
+
+# App imports
+from agents.ena.memory import AgentMemory
+from agents.ena.skills.hall_of_fame.main import HallOfFame
+
 
 class ADriver(ABC):
 	"""Detects environment shifts and identifies which recurring niche is currently active."""
@@ -11,7 +18,7 @@ class ADriver(ABC):
 	# episode end and hands the response to observe_chirp(). Passive drivers do not chirp.
 	chirp_actions = None
 
-	def observe_chirp(self, response) -> None:
+	def observe_chirp(self, response: np.ndarray) -> None:
 		"""A chirp's observations (start observation first); passive drivers ignore it."""
 
 	@property
@@ -25,11 +32,11 @@ class ADriver(ABC):
 		"""Set of niche IDs that have physical prototypes."""
 
 	@abstractmethod
-	def detect_change(self, memory, learn: bool = True) -> bool:
+	def detect_change(self, memory: AgentMemory, learn: bool = True) -> bool:
 		"""Check if the environment has significantly shifted from the baseline."""
 
 	@abstractmethod
-	def match_niche(self, memory, current_individual: dict, hall_of_fame, population: list = None) -> int:
+	def match_niche(self, memory: AgentMemory, current_individual: dict, hall_of_fame: HallOfFame, population: list = None) -> int:
 		"""Late Identity Binding: called only when a gladiator is being inducted."""
 
 	@abstractmethod
@@ -37,11 +44,11 @@ class ADriver(ABC):
 		"""Called once at the start of every episode, before the first action."""
 
 	@abstractmethod
-	def observe(self, state, action, next_state, memory) -> None:
+	def observe(self, state: np.ndarray, action: int | np.ndarray, next_state: np.ndarray, memory: AgentMemory) -> None:
 		"""Record one real (state, action, next_state) transition of the acting individual."""
 
 	@abstractmethod
-	def log_likelihoods(self, memory) -> dict:
+	def log_likelihoods(self, memory: AgentMemory) -> dict:
 		"""{niche_id: log-likelihood of this episode's transitions} — empty if the driver has no dynamics model."""
 
 	@abstractmethod

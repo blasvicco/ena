@@ -29,6 +29,7 @@ def test_config_entries_read_the_settings_the_studies_use() -> None:
 		assert entries["cfg/challenge/budget"] == f"{cartpole_challenge.FIXED_BUDGET_PER_ENV:,}"
 		assert entries["cfg/cartpole/train"] == f"{cartpole_ena_ablation.TRAINING_EPISODES_ENA[0]:,}"
 		assert entries["cfg/cartpole/maxsteps"] == "500"
+		assert (entries["cfg/cheetah/maxsteps"], entries["cfg/cheetah/maxeval"]) == ("1,000", "200")
 		assert entries["cfg/ena/detect/gammaexp"] == "8"
 		assert entries["cfg/ena/bpr/mix"] == "0.95"
 		assert (entries["cfg/ena/fuzzy/trendrecent"], entries["cfg/ena/fuzzy/trendbefore"], entries["cfg/ena/fuzzy/trendmin"]) == ("5", "45", "20")

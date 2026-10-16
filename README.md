@@ -92,20 +92,14 @@ app/
 │       ├── detection_replay.py          # Replays saved transitions to diagnose false alarms / dynamics models
 │       ├── detection_stats.py           # Environment-recognition numbers per phase
 │       ├── cheetah_results.py           # HalfCheetah-specific metrics (retention, end-of-phase)
-│       ├── half_cheetah_probe.py        # AWS timing and throughput probe runner
 │       ├── paper_results.py             # Generates every number, table and figure the paper quotes
 │       ├── paper_config.py              # Configuration numbers read from the code that ran
 │       ├── paper_stats.py               # Statistical helpers (Welch, Holm, Clopper-Pearson, Cohen's d)
 │       ├── paper_figures.py             # Generates publication-ready boxplots and test curves
 │       ├── sac_discrete_entropy_check.py  # SAC-Discrete temperature vs. target-entropy ratio
 │       ├── plot_study_curves.py         # Per-episode return curves across replicates
-│       ├── replot_replicate.py          # Redraws a replicate's training/test charts from its logs
-│       ├── live_data.py                 # Reads live_*.csv training logs
-│       ├── live_dashboard.py            # Streamlit live convergence dashboard
-│       ├── live_monitor.py              # Matplotlib live convergence chart (host only)
 │       ├── agent_health.py              # Periodic health monitor for RL baselines (entropy, Q-values)
-│       ├── visualization.py             # Terminal progress bar with ETA
-│       └── benchmark_half_cheetah.py    # Throughput and study cost estimates
+│       └── visualization.py             # Terminal progress bar with ETA
 ├── tests/                               # pytest suite (mirrors src/)
 ├── latex/                               # Paper source (IEEEtran two-column, 17 pages)
 │   ├── sections/                        # 01_introduction … 09_appendix
@@ -122,7 +116,6 @@ hub/
 ├── node/Dockerfile                      # Infra toolbox container (ena_infra service)
 └── cloud/Dockerfile                     # ARM64 image pushed to ECR for the AWS machines
 docker-compose.yml                       # ena_experiment, paper (TeX Live), ena_infra services
-docs/                                    # Plans and runbooks (CLOUD_RUN.md, PLAN_*.md)
 ```
 
 See [STANDARDS.md](STANDARDS.md) for coding conventions and how these pieces fit together.
@@ -144,7 +137,6 @@ docker compose up -d ena_experiment
 docker compose exec ena_experiment bash
 ```
 * The local `app/` directory is bind-mounted directly to `/home/app` inside the container.
-* Port `8501` is exposed for live Streamlit convergence dashboards.
 
 #### Option B — Local Python (Host)
 Ensure Python 3.11+ is installed, then install pinned dependencies:
@@ -219,7 +211,7 @@ python src/tools/detection_ablation.py
 # 2. Benchmark confirmation on HalfCheetah and CartPole (McNemar paired tests):
 python src/tools/detection_benchmark.py
 ```
-*Outputs saved to:* `app/detection_ablation_outputs/` and `app/detection_ablation_selection_outputs/`
+*Outputs saved to:* `app/detection_ablation_outputs/`
 
 #### Study 7: HalfCheetah Continuous Control Challenge (20 Replicates)
 * **Local Test (Single Replicate / Smoke Test):**
@@ -251,7 +243,7 @@ app/src/agents/ena/skills/<skill_name>/
     └── none.py          # Inert / disabled implementation for clean ablation
 ```
 
-1. **Facade (`main.py`):** Accepts `driver: str` and keyword arguments. Dynamically imports `agents.ena.skills.<skill_name>.driver.<driver>` via `importlib` and instantiates `self._instance = module.Instance(**kwargs)`.
+1. **Facade (`main.py`):** Accepts `driver: str` and keyword arguments, and builds `self._instance` with the shared `load_driver` (`agents/ena/tools/driver_loader.py`), which imports `agents.ena.skills.<skill_name>.driver.<driver>` and instantiates `module.Instance(**kwargs)`. Trust and Plasticity share the drivers in `skills/failure_signal/`.
 2. **Abstract Contract (`driver/abstract.py`):** Defines `class ADriver(ABC)` specifying public method signatures with type hints.
 3. **Concrete Driver (`driver/<driver_name>.py`):** Inherits from `ADriver` and defines `class Instance(ADriver)`. The file name is the driver's unique identifier.
 
@@ -338,7 +330,7 @@ To introduce a new cognitive mechanism to the agent (e.g., `curiosity` or `commu
 
 ## HalfCheetah — Cloud Run (AWS)
 
-The HalfCheetah study (`half_cheetah.py`) runs once in AWS: 20 replicates, one per `c8g.xlarge` (4 vCPU Graviton4 ARM, ~7.8 h each, ~$27 total). See `infra/README.md` and `docs/CLOUD_RUN.md` for the full procedure.
+The HalfCheetah study (`half_cheetah.py`) runs once in AWS: 20 replicates, one per `c8g.xlarge` (4 vCPU Graviton4 ARM, ~7.8 h each, ~$27 total). See `infra/README.md` for the full procedure.
 
 **To download the results** (once the machines have finished):
 ```bash
@@ -378,20 +370,7 @@ docker compose exec paper ./package_arxiv.sh     # → app/latex/build/arxiv.tar
 
 ## Live Convergence Monitoring
 
-Every training run writes `live_training_{agent_name}.csv` incrementally (one row per episode, flushed immediately).
-
-**Streamlit dashboard (recommended):**
-```bash
-streamlit run app/src/tools/live_dashboard.py
-# or inside the container:
-docker compose exec ena_experiment streamlit run src/tools/live_dashboard.py --server.headless true
-# then open http://localhost:8501
-```
-
-**Matplotlib monitor (host only — needs a display):**
-```bash
-python app/src/tools/live_monitor.py app/cartpole_ena_ablation_outputs/exp_1/live_training_ENA-Combined.csv
-```
+Every training run writes `live_training_{agent_name}.csv` incrementally (one row per episode, flushed immediately), and the terminal progress bar shows a live per-phase ETA.
 
 ---
 
@@ -408,7 +387,6 @@ python app/src/tools/live_monitor.py app/cartpole_ena_ablation_outputs/exp_1/liv
 | `src/tools/detection_ablation.py` | HalfCheetah chirp detector ablation (excitation × response feature grid search) |
 | `src/tools/detection_benchmark.py` | Standalone change-detection benchmark on HalfCheetah and CartPole across 30 confirmation seeds |
 | `src/tools/detection_replay.py` | Replays transitions through transition models and chirp detectors to diagnose errors |
-| `src/tools/half_cheetah_probe.py` | AWS Graviton instance timing probes measuring throughput (steps/s) and projected costs |
 | `src/tools/aggregate_metrics.py` | Mean / std / min / max of every metric over a study's replicates |
 | `src/tools/paper_results.py` | Every number, table and figure the paper quotes — re-run after any study gains replicates |
 | `src/tools/paper_config.py` | Every setting the paper states, read from the built agents and study scripts |
@@ -417,11 +395,7 @@ python app/src/tools/live_monitor.py app/cartpole_ena_ablation_outputs/exp_1/liv
 | `src/tools/cheetah_results.py` | HalfCheetah-specific metrics: end-of-phase training return, retention, forgetting table |
 | `src/tools/sac_discrete_entropy_check.py` | Trains SAC-Discrete per target-entropy ratio, logs temperature / critic values |
 | `src/tools/detection_stats.py` | Environment recognition per phase: unrecognized episodes, confirmed changes, HoF niches |
-| `src/tools/replot_replicate.py` | Redraws finished replicates' charts from their live CSVs after a chart change |
 | `src/tools/plot_study_curves.py` | Per-episode return across replicates, one panel per agent |
-| `src/tools/benchmark_half_cheetah.py` | Throughput measurement and HalfCheetah study cost estimate |
-| `src/tools/live_dashboard.py` | Streamlit live convergence dashboard |
-| `src/tools/live_monitor.py` | Matplotlib live convergence chart (host only) |
 | `src/tools/agent_health.py` | Periodic health monitor for RL baselines (entropy, Q-values) |
 
 ---

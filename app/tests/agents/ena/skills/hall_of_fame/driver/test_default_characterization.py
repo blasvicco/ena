@@ -1,9 +1,7 @@
-"""Characterization test: the default Hall of Fame's decisions over a scripted sequence of updates.
-
-The golden file was recorded from the driver as it ran every reported experiment (2026-10-03), before the
-removal of unused code that day. Any change to what the archive keeps, evicts, refreshes or clones makes
-this test fail.
-"""
+"""Characterization test: the default Hall of Fame's decisions over a scripted sequence of updates."""
+# The golden file was recorded from the driver as it ran every reported experiment (2026-10-03), before the
+# removal of unused code that day. Any change to what the archive keeps, evicts, refreshes or clones makes
+# this test fail.
 
 # General imports
 import json

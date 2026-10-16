@@ -7,20 +7,20 @@ import numpy as np
 class _IdentityNormalizer:
 	"""No-op normalizer for discrete environments."""
 
-	def __init__(self, shape):
+	def __init__(self, shape: int | tuple) -> None:
 		# Dummy attributes so USP metadata storage (last_mu/last_var)
 		# doesn't crash when accessing normalizer.mean/var.
 		self.mean = np.zeros(shape, dtype=np.float64)
 		self.var = np.ones(shape, dtype=np.float64)
 
-	def normalize(self, _x_):
+	def normalize(self, _x_: np.ndarray) -> np.ndarray:
 		"""Pass through unchanged."""
 		return _x_
 
-	def reset(self):
+	def reset(self) -> None:
 		"""No-op — discrete environments don't need normalization."""
 
-	def update(self, batch):
+	def update(self, batch: np.ndarray) -> None:
 		"""No-op — discrete environments don't need normalization."""
 
 
@@ -30,7 +30,7 @@ class _RunningNormalizer:
 	# Used to normalize observations (which vary wildly in scale)
 	# to roughly [-clip, clip], stabilizing network inputs.
 
-	def __init__(self, shape, clip=10.0, max_count=None):
+	def __init__(self, shape: int | tuple, clip: float = 10.0, max_count: int | None = None) -> None:
 		"""Initialize _RunningNormalizer."""
 		self.count = None
 		self.mean = None
@@ -40,13 +40,13 @@ class _RunningNormalizer:
 		self.max_count = max_count
 		self.reset()
 
-	def reset(self):
+	def reset(self) -> None:
 		"""Hard-reset running statistics to initial state."""
 		self.mean = np.zeros(self.shape, dtype=np.float64)
 		self.var = np.ones(self.shape, dtype=np.float64)
 		self.count = 1e-4
 
-	def update(self, batch):
+	def update(self, batch: np.ndarray) -> None:
 		"""Update running statistics with a new batch of observations."""
 		batch = np.asarray(batch, dtype=np.float64)
 		if batch.shape[0] == 0:
@@ -74,6 +74,6 @@ class _RunningNormalizer:
 		self.var = new_var
 		self.count = total_count
 
-	def normalize(self, _x_):
+	def normalize(self, _x_: np.ndarray) -> np.ndarray:
 		"""Normalize to zero mean, unit variance, clipped."""
 		return np.clip((_x_ - self.mean) / np.sqrt(self.var + 1e-8), -self.clip, self.clip)

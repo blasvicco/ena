@@ -1,7 +1,13 @@
 """Hall of Fame driver interface: archives elite specialists and re-introduces them."""
 
 # General imports
+from typing import Callable
 from abc import ABC, abstractmethod
+
+# App imports
+from agents.ena.memory import AgentMemory
+from agents.ena.skills.env_detection.main import EnvironmentRecognizer
+from agents.tools.normalizers import _RunningNormalizer
 
 
 class ADriver(ABC):
@@ -17,7 +23,9 @@ class ADriver(ABC):
 		return False
 
 	# pylint: disable=too-many-arguments,too-many-positional-arguments
-	def hold_olympics(self, niche_id: int, play, trust_of, eviction_bar: float, population: list, total_env_steps: int) -> list:
+	def hold_olympics(
+		self, niche_id: int, play: Callable, trust_of: Callable[[float], float], eviction_bar: float, population: list, total_env_steps: int
+	) -> list:
 		"""Hold an Olympiad of a niche's gladiators; one row per competitor (none, without the Olympics)."""
 		return []
 
@@ -33,11 +41,27 @@ class ADriver(ABC):
 
 	# pylint: disable=too-many-arguments,too-many-positional-arguments
 	@abstractmethod
-	def update(self, winner: dict, current_trust: float, population: list, memory, recognizer, obs_normalizer, env_name: str = "Unknown") -> None:
+	def update(
+		self,
+		winner: dict,
+		current_trust: float,
+		population: list,
+		memory: AgentMemory,
+		recognizer: EnvironmentRecognizer | None,
+		obs_normalizer: _RunningNormalizer,
+		env_name: str = "Unknown",
+	) -> None:
 		"""Attempt to induct winner into the archive; env_name is the environment it just succeeded in."""
 
 	@abstractmethod
-	def inject_gladiators(self, population: list, pop_size: int, obs_normalizer, restore_trust: bool = True, admit=None) -> None:
+	def inject_gladiators(
+		self,
+		population: list,
+		pop_size: int,
+		obs_normalizer: _RunningNormalizer,
+		restore_trust: bool = True,
+		admit: Callable[[dict], bool] | None = None,
+	) -> None:
 		"""Re-introduce archived gladiators (those admit(record) accepts, if given) into the active population."""
 
 	@abstractmethod
@@ -45,7 +69,7 @@ class ADriver(ABC):
 		"""The archived records of one niche."""
 
 	@abstractmethod
-	def record(self, individual_id: str):
+	def record(self, individual_id: str) -> dict | None:
 		"""One archived record, or None."""
 
 	@abstractmethod

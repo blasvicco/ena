@@ -51,8 +51,9 @@ def test_study_has_five_distinct_named_worlds() -> None:
 
 
 def test_every_pair_of_worlds_produces_different_physics() -> None:
-	"""Stage 0 gate: same seed and actions must give clearly different trajectories in every pair of worlds
-	(the old make_env left Ice-Floor and High-Wind bit-identical to Earth)."""
+	"""Every pair of HalfCheetah worlds gives clearly different trajectories for the same seed and actions."""
+	# Stage 0 gate: same seed and actions must give clearly different trajectories in every pair of worlds
+	# (the old make_env left Ice-Floor and High-Wind bit-identical to Earth).
 	with step("Arrange: roll out every world under the same seed and actions."):
 		rollouts = {env.unwrapped.name: _rollout(env) for env in _all_worlds()}
 
@@ -78,8 +79,9 @@ def test_same_world_twice_is_identical(world_index) -> None:
 
 @pytest.mark.parametrize("world_index", range(5))
 def test_ena_can_clone_every_world_from_its_exposed_physics(world_index) -> None:
-	"""Regression: ENA evaluates candidates on make_env(name=..., **{attr: env.unwrapped.attr for attr in physics});
-	wind was exposed as a float, which make_env can't take back, so ENA crashed on its first episode."""
+	"""ENA can rebuild every world from its exposed physics parameters."""
+	# Regression: ENA evaluates candidates on make_env(name=..., **{attr: env.unwrapped.attr for attr in physics});
+	# wind was exposed as a float, which make_env can't take back, so ENA crashed on its first episode.
 	with step("Arrange: a world and ENA's physics list."):
 		physics = half_cheetah.build_agent("ENA-Combined", max_agent_threads=1).physics
 		world = _all_worlds()[world_index]
@@ -94,8 +96,9 @@ def test_ena_can_clone_every_world_from_its_exposed_physics(world_index) -> None
 
 
 def test_friction_applies_to_every_contact() -> None:
-	"""MuJoCo uses the larger of the two contacting geoms' frictions, so a world's friction must be set on
-	every geom (the cheetah's feet included), not just the floor."""
+	"""A world's friction is set on every geom, since MuJoCo uses the larger of two contacting frictions."""
+	# MuJoCo uses the larger of the two contacting geoms' frictions, so a world's friction must be set on
+	# every geom (the cheetah's feet included), not just the floor.
 	with step("Act: build a low-friction world."):
 		env = half_cheetah.make_env(friction=0.05, name="Low")
 
@@ -105,8 +108,7 @@ def test_friction_applies_to_every_contact() -> None:
 
 
 def test_wind_gets_a_medium_to_act_through() -> None:
-	"""Wind only acts through fluid forces, which need a non-zero medium density; calm worlds stay vacuum
-	(the stock HalfCheetah)."""
+	"""Wind only acts through fluid forces, which need a non-zero medium density; calm worlds stay vacuum (the stock HalfCheetah)."""
 	with step("Act: build a windy and a calm world."):
 		windy = half_cheetah.make_env(wind=(-20.0, 0.0, 0.0), name="Windy")
 		calm = half_cheetah.make_env(name="Calm")
@@ -143,9 +145,10 @@ def test_build_agent_rejects_an_unknown_name() -> None:
 
 
 def test_the_challenge_ena_is_the_combined_agent_with_this_domains_physics() -> None:
-	"""CartPole's ENA-Combined skills (bpr, linear_ramp plasticity and trust, HoF on), except environment detection: the
-	chirp driver, since dynamics_model misfires on HalfCheetah (detection benchmark). Episodes are 1000 steps; the
-	context is gravity, friction and wind."""
+	"""The HalfCheetah ENA is ENA-Combined with this domain's physics and the chirp detector."""
+	# CartPole's ENA-Combined skills (bpr, linear_ramp plasticity and trust, HoF on), except environment detection: the
+	# chirp driver, since dynamics_model misfires on HalfCheetah (detection benchmark). Episodes are 1000 steps; the
+	# context is gravity, friction and wind.
 	with step("Act: build ENA."):
 		agent = half_cheetah.build_agent("ENA-Combined", max_agent_threads=1)
 
@@ -163,8 +166,9 @@ def test_the_challenge_ena_is_the_combined_agent_with_this_domains_physics() -> 
 
 
 def test_the_study_ena_has_the_frozen_search_settings() -> None:
-	"""The search tuning's choice (T5): a 32x16 tanh brain, population 100, depth 200, mutation rate 0.25 and noise 0.1,
-	and the olympic Hall of Fame (an Olympiad every 200k steps, 3 episodes, 2 qualifier seats)."""
+	"""The study's ENA uses the search settings frozen by the tuning probes."""
+	# The search tuning's choice (T5): a 32x16 tanh brain, population 100, depth 200, mutation rate 0.25 and noise 0.1,
+	# and the olympic Hall of Fame (an Olympiad every 200k steps, 3 episodes, 2 qualifier seats).
 	# pylint: disable=protected-access
 	with step("Act: build the study's ENA."):
 		agent = half_cheetah.build_agent("ENA-Combined", max_agent_threads=1)
@@ -191,8 +195,7 @@ def test_baselines_use_a_constant_lr_and_the_standard_target_entropy() -> None:
 
 
 def test_parse_args_defaults() -> None:
-	"""No flags: all agents (no Random floor) into half_cheetah_outputs. There is one protocol, a fixed step budget, so
-	no --protocol flag."""
+	"""No flags: all agents (no Random floor) into half_cheetah_outputs. There is one protocol, a fixed step budget, so no --protocol flag."""
 	with step("Act: parse defaults and overrides."):
 		args = half_cheetah.parse_challenge_args([])
 		overridden = half_cheetah.parse_challenge_args(["--workers", "5", "--num-experiments", "10"])
@@ -217,9 +220,10 @@ def test_run_experiment_has_no_random_floor(tmp_path) -> None:
 
 
 def test_run_experiment_wires_the_domain_into_the_shared_runner(monkeypatch, tmp_path) -> None:
-	"""One replicate: seeded; every agent trains FIXED_BUDGET_PER_ENV env-steps per training world, with no checks (no
-	stopping rule, no evaluation copies); tested on the 5 HalfCheetah worlds (never CartPole's) with this domain's
-	reference line and range."""
+	"""One HalfCheetah replicate runs through the shared runner with this domain's budget, worlds and chart."""
+	# One replicate: seeded; every agent trains FIXED_BUDGET_PER_ENV env-steps per training world, with no checks (no
+	# stopping rule, no evaluation copies); tested on the 5 HalfCheetah worlds (never CartPole's) with this domain's
+	# reference line and range.
 	with step("Arrange: capture the shared runner's arguments and the seed; stub agent construction."):
 		captured = {}
 
@@ -320,8 +324,8 @@ def test_ena_detects_halfcheetah_environments_with_the_chirp_driver() -> None:
 
 
 def test_ena_brain_is_the_es_mujoco_policy_network() -> None:
-	"""Salimans et al. (2017), MuJoCo: tanh hidden layers and normc weights; tanh output in the [-1, 1] action range; zero biases.
-	The output keeps normc std 1.0 (not their 0.01): every individual of the first population acts, rather than standing still."""
+	"""Salimans et al. (2017), MuJoCo: tanh hidden layers and normc weights; tanh output in the [-1, 1] action range; zero biases."""
+	# The output keeps normc std 1.0 (not their 0.01): every individual of the first population acts, rather than standing still.
 	with step("Act: a 64x64 ENA brain."):
 		layers = half_cheetah.ena_brain(6, 17, hidden=64).layers
 
@@ -393,9 +397,10 @@ def test_ena_brain_reset_redraws_from_normc() -> None:
 
 
 def test_the_worlds_are_the_author_s_definitions_in_order() -> None:
-	"""Training, in order: Earth-Standard (Earth's gravity and stock friction, a soft 5 m/s head wind), Heavy-Rough (1.5 g,
-	friction 1.0), Mars-Slippery (Mars's gravity, friction 0.2). Never trained: Ice-Floor (friction 0.05) and High-Wind
-	(a 20 m/s head wind)."""
+	"""The HalfCheetah worlds are the author's definitions, in training and test order."""
+	# Training, in order: Earth-Standard (Earth's gravity and stock friction, a soft 5 m/s head wind), Heavy-Rough (1.5 g,
+	# friction 1.0), Mars-Slippery (Mars's gravity, friction 0.2). Never trained: Ice-Floor (friction 0.05) and High-Wind
+	# (a 20 m/s head wind).
 	with step("Act: every world's physics, in order."):
 		physics = [
 			(world.unwrapped.name, world.unwrapped.gravity, world.unwrapped.friction, world.unwrapped.wind)
@@ -413,8 +418,9 @@ def test_the_worlds_are_the_author_s_definitions_in_order() -> None:
 
 
 def test_the_heavy_world_stays_within_the_published_gravity_range() -> None:
-	"""Heavy-Rough replaces Jupiter (about 2.5 g, beyond any HalfCheetah benchmark): 1.5x Earth's gravity, the top of the published
-	range (CARL; multi-task HalfCheetah), on rough ground (friction 1.0)."""
+	"""Heavy-Rough's gravity stays within the published HalfCheetah range (1.5 g)."""
+	# Heavy-Rough replaces Jupiter (about 2.5 g, beyond any HalfCheetah benchmark): 1.5x Earth's gravity, the top of the published
+	# range (CARL; multi-task HalfCheetah), on rough ground (friction 1.0).
 	with step("Act: the training worlds' physics."):
 		heavy = next(world for world in half_cheetah.make_training_worlds() if world.unwrapped.name == "Heavy-Rough").unwrapped
 
@@ -423,8 +429,9 @@ def test_the_heavy_world_stays_within_the_published_gravity_range() -> None:
 
 
 def test_hardware_line_names_the_machine_and_every_thread_count() -> None:
-	"""Each replicate records where it ran, so the paper's wall-clock times are comparable: the CPU, the core count,
-	TensorFlow's thread pool and ENA's evaluation threads."""
+	"""Each replicate's hardware line names the CPU, the core count and every thread count."""
+	# Each replicate records where it ran, so the paper's wall-clock times are comparable: the CPU, the core count,
+	# TensorFlow's thread pool and ENA's evaluation threads.
 	with step("Act: the line for 2 ENA threads."):
 		line = half_cheetah.hardware_line(2)
 

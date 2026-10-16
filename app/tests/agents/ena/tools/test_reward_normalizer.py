@@ -12,8 +12,9 @@ from agents.ena.tools.reward_normalizer import normalize_reward
 
 
 def test_warmup_scales_against_the_solved_return() -> None:
-	"""Below 10 returns of history there are no reliable percentiles: a return is divided by the solved
-	return, so solving reads as 1.0 (review #8: it used to be divided by the episode length)."""
+	"""Before 10 returns of history, a return is normalized by the solved return."""
+	# Below 10 returns of history there are no reliable percentiles: a return is divided by the solved
+	# return, so solving reads as 1.0 (review #8: it used to be divided by the episode length).
 	with step("Act/Assert: solving maps to 1, half of it to 0.5."):
 		memory = SimpleNamespace(reward_history=[100.0, 200.0])
 		assert normalize_reward(475.0, memory, return_scale=475.0) == pytest.approx(1.0)

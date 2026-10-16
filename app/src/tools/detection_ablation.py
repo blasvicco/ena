@@ -1,16 +1,16 @@
 #!/usr/bin/env python
-"""The chirp detector's ablation on the detection benchmark: excitation x response features, over benchmark seeds,
-plus the baselines that motivate it (the transition-model detector under changing and under fixed behavior).
-
-Every run is tools/detection_benchmark.run() on HalfCheetah (Earth -> Heavy -> Mars, policies changing every
-4 episodes): each benchmark seed draws other policies and resets. Writes, into --output-dir:
-  - grid.csv: one row per (excitation, features, seed) with the score and whether it meets the target;
-  - confirmation.csv: one row per (baseline, seed) on the confirmation seeds (the study's chirp is a baseline);
-  - cartpole.csv: CartPole's detector on CartPole's benchmark, confirmation seeds (the benchmark's sanity check).
-tools/paper_results.py turns them into the paper's table and macros.
-
-	python src/tools/detection_ablation.py --output-dir detection_ablation_outputs --workers 4
-"""
+"""The chirp detector's ablation on the detection benchmark: excitation x response features, plus its baselines."""
+# The chirp detector's ablation on the detection benchmark: excitation x response features, over benchmark seeds,
+# plus the baselines that motivate it (the transition-model detector under changing and under fixed behavior).
+#
+# Every run is tools/detection_benchmark.run() on HalfCheetah (Earth -> Heavy -> Mars, policies changing every
+# 4 episodes): each benchmark seed draws other policies and resets. Writes, into --output-dir:
+#   - grid.csv: one row per (excitation, features, seed) with the score and whether it meets the target;
+#   - confirmation.csv: one row per (baseline, seed) on the confirmation seeds (the study's chirp is a baseline);
+#   - cartpole.csv: CartPole's detector on CartPole's benchmark, confirmation seeds (the benchmark's sanity check).
+# tools/paper_results.py turns them into the paper's table and macros.
+#
+#         python src/tools/detection_ablation.py --output-dir detection_ablation_outputs --workers 4
 
 # General imports
 import argparse
@@ -29,7 +29,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from tools.detection_benchmark import meets_target, run
 
 # Three disjoint seed sets, each with one role:
-#   - SELECTION_SEEDS (0-4): first screening (docs/PLAN_half_cheetah.md);
+#   - SELECTION_SEEDS (0-4): first screening;
 #   - SEEDS (5-34): the ablation grid the paper tabulates; the study's configuration is chosen from it;
 #   - CONFIRMATION_SEEDS (35-64): the chosen configuration and the baselines, never used for any choice: the
 #     pass rate and the comparisons the paper reports.
@@ -58,7 +58,7 @@ FEATURES = {
 	"Packets Haar": {"kind": "wavelet", "transform": "packet", "level": 3},
 }
 # The transition-model detector with the settings calibrated for HalfCheetah before the chirp replaced it
-# (docs/PLAN_half_cheetah.md, F4): verification window 1,000, margin 3, recent window 3,000, maturity 1,000.
+# (calibration): verification window 1,000, margin 3, recent window 3,000, maturity 1,000.
 DYNAMICS_MODEL_CHEETAH = {
 	"recognizer_residual_tolerance": 3.0,
 	"recognizer_novelty_margin": 3.0,
@@ -113,13 +113,13 @@ def _map(function, tasks: list, workers: int) -> list:
 		return pool.map(function, tasks)
 
 
-def run_grid(domain: str = "half_cheetah", seeds=SEEDS, workers: int = 1, chirp_steps: int = None) -> pd.DataFrame:
+def run_grid(domain: str = "half_cheetah", seeds: list | range = SEEDS, workers: int = 1, chirp_steps: int = None) -> pd.DataFrame:
 	"""Every excitation x features x seed."""
 	tasks = [(domain, excitation, features, seed, chirp_steps) for excitation, features, seed in itertools.product(EXCITATIONS, FEATURES, seeds)]
 	return pd.DataFrame(_map(_grid_task, tasks, workers))
 
 
-def run_baselines(domain: str = "half_cheetah", seeds=CONFIRMATION_SEEDS, workers: int = 1) -> pd.DataFrame:
+def run_baselines(domain: str = "half_cheetah", seeds: list | range = CONFIRMATION_SEEDS, workers: int = 1) -> pd.DataFrame:
 	"""Every baseline x seed (by default the confirmation seeds)."""
 	return pd.DataFrame(_map(_baseline_task, [(domain, baseline, seed) for baseline in BASELINES for seed in seeds], workers))
 
@@ -143,13 +143,13 @@ def _cartpole_task(seed: int) -> dict:
 	return {"seed": seed, **_row(run("cartpole", seed=seed))}
 
 
-def run_cartpole_check(seeds=CONFIRMATION_SEEDS, workers: int = 1) -> pd.DataFrame:
+def run_cartpole_check(seeds: list | range = CONFIRMATION_SEEDS, workers: int = 1) -> pd.DataFrame:
 	"""The benchmark's sanity check: the detector known to work (CartPole's) on its own domain."""
 	return pd.DataFrame(_map(_cartpole_task, list(seeds), workers))
 
 
 def pass_table(rows: pd.DataFrame) -> pd.DataFrame:
-	"""Seeds meeting the target per excitation (rows, in grid order) and feature type (columns, in grid order)."""
+	"""Count the seeds meeting the target per excitation (rows, in grid order) and feature type (columns, in grid order)."""
 	table = rows.pivot_table(index="excitation", columns="features", values="passes", aggfunc="sum")
 	return table.loc[_in_order(list(table.index), list(EXCITATIONS)), _in_order(list(table.columns), list(FEATURES))].astype(
 		"Int64"
@@ -162,8 +162,9 @@ def _in_order(labels: list, known: list) -> list:
 
 
 def main() -> None:
-	"""Run the grid (ablation seeds) and/or the confirmation (the baselines, the study's chirp among them, on the
-	confirmation seeds); write grid.csv and confirmation.csv."""
+	"""Run the ablation grid and/or the confirmation runs and write grid.csv and confirmation.csv."""
+	# Run the grid (ablation seeds) and/or the confirmation (the baselines, the study's chirp among them, on the
+	# confirmation seeds); write grid.csv and confirmation.csv.
 	parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 	parser.add_argument("--output-dir", required=True)
 	parser.add_argument("--workers", type=int, default=1)

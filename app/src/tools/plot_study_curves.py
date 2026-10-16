@@ -1,18 +1,16 @@
 #!/usr/bin/env python
-"""Plot score curves averaged over a study's replicates — one panel per agent, phases marked.
-
-Reads every exp_*/live_{phase}_{agent}.csv a study wrote (one row per episode) and draws, per
-agent, the across-replicate mean score with the band holding the middle 50% of replicates
-(25th-75th percentile), lightly smoothed within each phase (never across a switch) — the
-cross-replicate counterpart of a single experiment's test.png/training.png.
-
-By episode (x_axis "episodes") when every replicate plays the same episodes (every test; training by
-episode counts); by environment steps (x_axis "env_steps", episodes binned by the step at which they end)
-when replicates play different numbers of episodes for the same budget (training at a step budget).
-
-	python src/tools/plot_study_curves.py --phase testing
-	python src/tools/plot_study_curves.py --phase training --agents Random ENA-NoSkill ENA-Combined
-"""
+"""Plot score curves averaged over a study's replicates — one panel per agent, phases marked."""
+# Reads every exp_*/live_{phase}_{agent}.csv a study wrote (one row per episode) and draws, per
+# agent, the across-replicate mean score with the band holding the middle 50% of replicates
+# (25th-75th percentile), lightly smoothed within each phase (never across a switch) — the
+# cross-replicate counterpart of a single experiment's test.png/training.png.
+#
+# By episode (x_axis "episodes") when every replicate plays the same episodes (every test; training by
+# episode counts); by environment steps (x_axis "env_steps", episodes binned by the step at which they end)
+# when replicates play different numbers of episodes for the same budget (training at a step budget).
+#
+#         python src/tools/plot_study_curves.py --phase testing
+#         python src/tools/plot_study_curves.py --phase training --agents Random ENA-NoSkill ENA-Combined
 
 # General imports
 import argparse
@@ -42,7 +40,7 @@ GRID_COLOR = "#e6e5e1"
 
 
 def load_replicates(output_dir: str, phase: str, agent: str) -> pd.DataFrame:
-	"""Episodes x replicates matrix of scores for one agent and phase, plus the per-episode env name."""
+	"""Load the episodes x replicates matrix of scores for one agent and phase, plus the per-episode env name."""
 	paths = sorted(glob.glob(os.path.join(output_dir, "exp_*", f"live_{phase}_{agent}.csv")))
 	scores, env_ids = {}, None
 	for path in paths:
@@ -59,8 +57,9 @@ def load_replicates(output_dir: str, phase: str, agent: str) -> pd.DataFrame:
 
 
 def load_binned(output_dir: str, phase: str, agent: str, bin_steps: int = BIN_STEPS) -> pd.DataFrame:
-	"""Bins x replicates matrix: each replicate's mean score of the episodes ending in each bin of bin_steps env-steps
-	(indexed by the bin's end), plus the environment per bin (attrs["env_ids"], from the first replicate)."""
+	"""Load each replicate's mean score per bin of bin_steps env-steps, with the environment of each bin."""
+	# Load the bins x replicates matrix: each replicate's mean score of the episodes ending in each bin of bin_steps env-steps
+	# (indexed by the bin's end), plus the environment per bin (attrs["env_ids"], from the first replicate).
 	paths = sorted(glob.glob(os.path.join(output_dir, "exp_*", f"live_{phase}_{agent}.csv")))
 	scores, env_ids = {}, None
 	for path in paths:
@@ -77,13 +76,11 @@ def load_binned(output_dir: str, phase: str, agent: str, bin_steps: int = BIN_ST
 
 
 def summarize(matrix: pd.DataFrame, window: int = SMOOTHING_WINDOW) -> pd.DataFrame:
-	"""Mean and 25th/75th percentiles across replicates per row, each smoothed over `window` rows within each phase
-	(attrs["env_ids"]; a switch restarts the smoothing)."""
+	"""Return the mean and interquartile range across replicates per row, smoothed within each phase."""
+	# Mean and 25th/75th percentiles across replicates per row, each smoothed over `window` rows within each phase
+	# (attrs["env_ids"]; a switch restarts the smoothing).
 	summary = pd.DataFrame({"mean": matrix.mean(axis=1), "low": matrix.quantile(0.25, axis=1), "high": matrix.quantile(0.75, axis=1)})
-	env_ids = matrix.attrs.get("env_ids")
-	if env_ids is None:
-		return summary.rolling(window=window, min_periods=1, center=True).mean()
-	env_ids = env_ids.reindex(summary.index)
+	env_ids = matrix.attrs["env_ids"].reindex(summary.index)
 	phases = env_ids.ne(env_ids.shift()).cumsum()
 	return summary.groupby(phases, group_keys=False).apply(lambda part: part.rolling(window=window, min_periods=1, center=True).mean())
 
@@ -119,8 +116,8 @@ def plot(
 	x_axis: str = "episodes",
 	bin_steps: int = BIN_STEPS,
 ) -> str:
-	"""Draw one panel per agent and save the figure; return the path written (CartPole's bar and range by default).
-	x_axis "env_steps" bins episodes by environment steps (load_binned)."""
+	"""Draw one panel per agent and save the figure; return the path written (CartPole's bar and range by default)."""
+	# x_axis "env_steps" bins episodes by environment steps (load_binned).
 	if x_axis not in ("episodes", "env_steps"):
 		raise ValueError(f"Unknown x_axis {x_axis!r}; expected 'episodes' or 'env_steps'")
 	by_steps = x_axis == "env_steps"

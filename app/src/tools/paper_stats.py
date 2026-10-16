@@ -1,7 +1,8 @@
 #!/usr/bin/env python
-"""The paper's statistical tests and number formatting, shared by every results generator (paper_results.py and its
-per-domain modules): Welch's t-test with its interval and effect size, power analysis, Holm's correction, exact tests
-for pass rates, and how values and p-values are printed."""
+"""The paper's statistical tests and number formatting, shared by every results generator."""
+# The paper's statistical tests and number formatting, shared by every results generator (paper_results.py and its
+# per-domain modules): Welch's t-test with its interval and effect size, power analysis, Holm's correction, exact tests
+# for pass rates, and how values and p-values are printed.
 
 # General imports
 import math
@@ -54,7 +55,7 @@ def clopper_pearson(passes: int, trials: int, level: float = CI_LEVEL) -> tuple:
 	return low, high
 
 
-def mcnemar_p(passes_a, passes_b) -> float:
+def mcnemar_p(passes_a: np.ndarray | list, passes_b: np.ndarray | list) -> float:
 	"""Exact two-sided McNemar test of two pass/fail records paired by seed: a binomial test on the discordant seeds."""
 	passes_a, passes_b = np.asarray(passes_a, dtype=bool), np.asarray(passes_b, dtype=bool)
 	only_a, only_b = int(np.sum(passes_a & ~passes_b)), int(np.sum(~passes_a & passes_b))
@@ -63,7 +64,7 @@ def mcnemar_p(passes_a, passes_b) -> float:
 	return float(stats.binomtest(min(only_a, only_b), only_a + only_b, 0.5).pvalue)
 
 
-def welch_p(sample_a, sample_b) -> float:
+def welch_p(sample_a: np.ndarray | list, sample_b: np.ndarray | list) -> float:
 	"""Two-sided Welch's t-test p-value; 1.0 for two identical constant samples, NaN when either has n < 2."""
 	sample_a, sample_b = np.asarray(sample_a, dtype=float), np.asarray(sample_b, dtype=float)
 	if len(sample_a) < 2 or len(sample_b) < 2:
@@ -73,7 +74,7 @@ def welch_p(sample_a, sample_b) -> float:
 	return float(stats.ttest_ind(sample_a, sample_b, equal_var=False).pvalue)
 
 
-def welch_ci(sample_a, sample_b, level: float = CI_LEVEL) -> tuple:
+def welch_ci(sample_a: np.ndarray | list, sample_b: np.ndarray | list, level: float = CI_LEVEL) -> tuple:
 	"""Welch confidence interval of mean(b) - mean(a); (NaN, NaN) when either sample has n < 2 or both are constant."""
 	sample_a, sample_b = np.asarray(sample_a, dtype=float), np.asarray(sample_b, dtype=float)
 	if len(sample_a) < 2 or len(sample_b) < 2 or (np.std(sample_a) == 0 and np.std(sample_b) == 0):
@@ -82,7 +83,7 @@ def welch_ci(sample_a, sample_b, level: float = CI_LEVEL) -> tuple:
 	return float(interval.low), float(interval.high)
 
 
-def cohens_d(sample_a, sample_b) -> float:
+def cohens_d(sample_a: np.ndarray | list, sample_b: np.ndarray | list) -> float:
 	"""Effect size of b over a: difference of means over the average of the two sample standard deviations."""
 	sample_a, sample_b = np.asarray(sample_a, dtype=float), np.asarray(sample_b, dtype=float)
 	if len(sample_a) < 2 or len(sample_b) < 2:
@@ -97,7 +98,7 @@ def _power(effect: float, replicates: int, alpha: float) -> float:
 	return float(stats.nct.sf(stats.t.ppf(1 - alpha / 2, freedom), freedom, abs(effect) * math.sqrt(replicates / 2)))
 
 
-def replicates_for_power(effect: float, alpha: float, power: float = POWER, limit: int = 100_000):
+def replicates_for_power(effect: float, alpha: float, power: float = POWER, limit: int = 100_000) -> int | None:
 	"""Smallest replicates per group reaching `power` at effect size `effect` (None for no effect)."""
 	if not effect or math.isnan(effect):
 		return None
@@ -128,9 +129,9 @@ def holm(p_values: list, family_size: int = None) -> list:
 
 
 # pylint: disable=too-many-arguments,too-many-positional-arguments
-def difference_entries(key: str, values_a, values_b, alpha: float, metric_slug: str) -> dict:
-	"""b vs. a under one macro key: Welch p, mean difference (b - a) with its interval, effect size d, and replicates per
-	agent for 80% power at alpha."""
+def difference_entries(key: str, values_a: np.ndarray | list, values_b: np.ndarray | list, alpha: float, metric_slug: str) -> dict:
+	"""b vs."""
+	# a under one macro key: Welch p, mean difference (b - a) with its interval, effect size d, and replicates per agent for 80% power at alpha.
 	values_a, values_b = np.asarray(values_a, dtype=float), np.asarray(values_b, dtype=float)
 	difference = values_b.mean() - values_a.mean()
 	low, high = welch_ci(values_a, values_b)

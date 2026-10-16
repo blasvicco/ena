@@ -4,7 +4,11 @@
 # Reference: Haarnoja et al., "Soft Actor-Critic Algorithms and Applications" (2018)
 # https://arxiv.org/abs/1812.05905
 
+# General imports
+from typing import Callable
+
 # Libs imports
+import gymnasium as gym
 import numpy as np
 import tensorflow as tf
 from keras import Input, Model, layers, optimizers
@@ -16,7 +20,7 @@ from .tools.baseline import ABaseline, transition
 class ReplayBuffer:
 	"""Simple circular buffer for experience replay."""
 
-	def __init__(self, capacity, state_dim, action_dim):
+	def __init__(self, capacity: int, state_dim: int, action_dim: int) -> None:
 		self.capacity = capacity
 		self.pointer = 0
 		self.size = 0
@@ -28,7 +32,7 @@ class ReplayBuffer:
 		self.dones = np.zeros((capacity, 1), dtype=np.float32)
 
 	# pylint: disable=too-many-arguments, too-many-positional-arguments
-	def store(self, state, action, reward, next_state, done):
+	def store(self, state: np.ndarray, action: int | np.ndarray, reward: float, next_state: np.ndarray, done: bool) -> None:
 		"""Store a transition in the buffer."""
 		self.states[self.pointer] = state
 		self.actions[self.pointer] = action
@@ -39,7 +43,7 @@ class ReplayBuffer:
 		self.pointer = (self.pointer + 1) % self.capacity
 		self.size = min(self.size + 1, self.capacity)
 
-	def sample(self, batch_size):
+	def sample(self, batch_size: int) -> tuple:
 		"""Randomly sample a batch of transitions."""
 		indices = np.random.randint(0, self.size, size=batch_size)
 		return (
@@ -58,23 +62,24 @@ class SACAgent(ABaseline):
 	# pylint: disable=too-many-arguments,too-many-positional-arguments
 	def __init__(
 		self,
-		brain,
-		make_env,
-		batch_size=256,
-		buffer_capacity=100000,
-		gamma=0.99,
-		learning_rate=3e-4,
-		tau=0.005,
-		update_frequency=20,
-		gradient_steps=None,
-		learning_starts=0,
-		fused_updates=False,
-		jit_compile=False,
-	):
-		"""learning_starts: environment steps of uniform random actions, with no updates, before learning starts
-		(SB3's warm-up; 0 = train as soon as the buffer holds a batch).
-		fused_updates: run an update's gradient_steps in one compiled call (same algorithm, far less Python overhead);
-		jit_compile: compile that call with XLA. Both off by default (one compiled call per gradient step)."""
+		brain: Callable,
+		make_env: Callable[..., gym.Env],
+		batch_size: int = 256,
+		buffer_capacity: int = 100000,
+		gamma: float = 0.99,
+		learning_rate: float = 3e-4,
+		tau: float = 0.005,
+		update_frequency: int = 20,
+		gradient_steps: int | None = None,
+		learning_starts: int = 0,
+		fused_updates: bool = False,
+		jit_compile: bool = False,
+	) -> None:
+		"""Build SAC with its warm-up, fused-update and XLA options."""
+		# learning_starts: environment steps of uniform random actions, with no updates, before learning starts
+		# (SB3's warm-up; 0 = train as soon as the buffer holds a batch).
+		# fused_updates: run an update's gradient_steps in one compiled call (same algorithm, far less Python overhead);
+		# jit_compile: compile that call with XLA. Both off by default (one compiled call per gradient step).
 		super().__init__(brain, make_env)
 		self.learn = True
 
@@ -135,7 +140,7 @@ class SACAgent(ABaseline):
 		return Model(inputs=[state_input, action_input], outputs=output_layer)
 
 	# pylint: disable=too-many-arguments
-	def act(self, env, state):
+	def act(self, env: gym.Env, state: np.ndarray) -> tuple:
 		"""Sample action from the policy using Gaussian reprocessing."""
 		if self.learn and self.env_steps < self.learning_starts:
 			# Warm-up: uniform random actions in the tanh range (NumPy, so the replicate's seed governs it).
@@ -168,7 +173,7 @@ class SACAgent(ABaseline):
 		log_standard_deviation = tf.clip_by_value(log_standard_deviation, -20.0, 2.0)
 		return mean, log_standard_deviation
 
-	def train(self, **kwargs):
+	def train(self, **kwargs: object) -> None:
 		"""Store transition and update networks if buffer has enough data."""
 		step_data = kwargs["step_data"]
 		self.buffer.store(*transition(step_data))
@@ -203,8 +208,9 @@ class SACAgent(ABaseline):
 		self._sac_step(states, actions, rewards, next_states, dones, tf.random.normal(noise_shape), tf.random.normal(noise_shape))
 
 	def _fused_update(self):
-		"""One update of gradient_steps steps in a single compiled call: the batches sampled as the per-step path samples
-		them (NumPy, in order), the reparameterization noise drawn with NumPy (the replicate's seed governs it)."""
+		"""Run one update's gradient steps in a single compiled call, sampling exactly as the per-step path does."""
+		# One update of gradient_steps steps in a single compiled call: the batches sampled as the per-step path samples
+		# them (NumPy, in order), the reparameterization noise drawn with NumPy (the replicate's seed governs it).
 		samples = [self.buffer.sample(self.batch_size) for _ in range(self.gradient_steps)]
 		stacked = [tf.convert_to_tensor(np.stack([sample[part] for sample in samples])) for part in range(5)]
 		noise_shape = (self.gradient_steps, self.batch_size, self.action_dim)

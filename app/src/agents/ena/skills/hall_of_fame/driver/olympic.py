@@ -7,6 +7,9 @@
 # Sampling" (GECCO 2019), https://doi.org/10.1145/3319619.3321904 (archive elites re-sampled).
 # Jin & Branke, "Evolutionary Optimization in Uncertain Environments - A Survey" (IEEE TEC 2005).
 
+# General imports
+from typing import Callable
+
 # Libs imports
 import numpy as np
 
@@ -38,16 +41,16 @@ class Instance(Default):
 	# pylint: disable=too-many-arguments,too-many-positional-arguments
 	def __init__(
 		self,
-		max_per_niche,
-		max_gladiator_ratio,
-		brain,
-		action_dim,
-		state_dim,
-		olympics_interval=200_000,
-		olympics_episodes=3,
-		qualifier_seats=2,
+		max_per_niche: int,
+		max_gladiator_ratio: float,
+		brain: Callable,
+		action_dim: int,
+		state_dim: int,
+		olympics_interval: int = 200_000,
+		olympics_episodes: int = 3,
+		qualifier_seats: int = 2,
 		**_kwargs,
-	):
+	) -> None:
 		super().__init__(max_per_niche, max_gladiator_ratio, brain, action_dim, state_dim)
 		if olympics_interval <= 0 or olympics_episodes <= 0 or qualifier_seats < 0:
 			raise ValueError("olympics_interval and olympics_episodes must be positive, qualifier_seats non-negative")
@@ -68,30 +71,33 @@ class Instance(Default):
 		return bool(individual.get("olympic_confirmed", False))
 
 	# pylint: disable=too-many-locals
-	def hold_olympics(self, niche_id: int, play, trust_of, eviction_bar: float, population: list, total_env_steps: int) -> list:
-		"""The niche's gladiators play shared fresh seeds through play(records, seeds) -> [(returns, steps)];
-		trust_of(mean return) gives their Olympic trust. Returns one row per competitor."""
+	def hold_olympics(
+		self, niche_id: int, play: Callable, trust_of: Callable[[float], float], eviction_bar: float, population: list, total_env_steps: int
+	) -> list:
+		"""Play the niche's gladiators on shared fresh seeds, judge them by Olympic trust and return one row per competitor."""
+		# The niche's gladiators play shared fresh seeds through play(records, seeds) -> [(returns, steps)];
+		# trust_of(mean return) gives their Olympic trust. Returns one row per competitor.
 		self._last = int(total_env_steps)
 		competitors = self.records_in_niche(niche_id)
 		if not competitors:
 			return []
 		results = play(competitors, [int(np.random.randint(0, SEED_RANGE)) for _ in range(self.episodes)])
 		olympic_trust = {record["individual_id"]: trust_of(float(np.mean(returns))) for record, (returns, _steps) in zip(competitors, results)}
-		evicted = self.__judge(olympic_trust, eviction_bar)
+		evicted = self._judge(olympic_trust, eviction_bar)
 		rows = []
 		for record, (returns, steps) in zip(competitors, results):
 			trust, out = olympic_trust[record["individual_id"]], record["individual_id"] in evicted
-			rows.append(self.__row(record, niche_id, returns, steps, trust, eviction_bar, out, total_env_steps))
+			rows.append(self._row(record, niche_id, returns, steps, trust, eviction_bar, out, total_env_steps))
 			if out:
 				self.evict(record["individual_id"], population)
 			else:
-				self.__confirm(record, trust, float(np.mean(returns)), population)
+				self._confirm(record, trust, float(np.mean(returns)), population)
 		return rows
 
 	# pylint: disable=too-many-arguments,too-many-positional-arguments
 	@staticmethod
-	def __row(record: dict, niche_id: int, returns, steps, olympic_trust: float, eviction_bar: float, evicted: bool, total_env_steps: int) -> dict:
-		"""One competitor's Olympiad record (ENAgent.olympics_history; the probe tool's olympics.csv)."""
+	def _row(record: dict, niche_id: int, returns, steps, olympic_trust: float, eviction_bar: float, evicted: bool, total_env_steps: int) -> dict:
+		"""One competitor's Olympiad record (ENAgent.olympics_history)."""
 		return {
 			"total_env_steps": total_env_steps,
 			"niche_id": niche_id,
@@ -104,7 +110,7 @@ class Instance(Default):
 			"evicted": evicted,
 		}
 
-	def __judge(self, olympic_trust: dict, eviction_bar: float) -> set:
+	def _judge(self, olympic_trust: dict, eviction_bar: float) -> set:
 		"""Everyone below the bar except the champion, then the lowest survivors beyond max_per_niche (relegation)."""
 		ranked = sorted(olympic_trust, key=olympic_trust.get, reverse=True)
 		evicted = {individual_id for individual_id in ranked[1:] if olympic_trust[individual_id] < eviction_bar}
@@ -112,7 +118,7 @@ class Instance(Default):
 		return evicted | set(survivors[max(self.max_per_niche, 1) :])
 
 	@staticmethod
-	def __confirm(record: dict, trust: float, olympic_return: float, population: list) -> None:
+	def _confirm(record: dict, trust: float, olympic_return: float, population: list) -> None:
 		"""A survivor takes its Olympic trust and mean return and is confirmed, on the record and its live copy."""
 		record["trust"], record["olympic_confirmed"], record["olympic_return"] = trust, True, olympic_return
 		for individual in population:

@@ -9,6 +9,7 @@ import numpy as np
 # App imports
 from agents.ena.skills.crossover.driver.abstract import ADriver
 from agents.ena.tools.weight_projection import project_individual_weights
+from agents.tools.normalizers import _RunningNormalizer
 
 
 # Probability that a weight comes from the first parent.
@@ -19,7 +20,9 @@ class Instance(ADriver):  # pylint: disable=too-few-public-methods
 	"""Mixes two parents' weights per-parameter via a random 50/50 mask, after aligning both to the current normalizer."""
 
 	# pylint: disable=too-many-arguments,too-many-positional-arguments
-	def apply(self, parent_1: dict, parent_2: dict, target: dict, obs_normalizer, max_eval_steps: float, default_trust: float) -> None:
+	def apply(
+		self, parent_1: dict, parent_2: dict, target: dict, obs_normalizer: _RunningNormalizer, max_eval_steps: float, default_trust: float
+	) -> None:
 		"""Mix parent_1's and parent_2's weights into target."""
 		# USP: Align both parents to the current normalizer before mixing their weights
 		project_individual_weights(parent_1, obs_normalizer, max_eval_steps)

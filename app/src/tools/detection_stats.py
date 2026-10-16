@@ -1,15 +1,6 @@
 #!/usr/bin/env python
-"""Environment-recognition numbers per phase, from a study's live logs (the paper's appendix on what the detector achieves).
-
-For every agent with a real recognizer and every complete replicate, per contiguous environment phase:
-  - unrecognized: % of episodes whose transitions matched no known niche (detected_env_id -1);
-  - changes: confirmed changes (detect_change() firing). A phase follows a real switch, except the
-    run's very first, so at most one is a detection and the rest are false alarms;
-  - first_change: episodes into the phase of the first confirmation (none: NaN);
-  - niches (training only): niches the Hall of Fame holds for the environment (fragmentation if > 1).
-
-	python src/tools/detection_stats.py --output-dir cartpole_ena_ablation_outputs
-"""
+"""Environment-recognition numbers per phase, from a study's live logs (the paper's appendix on what the detector achieves)."""
+# Usage: python src/tools/detection_stats.py --output-dir cartpole_ena_ablation_outputs
 
 # General imports
 import argparse
@@ -26,6 +17,19 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # App imports
 # pylint: disable=wrong-import-position
 from tools.metrics import uses_env_detection
+from tools.replicates import get_experiment_directories
+
+# What each number means; written at the top of every detection_summary.txt.
+RECOGNITION_LEGEND = "\n".join(
+	[
+		"For every agent with a real recognizer and every complete replicate, per contiguous environment phase:",
+		"  - unrecognized: % of episodes whose transitions matched no known niche (detected_env_id -1);",
+		"  - changes: confirmed changes (detect_change() firing). A phase follows a real switch, except the",
+		"    run's very first, so at most one is a detection and the rest are false alarms;",
+		"  - first_change: episodes into the phase of the first confirmation (none: NaN);",
+		"  - niches (training only): niches the Hall of Fame holds for the environment (fragmentation if > 1).",
+	]
+)
 
 PHASES = {"train": ("training", "Training"), "test": ("testing", "Test")}
 METRICS = ("unrecognized", "changes", "first_change", "niches")
@@ -64,11 +68,8 @@ def niches_per_env(niches_text: str) -> dict:
 def replicate_detection(exp_dir: str, agent: str) -> list:
 	"""Long-format rows (phase, env_id, metric, value) for one agent in one replicate."""
 	rows = []
-	niches_path = os.path.join(exp_dir, f"niches_{agent}.txt")
-	niche_counts = {}
-	if os.path.exists(niches_path):
-		with open(niches_path, encoding="utf-8") as report:
-			niche_counts = niches_per_env(report.read())
+	with open(os.path.join(exp_dir, f"niches_{agent}.txt"), encoding="utf-8") as report:
+		niche_counts = niches_per_env(report.read())
 	for phase_key, (file_phase, _label) in PHASES.items():
 		history = pd.read_csv(os.path.join(exp_dir, f"live_{file_phase}_{agent}.csv"))
 		for phase in phase_detection(history):
@@ -83,21 +84,10 @@ def replicate_detection(exp_dir: str, agent: str) -> list:
 	return rows
 
 
-def _complete(exp_dir: str) -> bool:
-	"""Whether the replicate wrote its test results."""
-	path = os.path.join(exp_dir, "outputs.txt")
-	if not os.path.exists(path):
-		return False
-	with open(path, encoding="utf-8") as outputs:
-		return "Test Results ---" in outputs.read()
-
-
 def study_detection(study_dir: str) -> pd.DataFrame:
-	"""Every complete replicate's rows, for every agent whose training log shows a real recognizer."""
+	"""Every replicate's rows, for every agent whose training log shows a real recognizer."""
 	rows = []
-	for exp_dir in sorted(glob.glob(os.path.join(study_dir, "exp_*"))):
-		if not _complete(exp_dir):
-			continue
+	for exp_dir in (os.path.join(study_dir, name) for name in get_experiment_directories(study_dir)):
 		for path in sorted(glob.glob(os.path.join(exp_dir, "live_training_*.csv"))):
 			agent = os.path.basename(path)[len("live_training_") : -len(".csv")]
 			if not uses_env_detection(pd.read_csv(path)):
@@ -113,17 +103,15 @@ def summarize(detection: pd.DataFrame) -> pd.DataFrame:
 	return grouped.agg(mean="mean", std="std", n="count").reset_index()
 
 
-def write_detection_report(study_dir: str):
-	"""Write detection_summary.txt into the study directory; return its path, or None when no agent has env detection."""
+def write_detection_report(study_dir: str) -> str:
+	"""Write detection_summary.txt into the study directory and return its path."""
 	detection = study_detection(study_dir)
-	if detection.empty:
-		return None
 	summary = summarize(detection)
 	path = os.path.join(study_dir, "detection_summary.txt")
 	with open(path, "w", encoding="utf-8") as report:
 		report.write(f"Environment recognition across {detection['exp'].nunique()} replicates (mean ± std; n = replicates with a value)\n")
 		report.write("=" * 60 + "\n")
-		report.write(__doc__.split("\n\n")[1] + "\n")
+		report.write(RECOGNITION_LEGEND + "\n")
 		for agent, by_agent in summary.groupby("agent", sort=False):
 			for phase_key, (_file_phase, label) in PHASES.items():
 				rows = by_agent[by_agent["phase"] == phase_key]
@@ -145,8 +133,7 @@ def main() -> None:
 	"""Write a study's detection_summary.txt."""
 	parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 	parser.add_argument("--output-dir", required=True, help="Study directory holding the exp_* replicates.")
-	path = write_detection_report(parser.parse_args().output_dir)
-	print(f"Wrote {path}" if path else "No agent with env detection found.")
+	print(f"Wrote {write_detection_report(parser.parse_args().output_dir)}")
 
 
 if __name__ == "__main__":

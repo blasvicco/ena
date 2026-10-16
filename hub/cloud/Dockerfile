@@ -24,7 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends libglib2.0-0 li
 # One source of truth for versions (app/requirements.txt), so physics, random streams and numerics match the local runs
 COPY ./app/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
-    && grep -vE '^(black-with-tabs|pylint|pytest|streamlit|Shimmy)==' /tmp/requirements.txt > /tmp/runtime.txt \
+    && grep -vE '^(black-with-tabs|pylint|pytest|Shimmy)==' /tmp/requirements.txt > /tmp/runtime.txt \
     && pip install --no-cache-dir -r /tmp/runtime.txt \
     && rm /tmp/requirements.txt /tmp/runtime.txt
 

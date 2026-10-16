@@ -71,12 +71,12 @@ class MamdaniController:
 		self.output = output
 		self.rules = rules
 
-	def rule_strengths(self, **values) -> list:
+	def rule_strengths(self, **values: float) -> list:
 		"""Each rule's firing strength for the given crisp inputs."""
 		degrees = {name: variable.fuzzify(values[name]) for name, variable in self.inputs.items()}
 		return [min(degrees[name][term] for name, term in antecedent.items()) for antecedent, _output_term in self.rules]
 
-	def evaluate(self, **values) -> float:
+	def evaluate(self, **values: float) -> float:
 		"""The crisp output: centroid of the max-aggregated, strength-clipped output terms."""
 		aggregate = np.zeros_like(self.output.grid)
 		for strength, (_antecedent, output_term) in zip(self.rule_strengths(**values), self.rules):

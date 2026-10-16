@@ -4,7 +4,11 @@
 # Reference: Schulman et al., "Proximal Policy Optimization Algorithms" (2017)
 # https://arxiv.org/abs/1707.06347
 
+# General imports
+from typing import Callable
+
 # Libs imports
+import gymnasium as gym
 import numpy as np
 import tensorflow as tf
 from keras import optimizers
@@ -23,31 +27,29 @@ class PPOAgent(ABaseline):
 	# pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
 	def __init__(
 		self,
-		brain,
-		make_env,
-		critic_brain=None,
-		batch_size=64,
-		clip_ratio=0.2,
-		entropy_coef=0.0,  # No evidence entropy helps continuous control
-		gae_lambda=0.95,
-		gamma=0.99,
-		learning_rate=3e-4,
-		n_epochs=10,
-		n_steps=2048,
-		value_coef=0.5,
-		anneal_lr=True,
-		max_grad_norm=0.5,
-		log_std_init=-2.0,
-		reward_scaling="reward",
-	):
-		"""Initialize PPOAgent.
-
-		anneal_lr: linear learning-rate decay to zero over the training budget, as in the paper.
-		max_grad_norm: global-norm gradient clip, applied to the actor's and the critic's gradients separately.
-		log_std_init: initial state-independent log std of the Gaussian policy (continuous only).
-		reward_scaling (continuous only): "reward" divides each reward by the running std of rewards;
-		"return" by the running std of the discounted return, reset at episode ends (SB3's VecNormalize).
-		"""
+		brain: Callable,
+		make_env: Callable[..., gym.Env],
+		critic_brain: Callable | None = None,
+		batch_size: int = 64,
+		clip_ratio: float = 0.2,
+		entropy_coef: float = 0.0,  # No evidence entropy helps continuous control
+		gae_lambda: float = 0.95,
+		gamma: float = 0.99,
+		learning_rate: float = 3e-4,
+		n_epochs: int = 10,
+		n_steps: int = 2048,
+		value_coef: float = 0.5,
+		anneal_lr: bool = True,
+		max_grad_norm: float = 0.5,
+		log_std_init: float = -2.0,
+		reward_scaling: str = "reward",
+	) -> None:
+		"""Initialize PPOAgent."""
+		# anneal_lr: linear learning-rate decay to zero over the training budget, as in the paper.
+		# max_grad_norm: global-norm gradient clip, applied to the actor's and the critic's gradients separately.
+		# log_std_init: initial state-independent log std of the Gaussian policy (continuous only).
+		# reward_scaling (continuous only): "reward" divides each reward by the running std of rewards;
+		# "return" by the running std of the discounted return, reset at episode ends (SB3's VecNormalize).
 		if reward_scaling not in ("reward", "return"):
 			raise ValueError(f"Unknown reward_scaling {reward_scaling!r}; expected 'reward' or 'return'")
 		super().__init__(brain, make_env)
@@ -124,14 +126,14 @@ class PPOAgent(ABaseline):
 	# ABaseline interface
 	# ------------------------------------------------------------------
 
-	def set_episodes(self, episodes):
+	def set_episodes(self, episodes: list) -> None:
 		"""Set episodes and compute max updates for LR annealing."""
 		super().set_episodes(episodes)
 		# Assume 1000 steps per episode for HalfCheetah/Mujoco
 		total_steps = sum(episodes) * 1000
 		self._max_updates = max(1, total_steps // self.n_steps)
 
-	def set_total_steps(self, total_steps):
+	def set_total_steps(self, total_steps: int) -> None:
 		"""Size the learning-rate annealing horizon from an env-step budget instead of episodes."""
 		# Rounded up: a budget ends at an episode boundary, so a few steps past it can still complete a rollout.
 		self._max_updates = max(1, -(-int(total_steps) // self.n_steps))
@@ -149,11 +151,11 @@ class PPOAgent(ABaseline):
 			)
 		return self.initial_lr * (1.0 - self._total_updates / self._max_updates)
 
-	def set_learning(self, mode, output_dir=None):
+	def set_learning(self, mode: bool, output_dir: str | None = None) -> None:
 		"""Switch between train and eval mode."""
 		self.learn = mode
 
-	def act(self, env, state):
+	def act(self, env: gym.Env, state: np.ndarray) -> tuple:
 		"""Sample an action from the current policy while learning; take the most likely one otherwise."""
 		state = self._obs_normalizer.normalize(state)
 		obs = tf.convert_to_tensor(state[np.newaxis], dtype=tf.float32)
@@ -204,7 +206,7 @@ class PPOAgent(ABaseline):
 		action = int(np.random.choice(len(probabilities), p=probabilities / probabilities.sum()))
 		return action, log_probabilities[action]
 
-	def train(self, **kwargs):
+	def train(self, **kwargs: object) -> None:
 		"""Buffer the transition; run PPO update when buffer is full."""
 		step_data = kwargs["step_data"]
 

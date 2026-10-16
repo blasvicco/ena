@@ -13,15 +13,19 @@ APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MANIFEST = os.path.join(APP_DIR, "cloud_manifest.txt")
 # Imports the study, builds every agent it trains (which loads every skill driver ENA uses) and its test worlds, and
 # prints where half_cheetah came from.
-PROBE = """
-import sys
-sys.path.insert(0, sys.argv[1])
-import half_cheetah
-for name in ("ENA-Combined", "PPO", "SAC"):
-	half_cheetah.build_agent(name, max_agent_threads=1)
-assert len(half_cheetah.make_test_worlds(half_cheetah.make_training_worlds())) == 5
-print(half_cheetah.__file__)
-"""
+PROBE = "\n".join(
+	[
+		"",
+		"import sys",
+		"sys.path.insert(0, sys.argv[1])",
+		"import half_cheetah",
+		'for name in ("ENA-Combined", "PPO", "SAC"):',
+		"\thalf_cheetah.build_agent(name, max_agent_threads=1)",
+		"assert len(half_cheetah.make_test_worlds(half_cheetah.make_training_worlds())) == 5",
+		"print(half_cheetah.__file__)",
+		"",
+	]
+)
 
 
 def _manifest() -> list:
@@ -31,8 +35,9 @@ def _manifest() -> list:
 
 
 def test_the_study_builds_from_the_cloud_image_files_alone(tmp_path) -> None:
-	"""Copy only the manifest's files, then build the study's agents in a fresh interpreter that cannot see app/src: a
-	missing module (a new import, a driver loaded by name) fails here instead of on twenty cloud machines."""
+	"""The study builds from the cloud manifest's files alone, in an interpreter that cannot see app/src."""
+	# Copy only the manifest's files, then build the study's agents in a fresh interpreter that cannot see app/src: a
+	# missing module (a new import, a driver loaded by name) fails here instead of on twenty cloud machines.
 	with step("Arrange: the manifest's files only, as the image holds them."):
 		source = os.path.join(APP_DIR, "src")
 		for path in _manifest():

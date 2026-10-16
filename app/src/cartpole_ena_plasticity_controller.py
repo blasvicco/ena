@@ -12,7 +12,7 @@ from cartpole_ena_ablation import NUM_EXPERIMENTS, ABLATION_VARIANTS, parse_args
 # only the Plasticity driver swapped. The linear_ramp reference is cartpole_ena_ablation.py's own
 # ENA-Combined: every agent of a replicate is reseeded before it is built, trained and tested, so
 # replicate i of ENA-Combined is the same run here as there and is not repeated (the comparison is
-# paired by replicate). Decision rule fixed in docs/PLAN_ena_plasticity_controller.md before results exist.
+# paired by replicate). Decision rule fixed before the results existed.
 _COMBINED = next(row for row in ABLATION_VARIANTS if row["name"] == "ENA-Combined")
 CONTROLLER_VARIANTS = [
 	{**_COMBINED, "name": "ENA-Combined-QuadraticPlasticity", "plasticity_algorithm": "quadratic"},

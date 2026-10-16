@@ -11,7 +11,9 @@ import pytest
 # App imports
 from helpers import step
 import cartpole_ena_ablation
-from cartpole_ena_ablation import make_eta_reporter, play
+from cartpole_ena_ablation import play
+from tools import visualization
+from tools.visualization import format_duration, make_eta_reporter
 from tools.early_stopping import StoppingRule
 
 
@@ -57,8 +59,9 @@ class _FakeAgent:
 
 
 def test_play_records_env_shift_and_internal_env_id_columns() -> None:
-	"""C1/C2: play() must record the acting individual's own niche id and the
-	real detect_change() flag, not just the recognizer's global current_env_id."""
+	"""play() records the acting individual's own niche id and the real detect_change() flag."""
+	# C1/C2: play() must record the acting individual's own niche id and the
+	# real detect_change() flag, not just the recognizer's global current_env_id.
 	with step("Arrange: build a fake agent/env pair with a scripted single-step episode."):
 		agent = _FakeAgent()
 
@@ -87,8 +90,9 @@ def test_play_without_live_log_path_creates_no_file(tmp_path) -> None:
 
 
 def test_play_with_live_log_path_mirrors_the_in_memory_history(tmp_path) -> None:
-	"""S6: with live_log_path set, the CSV on disk must match the in-memory history exactly,
-	row for row — this is what lets a separate process watch convergence live."""
+	"""With live_log_path set, the CSV on disk matches the in-memory history row for row."""
+	# S6: with live_log_path set, the CSV on disk must match the in-memory history exactly,
+	# row for row — this is what lets a separate process watch convergence live.
 	with step("Arrange: a fake agent/env pair and a live_log_path under a temp directory."):
 		agent = _FakeAgent()
 		live_log_path = tmp_path / "live_training.csv"
@@ -106,8 +110,9 @@ def test_play_with_live_log_path_mirrors_the_in_memory_history(tmp_path) -> None
 
 
 def test_play_calls_on_episode_with_running_count_and_total() -> None:
-	"""S6 (ETA): play() must call on_episode(episode_num, total_episodes) after every
-	episode — this is the hook make_eta_reporter's live ETA is built on."""
+	"""play() calls on_episode(episode_num, total_episodes) after every episode."""
+	# S6 (ETA): play() must call on_episode(episode_num, total_episodes) after every
+	# episode — this is the hook make_eta_reporter's live ETA is built on.
 	with step("Arrange: a fake agent/env pair and a recorder for on_episode calls."):
 		agent = _FakeAgent()
 		calls = []
@@ -120,15 +125,16 @@ def test_play_calls_on_episode_with_running_count_and_total() -> None:
 
 
 def test_make_eta_reporter_estimates_and_reports_eta(monkeypatch) -> None:
-	"""ETA is estimated from the average time per episode elapsed so far this phase, and
-	posted as a status string with an explicit, unambiguous unit suffix (e.g. '30s',
-	'6m 22s', '1h 55m 31s') rather than a bare H:MM:SS that could be misread."""
+	"""The ETA reporter estimates the remaining time from the phase's pace and posts it with explicit units."""
+	# ETA is estimated from the average time per episode elapsed so far this phase, and
+	# posted as a status string with an explicit, unambiguous unit suffix (e.g. '30s',
+	# '6m 22s', '1h 55m 31s') rather than a bare H:MM:SS that could be misread.
 	with step("Arrange: a fake queue, and time.time() scripted to advance by 10s."):
 		posted = []
 		queue = SimpleNamespace(put=posted.append)
 		times = iter([100.0, 110.0])
-		monkeypatch.setattr(cartpole_ena_ablation.time, "time", lambda: next(times))
-		start_time = cartpole_ena_ablation.time.time()  # consumes the first scripted value (100.0)
+		monkeypatch.setattr(visualization.time, "time", lambda: next(times))
+		start_time = visualization.time.time()  # consumes the first scripted value (100.0)
 		reporter = make_eta_reporter(experiment_id=0, queue=queue, label="Training", agent_name="Agent-X", start_time=start_time)
 
 	with step("Act: report at episode 5 of 20 (10s for 5 episodes -> 2s/episode -> 30s remaining)."):
@@ -146,12 +152,13 @@ def test_make_eta_reporter_estimates_and_reports_eta(monkeypatch) -> None:
 def test_format_duration_includes_explicit_units(seconds, expected) -> None:
 	"""ETA must be unambiguous — explicit h/m/s units, not a bare H:MM:SS."""
 	with step("Act/Assert: format_duration renders the expected unit-labeled string."):
-		assert cartpole_ena_ablation.format_duration(seconds) == expected
+		assert format_duration(seconds) == expected
 
 
 def test_make_eta_reporter_skips_at_phase_boundaries() -> None:
-	"""No rate is known yet at episode 0, and there's nothing left to estimate once the
-	phase's last episode has finished — both must be silently skipped, not divide by zero."""
+	"""The ETA reporter skips episode 0 and the phase's last episode instead of dividing by zero."""
+	# No rate is known yet at episode 0, and there's nothing left to estimate once the
+	# phase's last episode has finished — both must be silently skipped, not divide by zero.
 	with step("Arrange: a fake queue and a reporter."):
 		posted = []
 		queue = SimpleNamespace(put=posted.append)
@@ -343,8 +350,9 @@ def _random_returns(env_seed, episodes=5):
 
 
 def test_play_with_an_env_seed_is_reproducible_and_seed_specific() -> None:
-	"""Seeded environments: the same seed replays the same episodes (initial states and, for Random, its
-	actions); a different seed gives different ones."""
+	"""The same environment seed replays the same episodes; a different seed gives different ones."""
+	# Seeded environments: the same seed replays the same episodes (initial states and, for Random, its
+	# actions); a different seed gives different ones.
 	with step("Act: two runs with seed 7 on fresh worlds and agents, one with seed 8."):
 		first, second, other = _random_returns(7), _random_returns(7), _random_returns(8)
 
@@ -354,8 +362,9 @@ def test_play_with_an_env_seed_is_reproducible_and_seed_specific() -> None:
 
 
 def test_training_and_testing_seed_the_environments_per_replicate_and_equally_for_every_agent(monkeypatch, tmp_path) -> None:
-	"""Every agent of a replicate meets the same seeded environment stream (common random numbers);
-	replicates differ; the test phase uses its own seed."""
+	"""Every agent of a replicate meets the same seeded environments; replicates and the test phase differ."""
+	# Every agent of a replicate meets the same seeded environment stream (common random numbers);
+	# replicates differ; the test phase uses its own seed.
 	with step("Arrange: capture play()'s env_seed for two agents, in two replicates."):
 		seeds = []
 
@@ -396,8 +405,9 @@ class _CandidateAgent(_StepsAgent):
 
 
 def test_play_logs_the_actual_candidate_steps_spent_in_each_episode() -> None:
-	"""The compute column is what the agent actually spent per episode (the delta of its counter),
-	not an upper bound from its search-effort settings."""
+	"""The compute column logs the candidate steps actually spent per episode, not an upper bound."""
+	# The compute column is what the agent actually spent per episode (the delta of its counter),
+	# not an upper bound from its search-effort settings.
 	with step("Act: three 10-step episodes."):
 		history = play(_CandidateAgent(), [_StepsEnv(10)], [3])
 

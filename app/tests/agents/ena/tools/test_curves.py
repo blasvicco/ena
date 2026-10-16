@@ -47,9 +47,10 @@ def test_linear_ramp_returns_low_value_at_or_above_high_limit() -> None:
 
 
 def test_linear_ramp_scales_proportionately_instead_of_flattening_below_a_floor() -> None:
-	"""Stage 7: the curve must scale continuously down to memory.min_seen, not flatten to a
-	flat 1.0 the moment a score dips below the (possibly very narrow) percentile band — a
-	merely mediocre score must not be treated identically to the worst score ever seen."""
+	"""The linear ramp scales continuously down to memory.min_seen instead of flattening below a floor."""
+	# Stage 7: the curve must scale continuously down to memory.min_seen, not flatten to a
+	# flat 1.0 the moment a score dips below the (possibly very narrow) percentile band — a
+	# merely mediocre score must not be treated identically to the worst score ever seen.
 	with step("Arrange: reward_history pinned at 500 (high_limit=500), min_seen=0 (the floor)."):
 		memory = _build_memory(reward_history=[500.0] * 10, min_seen=0.0)
 

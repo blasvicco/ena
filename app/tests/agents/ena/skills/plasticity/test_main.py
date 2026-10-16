@@ -9,8 +9,9 @@ from agents.ena.skills.plasticity.main import Plasticity
 
 
 def test_compute_forces_zero_when_not_learning() -> None:
-	"""Test mode must never trigger adaptive search effort, regardless of the configured
-	plasticity driver — the facade's own gate, not the curve tool (see test_curves.py)."""
+	"""The Plasticity facade returns zero when not learning, whatever the configured driver."""
+	# Test mode must never trigger adaptive search effort, regardless of the configured
+	# plasticity driver — the facade's own gate, not the curve tool (see test_curves.py).
 	with step("Arrange: a high-scoring reward history that would otherwise yield low plasticity."):
 		plasticity = Plasticity("linear_ramp")
 		memory = SimpleNamespace(reward_history=[500.0] * 10, min_seen=0.0)

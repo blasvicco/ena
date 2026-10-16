@@ -1,24 +1,23 @@
 #!/usr/bin/env python
-"""Benchmark an environment-detection driver on scripted inputs, without training an agent.
-
-The detector sees exactly what ENA hands it: the raw state, the action taken and the next state, one transition
-at a time, with an evaluation at every episode end. This script plays scripted episodes in a sequence of
-environments (e.g. Earth -> Heavy -> Mars), changing the acting policy every `policy_block` episodes to mimic
-a learning population (gaits, random, near-still; the same policy family in every environment, so only the
-physics differ), records the calls in detection_replay's format, replays them through a fresh detector, and
-scores the result:
-
-  - every switch confirmed within `window` episodes (delays);
-  - no confirmed change inside an environment (inside);
-  - one niche per environment: each environment's majority niche covers most of its episodes (purity), and
-    different environments have different majority niches (distinct).
-
-A match_niche call follows every episode: stricter than ENA, which binds niches only at Hall-of-Fame inductions.
-
-	python src/tools/detection_benchmark.py --domain half_cheetah --strategy dynamics_model
-"""
+"""Benchmark an environment-detection driver on scripted inputs, without training an agent."""
+# The detector sees exactly what ENA hands it: the raw state, the action taken and the next state, one transition
+# at a time, with an evaluation at every episode end. This script plays scripted episodes in a sequence of
+# environments (e.g. Earth -> Heavy -> Mars), changing the acting policy every `policy_block` episodes to mimic
+# a learning population (gaits, random, near-still; the same policy family in every environment, so only the
+# physics differ), records the calls in detection_replay's format, replays them through a fresh detector, and
+# scores the result:
+#
+#   - every switch confirmed within `window` episodes (delays);
+#   - no confirmed change inside an environment (inside);
+#   - one niche per environment: each environment's majority niche covers most of its episodes (purity), and
+#     different environments have different majority niches (distinct).
+#
+# A match_niche call follows every episode: stricter than ENA, which binds niches only at Hall-of-Fame inductions.
+#
+#         python src/tools/detection_benchmark.py --domain half_cheetah --strategy dynamics_model
 
 # General imports
+from typing import Callable
 import argparse
 from collections import Counter
 import math
@@ -26,6 +25,7 @@ import os
 import sys
 
 # Libs imports
+import gymnasium as gym
 import numpy as np
 import pandas as pd
 
@@ -34,13 +34,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # App imports
 # pylint: disable=wrong-import-position
 from agents.ena.skills.env_detection.main import EnvironmentRecognizer
-from tools.detection_replay import EVALUATE, MATCH, OBSERVE, CHIRP, START, replay
+from tools.detection_replay import EVALUATE, MATCH, OBSERVE, CHIRP, START, parse_overrides, replay
 
 PURITY_TARGET = 0.9  # share of an environment's episodes its majority niche must cover
 SEED_RANGE = 2**31 - 1
 
 
-def continuous_policy(rng: np.random.Generator, action_dim: int):
+def continuous_policy(rng: np.random.Generator, action_dim: int) -> Callable[[int, np.ndarray, np.random.Generator], np.ndarray]:
 	"""A policy from the continuous family: near-still, uniform random, or a sinusoidal gait with random parameters."""
 	kind = rng.choice(["still", "random", "gait", "gait"])
 	if kind == "still":
@@ -54,7 +54,7 @@ def continuous_policy(rng: np.random.Generator, action_dim: int):
 	)
 
 
-def discrete_policy(rng: np.random.Generator, state_dim: int):
+def discrete_policy(rng: np.random.Generator, state_dim: int) -> Callable[[int, np.ndarray, np.random.Generator], int]:
 	"""A policy from the discrete (CartPole) family: a perturbed linear balancing controller with some random actions, or random."""
 	if rng.uniform() < 0.25:
 		return lambda _step, _state, noise: int(noise.integers(2))
@@ -64,7 +64,7 @@ def discrete_policy(rng: np.random.Generator, state_dim: int):
 	return lambda _step, state, noise: int(noise.integers(2)) if noise.uniform() < epsilon else int(np.dot(weights, state) > 0.0)
 
 
-def fixed_policy(state_dim: int, action_dim: int, is_continuous: bool):
+def fixed_policy(state_dim: int, action_dim: int, is_continuous: bool) -> Callable[[int, np.ndarray, np.random.Generator], int | np.ndarray]:
 	"""One behavior for every episode of every world: a fixed sinusoidal gait (continuous) or a fixed balancing controller."""
 	if is_continuous:
 		phases = np.linspace(0.0, math.pi, action_dim)
@@ -84,14 +84,13 @@ def generate(
 	seed: int,
 	max_steps: int,
 	is_continuous: bool,
-	chirp_actions=None,
+	chirp_actions: np.ndarray | None = None,
 	policy_family: str = "drifting",
 ) -> tuple:
-	"""Play the scripted episodes; return (recording in detection_replay's format, environment name per episode).
-
-	With chirp_actions, each episode ends with that fixed chirp played as ENAgent plays it (a fresh reset, the
-	environment's random stream restored afterwards) and recorded as a CHIRP event before the EVALUATE.
-	policy_family 'drifting' draws a new policy every policy_block episodes; 'fixed' plays one behavior throughout."""
+	"""Play the scripted episodes; return (recording in detection_replay's format, environment name per episode)."""
+	# With chirp_actions, each episode ends with that fixed chirp played as ENAgent plays it (a fresh reset, the
+	# environment's random stream restored afterwards) and recorded as a CHIRP event before the EVALUATE.
+	# policy_family 'drifting' draws a new policy every policy_block episodes; 'fixed' plays one behavior throughout.
 	if policy_family not in ("drifting", "fixed"):
 		raise ValueError(f"Unknown policy family: {policy_family!r}")
 	rng = np.random.default_rng(seed)
@@ -138,9 +137,10 @@ def generate(
 	return recording, env_ids
 
 
-def play_chirp(world, chirp_actions) -> np.ndarray:
-	"""The chirp's observations from a fresh reset (start first, padded if it ends early), as ENAgent.__run_chirp
-	plays it; the world's random stream is restored afterwards."""
+def play_chirp(world: gym.Env, chirp_actions: np.ndarray | None) -> np.ndarray:
+	"""Return the chirp's observations from a fresh reset, as ENAgent plays it, restoring the world's random stream."""
+	# The chirp's observations from a fresh reset (start first, padded if it ends early), as ENAgent.__run_chirp
+	# plays it; the world's random stream is restored afterwards.
 	random_state = world.unwrapped.np_random.bit_generator.state
 	observation, _ = world.reset()
 	observations = [observation]
@@ -221,9 +221,8 @@ def domain_case(domain: str) -> dict:
 
 
 def run(domain: str, strategy: str = None, overrides: dict = None, seed: int = 0, policy_family: str = "drifting") -> dict:
-	"""Generate the domain's scripted inputs, replay them through a fresh detector, and score them.
-
-	The driver is `strategy`, else the study's (the settings' recognizer_strategy), else dynamics_model."""
+	"""Generate the domain's scripted inputs, replay them through a fresh detector, and score them."""
+	# The driver is `strategy`, else the study's (the settings' recognizer_strategy), else dynamics_model.
 	case = domain_case(domain)
 	settings = {**case["settings"], **(overrides or {})}
 	strategy = strategy or settings.pop("recognizer_strategy", "dynamics_model")
@@ -256,7 +255,6 @@ def main() -> None:
 	parser.add_argument("--set", nargs="*", default=[], metavar="KEY=VALUE", help="ENAgent recognizer_* overrides.")
 	parser.add_argument("--seed", type=int, default=0)
 	args = parser.parse_args()
-	from tools.half_cheetah_probe import parse_overrides
 
 	result = run(args.domain, args.strategy, parse_overrides(args.set), args.seed)
 	print(result)

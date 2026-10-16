@@ -177,8 +177,9 @@ def test_agent_training_matches_later_agents_to_the_reference_agents_steps_per_e
 
 
 def test_agent_training_gives_every_agent_a_fixed_step_budget_per_environment(monkeypatch, tmp_path) -> None:
-	"""steps_per_env trains every agent to the same env-step budget per environment, with no checks (HalfCheetah);
-	the total reaches PPO-like agents' training-length hook."""
+	"""steps_per_env trains every agent to the same env-step budget per environment, with no checks."""
+	# steps_per_env trains every agent to the same env-step budget per environment, with no checks (HalfCheetah);
+	# the total reaches PPO-like agents' training-length hook.
 	with step("Arrange: a stubbed play() that records budgets."):
 		budgets = {}
 
@@ -202,8 +203,9 @@ def test_agent_training_gives_every_agent_a_fixed_step_budget_per_environment(mo
 
 @pytest.mark.parametrize("health_every, written", [(None, False), (10_000, True)])
 def test_agent_training_logs_agent_health_only_when_asked(monkeypatch, tmp_path, health_every, written) -> None:
-	"""health_every (HalfCheetah): each agent's internal health (SAC's temperature and Q-values, PPO's learning rate and
-	policy std) is written to health_{agent}.csv at most every health_every env-steps; off by default (CartPole)."""
+	"""health_every writes each agent's internal health to health_{agent}.csv; it is off by default."""
+	# health_every (HalfCheetah): each agent's internal health (SAC's temperature and Q-values, PPO's learning rate and
+	# policy std) is written to health_{agent}.csv at most every health_every env-steps; off by default (CartPole).
 	with step("Arrange: a stubbed play() that reports progress at 10k and 20k steps, and a stubbed health reading."):
 
 		def _fake_play(_agent, _worlds, _episodes, on_episode=None, **_kwargs):
@@ -258,8 +260,9 @@ def test_build_ena_agent_takes_selection_from_the_row_or_the_study_default(row_d
 
 
 def test_agent_training_tells_agents_the_true_total_budget_under_a_stopping_rule(monkeypatch, tmp_path) -> None:
-	"""Regression: under a stopping rule nothing told PPO its total budget, so its LR schedule used a
-	1.5M-step default and hit zero after the first environment. The total is max_steps x environments."""
+	"""Under a stopping rule, agents are told their true total budget: max_steps times the environments."""
+	# Regression: under a stopping rule nothing told PPO its total budget, so its LR schedule used a
+	# 1.5M-step default and hit zero after the first environment. The total is max_steps x environments.
 	with step("Arrange: a stubbed play() and a rule capping each of 3 environments at 2.5M steps."):
 		monkeypatch.setattr(
 			cartpole_ena_ablation, "play", lambda *_args, **_kwargs: pd.DataFrame({"env_id": ["Mars"], "env_steps": [1], "score": [1.0]})
@@ -298,8 +301,9 @@ def _stub_reporting(monkeypatch) -> dict:
 
 
 def test_agent_testing_defaults_stay_cartpoles(monkeypatch, tmp_path) -> None:
-	"""Other domains reuse agent_testing; with no overrides it must still test on CartPole's 5 worlds
-	(Neptune, Brown-dwarf added) with the 475 bar and CartPole's chart range."""
+	"""Without overrides, agent_testing still tests on CartPole's five worlds, bar and chart range."""
+	# Other domains reuse agent_testing; with no overrides it must still test on CartPole's 5 worlds
+	# (Neptune, Brown-dwarf added) with the 475 bar and CartPole's chart range.
 	with step("Arrange: stubbed play() recording the worlds, and stubbed reporting."):
 		played = {}
 		monkeypatch.setattr(
@@ -370,8 +374,9 @@ def test_agent_testing_and_training_take_a_domains_worlds_threshold_and_range(mo
 	],
 )
 def test_a_replicate_is_complete_only_once_its_test_results_are_written(tmp_path, content, complete) -> None:
-	"""Resume safety: outputs.txt gets its header when a replicate starts, so an interrupted replicate (a
-	preempted cloud machine) must be re-run, not skipped. Finished replicates (CartPole's included) keep being skipped."""
+	"""A replicate counts as complete only once its test results are written, so interrupted ones re-run."""
+	# Resume safety: outputs.txt gets its header when a replicate starts, so an interrupted replicate (a
+	# preempted cloud machine) must be re-run, not skipped. Finished replicates (CartPole's included) keep being skipped.
 	with step("Arrange: a replicate directory with the given outputs.txt (or none)."):
 		if content is not None:
 			(tmp_path / "outputs.txt").write_text(content, encoding="utf-8")
@@ -405,8 +410,9 @@ def test_parse_args_threads_per_worker_defaults_to_uncapped() -> None:
 
 
 def test_every_agent_of_a_replicate_starts_from_the_same_random_state(monkeypatch, tmp_path) -> None:
-	"""Common random numbers: the RNGs are re-seeded before each agent is built, so two variants of a
-	replicate start from the same initial population — they differ only in their skills."""
+	"""Every agent of a replicate starts from the same random state, so variants differ only in their skills."""
+	# Common random numbers: the RNGs are re-seeded before each agent is built, so two variants of a
+	# replicate start from the same initial population — they differ only in their skills.
 	with step("Arrange: capture the built agents; skip training and testing."):
 		captured = {}
 		monkeypatch.setattr(cartpole_ena_ablation, "agent_training", lambda **kwargs: captured.update(agents=kwargs["agents"]))
@@ -448,9 +454,10 @@ def test_training_and_testing_reseed_before_each_agent(monkeypatch, tmp_path) ->
 
 
 def test_a_variants_run_is_identical_with_or_without_other_agents_before_it(monkeypatch, tmp_path) -> None:
-	"""End to end: replicate i of ENA-Combined logs byte-identical episodes alone, after other agents, and under
-	another name, so another study can reuse the ablation's run of the same configuration, paired by replicate,
-	instead of re-running it (cartpole_ena_plasticity_controller.py and cartpole_ena_compute.py rely on this)."""
+	"""A variant's run is byte-identical alone, after other agents, or under another name."""
+	# End to end: replicate i of ENA-Combined logs byte-identical episodes alone, after other agents, and under
+	# another name, so another study can reuse the ablation's run of the same configuration, paired by replicate,
+	# instead of re-running it (cartpole_ena_plasticity_controller.py and cartpole_ena_compute.py rely on this).
 	with step("Arrange: a tiny episode budget; ENA-Combined alone, and after Random and ENA-NoSkill."):
 		monkeypatch.setattr(cartpole_ena_ablation, "TRAINING_EPISODES_ENA", [2, 2, 2])
 		monkeypatch.setattr(cartpole_ena_ablation, "TESTING_EPISODES", [1, 1, 1, 1, 1])

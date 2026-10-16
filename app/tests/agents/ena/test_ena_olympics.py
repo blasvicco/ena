@@ -116,8 +116,9 @@ def test_training_holds_an_olympiad_once_it_is_due(build_agent, monkeypatch) -> 
 
 
 def test_an_olympiad_waits_until_the_eviction_bar_exists(build_agent, monkeypatch) -> None:
-	"""With fewer training returns than the reference trust needs, the bar is a placeholder (-1): the Olympiad is
-	postponed rather than confirming every competitor against it."""
+	"""An Olympiad is postponed until the reference trust that sets its eviction bar exists."""
+	# With fewer training returns than the reference trust needs, the bar is a placeholder (-1): the Olympiad is
+	# postponed rather than confirming every competitor against it.
 	with step("Arrange: due, Hall of Fame non-empty, but only 3 training returns; record Olympiads."):
 		agent = _olympic_agent(build_agent, olympics_interval=1)
 		_archive(agent, "g")
@@ -198,8 +199,9 @@ def test_qualifier_seats_reach_the_archive_and_an_olympiad_trims_the_niche_to_it
 
 
 def test_test_time_ranks_confirmed_gladiators_by_their_olympic_trust_not_their_drifted_live_trust(build_agent) -> None:
-	"""A live copy's trust keeps moving with single training episodes; entering test mode restores each confirmed
-	gladiator's Olympic trust from its record, so test-time selection starts from the Olympic ranking."""
+	"""Test mode ranks confirmed gladiators by their Olympic trust, not their drifted live trust."""
+	# A live copy's trust keeps moving with single training episodes; entering test mode restores each confirmed
+	# gladiator's Olympic trust from its record, so test-time selection starts from the Olympic ranking.
 	with step("Arrange: two confirmed gladiators; the weaker one's live copy drifted above the champion."):
 		agent = _olympic_agent(build_agent)
 		hall_of_fame = _archive(agent, "champion", "runner-up", confirmed=True)

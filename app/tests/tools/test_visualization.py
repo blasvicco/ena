@@ -20,8 +20,9 @@ def test_vprint_writes_through_to_its_file(tmp_path) -> None:
 
 
 def test_progress_reporter_prints_plain_status_lines_when_not_on_a_terminal(capsys) -> None:
-	"""Redirected to a log (no terminal), the live bar never reaches the file, so each status change is also printed
-	as one plain line (at most one per replicate per min_interval seconds; the final one always)."""
+	"""Without a terminal, the progress reporter prints each status change as one plain line."""
+	# Redirected to a log (no terminal), the live bar never reaches the file, so each status change is also printed
+	# as one plain line (at most one per replicate per min_interval seconds; the final one always).
 	with step("Arrange: two statuses of replicate 1, then its end."):
 		updates = queue.Queue()
 		for status in ("Training PPO (ETA 1h 2m)", "Testing PPO"):

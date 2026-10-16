@@ -1,17 +1,15 @@
 #!/usr/bin/env python
-"""Why the CartPole comparison's SAC-Discrete uses a target entropy of 0.5 log|A|: measure the entropy temperature per ratio.
-
-SAC-Discrete (Christodoulou, 2019) tunes its temperature alpha toward a target policy entropy of
-ratio * log|A|; the paper uses ratio 0.98. With CartPole's two actions that is nearly the maximum
-entropy, which the policy cannot hold while learning, so alpha keeps growing. This trains the
-challenge's own SAC-Discrete (same network, same hyperparameters, only the ratio changed) on the
-first training environment for a fixed number of steps, per ratio and seed, and logs alpha and the
-critics' value on states from the agent's own replay buffer. The paper's sentence on the choice is
-generated from the summary (paper_results.py).
-
-	python src/tools/sac_discrete_entropy_check.py                      # 0.98, 0.89, 0.5 x 3 seeds, 150k steps
-	python src/tools/sac_discrete_entropy_check.py --steps 2000 --seeds 1 --output-dir /tmp/sacd   # smoke test
-"""
+"""Why the CartPole comparison's SAC-Discrete uses a target entropy of 0.5 log|A|: measure the entropy temperature per ratio."""
+# SAC-Discrete (Christodoulou, 2019) tunes its temperature alpha toward a target policy entropy of
+# ratio * log|A|; the paper uses ratio 0.98. With CartPole's two actions that is nearly the maximum
+# entropy, which the policy cannot hold while learning, so alpha keeps growing. This trains the
+# challenge's own SAC-Discrete (same network, same hyperparameters, only the ratio changed) on the
+# first training environment for a fixed number of steps, per ratio and seed, and logs alpha and the
+# critics' value on states from the agent's own replay buffer. The paper's sentence on the choice is
+# generated from the summary (paper_results.py).
+#
+#         python src/tools/sac_discrete_entropy_check.py                      # 0.98, 0.89, 0.5 x 3 seeds, 150k steps
+#         python src/tools/sac_discrete_entropy_check.py --steps 2000 --seeds 1 --output-dir /tmp/sacd   # smoke test
 
 # General imports
 import argparse

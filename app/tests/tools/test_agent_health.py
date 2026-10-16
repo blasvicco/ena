@@ -10,8 +10,9 @@ from tools.agent_health import agent_health
 
 
 def test_sac_health_reads_its_temperature_and_q_values_without_touching_the_global_random_state() -> None:
-	"""SAC's temperature and mean Q over a fixed sample of its buffer; reading it never moves the replicate's NumPy
-	random stream, so logging cannot change a run."""
+	"""Reading SAC's health never moves the replicate's random stream, so logging cannot change a run."""
+	# SAC's temperature and mean Q over a fixed sample of its buffer; reading it never moves the replicate's NumPy
+	# random stream, so logging cannot change a run.
 	with step("Arrange: a SAC agent with 300 random transitions in its buffer."):
 		agent = half_cheetah.build_agent("SAC", max_agent_threads=1)
 		rng = np.random.default_rng(1)

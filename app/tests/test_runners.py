@@ -35,8 +35,9 @@ class _FakeAgent:
 
 @pytest.mark.parametrize("runner_name", RUNNERS)
 def test_agent_testing_live_logs_each_agent_to_its_own_testing_csv(runner_name, monkeypatch, tmp_path) -> None:
-	"""S8: the test phase must be live-logged too (live_testing_{agent_name}.csv), so test-time
-	selection (re-evaluation firings, match() results) can be diagnosed per episode."""
+	"""The test phase is live-logged to each agent's own live_testing CSV."""
+	# S8: the test phase must be live-logged too (live_testing_{agent_name}.csv), so test-time
+	# selection (re-evaluation firings, match() results) can be diagnosed per episode.
 	with step("Arrange: stub play/make_env/metrics/plots and capture play()'s live_log_path."):
 		runner = importlib.import_module(runner_name)
 		captured = {}

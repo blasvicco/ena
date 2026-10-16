@@ -3,6 +3,7 @@
 """ENA skill ablation — each skill's contribution to ENA's performance in non-stationary CartPole (30 replicates)."""
 
 # General imports
+from queue import Queue
 import argparse
 import csv
 import os
@@ -13,7 +14,7 @@ import traceback
 import faulthandler
 import concurrent.futures
 from multiprocessing import Manager
-from typing import Callable
+from typing import Callable, TextIO, TypeVar
 
 
 # Libs imports
@@ -26,7 +27,9 @@ from keras.layers import Dense, Input
 
 # App imports
 from agents import ENAgent, RandomAgent
+from agents.tools.abstract import AAgent
 from tools.agent_health import agent_health
+from tools.early_stopping import StoppingRule
 from tools.metrics import (
 	calculate_adaptation,
 	calculate_compute_cost,
@@ -36,7 +39,10 @@ from tools.metrics import (
 	plot_plasticity_analysis,
 	plot_specialist_transitions,
 )
-from tools.visualization import vprint, ProgressReporter
+from tools.visualization import ProgressReporter, make_eta_reporter, post_update, vprint
+
+
+Built = TypeVar("Built")  # whatever build_seeded's builder returns
 
 # Constants
 NUM_EXPERIMENTS = 30
@@ -94,26 +100,13 @@ def ena_brain(action_dim: int, state_dim: int) -> Sequential:
 	)
 
 
-def post_update(experiment_id: int, queue, status: str = None, progress: int = 0, done: bool = False) -> None:
-	"""Post update to the reporting queue."""
-	if queue:
-		queue.put(
-			{
-				"done": done,
-				"exp_id": experiment_id,
-				"progress": progress,
-				"status": status,
-			}
-		)
-
-
 # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
 def agent_testing(
 	agents: list,
 	experiment_id: int,
 	output_dir: str,
-	output_file,
-	queue,
+	output_file: TextIO,
+	queue: Queue | None,
 	worlds: list,
 	test_worlds: list = None,
 	success_threshold: float = SUCCESS_THRESHOLD,
@@ -198,11 +191,11 @@ def agent_training(
 	agents: list,
 	experiment_id: int,
 	output_dir: str,
-	output_file,
-	queue,
+	output_file: TextIO,
+	queue: Queue | None,
 	worlds: list,
 	match_steps_of: str = None,
-	stopping=None,
+	stopping: StoppingRule | None = None,
 	eval_worlds: list = None,
 	success_threshold: float = SUCCESS_THRESHOLD,
 	ylim: tuple = Y_LIM,
@@ -210,12 +203,9 @@ def agent_training(
 	steps_per_env: list = None,
 	health_every: int = None,
 ) -> None:
-	"""Train agents on worlds — by episode count, a fixed env-step budget, matched to a reference agent's env-steps,
-	or early-stopped.
-
-	training_x_axis is the training chart's axis: "env_steps" for studies at an equal step budget, where agents
-	play very different numbers of episodes (ENA's candidate evaluations count against its budget).
-	"""
+	"""Train agents on worlds — by episode count, a fixed env-step budget, matched to a reference agent's env-steps, or early-stopped."""
+	# training_x_axis is the training chart's axis: "env_steps" for studies at an equal step budget, where agents
+	# play very different numbers of episodes (ENA's candidate evaluations count against its budget).
 	# stopping (tools.early_stopping.StoppingRule) with eval_worlds (separate copies of worlds) trains
 	# every agent on each environment until solved/plateau/cap, writes each agent's checks to
 	# live_evaluation_{agent}.csv and adds the ADAPTATION SUMMARY table to outputs.txt.
@@ -375,12 +365,10 @@ def _play_episode(agent, env) -> tuple:
 	return episode_score, steps
 
 
-def evaluate_agent(agent, env, episodes: int) -> tuple:
-	"""Mean score of `episodes` frozen evaluation episodes on env, and the env-steps they took.
-
-	Uses the agent's own side-effect-free evaluation_episode(env) where it has one (ENA); otherwise
-	plays act() with learn temporarily off (greedy for the baselines) and never calls train().
-	"""
+def evaluate_agent(agent: AAgent, env: gym.Env, episodes: int) -> tuple:
+	"""Mean score of `episodes` frozen evaluation episodes on env, and the env-steps they took."""
+	# Uses the agent's own side-effect-free evaluation_episode(env) where it has one (ENA); otherwise
+	# plays act() with learn temporarily off (greedy for the baselines) and never calls train().
 	scores, total_steps = [], 0
 	for _ in range(episodes):
 		if hasattr(agent, "evaluation_episode"):
@@ -442,13 +430,13 @@ def _episode_row(agent, env, env_idx: int, episode: int, score: float, env_steps
 
 # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
 def play(
-	agent,
+	agent: AAgent,
 	environments: list,
 	episodes_per_env: list,
 	live_log_path: str = None,
-	on_episode=None,
+	on_episode: Callable[[int, int], None] | None = None,
 	steps_per_env: list = None,
-	stopping=None,
+	stopping: StoppingRule | None = None,
 	eval_environments: list = None,
 	env_seed: int = None,
 ) -> pd.DataFrame:
@@ -460,7 +448,7 @@ def play(
 		seed_environments(environments, env_seed)
 		seed_environments(eval_environments or [], env_seed + len(environments))
 	# If live_log_path is given, each episode's row is also appended to that CSV, flushed
-	# immediately — lets a separate process (e.g. tools/live_dashboard.py) watch convergence
+	# immediately — lets a separate process watch convergence
 	# while this run is still in progress, without changing the returned DataFrame or any
 	# existing chart in any way.
 	# If on_episode is given, it's called after every episode as on_episode(progress, total) —
@@ -567,12 +555,10 @@ def _phase_continues(stopping, steps_per_env, episodes_per_env, env_idx: int, ph
 
 # pylint: disable=too-many-arguments,too-many-positional-arguments
 def _apply_stopping(agent, stopping, eval_env, phase_steps: int, row: dict, evaluations: list, progress: tuple) -> tuple:
-	"""Run a due check and apply the budget; return (status, phase evaluation steps, first-solve steps).
-
-	progress is (evaluation steps so far, first-solve steps or None). status "continue" keeps
-	playing. A solve or plateau only ends the environment when the rule says so; otherwise the
-	environment trains to max_steps and ends "solved" if it was ever solved, else "cap".
-	"""
+	"""Run a due check and apply the budget; return (status, phase evaluation steps, first-solve steps)."""
+	# progress is (evaluation steps so far, first-solve steps or None). status "continue" keeps
+	# playing. A solve or plateau only ends the environment when the rule says so; otherwise the
+	# environment trains to max_steps and ends "solved" if it was ever solved, else "cap".
 	phase_eval_steps, solve_steps = progress
 	status = "continue"
 	if stopping.due(phase_steps):
@@ -598,17 +584,6 @@ def _apply_stopping(agent, stopping, eval_env, phase_steps: int, row: dict, eval
 	return status, phase_eval_steps, solve_steps
 
 
-def format_duration(seconds: float) -> str:
-	"""Format a duration in seconds as e.g. '1h 55m 31s', '6m 22s', or '42s'."""
-	hours, remainder = divmod(int(seconds), 3600)
-	minutes, secs = divmod(remainder, 60)
-	if hours:
-		return f"{hours}h {minutes}m {secs}s"
-	if minutes:
-		return f"{minutes}m {secs}s"
-	return f"{secs}s"
-
-
 def _with_health(on_episode: Callable[[int, int], None], agent, rows: list, every: int) -> Callable[[int, int], None]:
 	"""Wrap a play() on_episode callback to also append the agent's health to rows, at most every `every` steps."""
 
@@ -618,22 +593,6 @@ def _with_health(on_episode: Callable[[int, int], None], agent, rows: list, ever
 			reading = agent_health(agent)
 			if reading:
 				rows.append({"steps": progress, **reading})
-
-	return _report
-
-
-def make_eta_reporter(experiment_id: int, queue, label: str, agent_name: str, start_time: float) -> Callable[[int, int], None]:
-	"""Build a play() on_episode callback that reports a live ETA via the status queue."""
-	# Estimated from the average time per episode elapsed so far this phase.
-
-	def _report(episode_num: int, total_episodes: int) -> None:
-		"""Post the current ETA, skipping the first and last episode (no rate yet / done)."""
-		if episode_num <= 0 or episode_num >= total_episodes:
-			return
-		elapsed = time.time() - start_time
-		remaining = (elapsed / episode_num) * (total_episodes - episode_num)
-		eta_str = format_duration(remaining)
-		post_update(experiment_id, queue, status=f"{label} {agent_name} (ETA {eta_str})")
 
 	return _report
 
@@ -692,7 +651,7 @@ def env_seed_for(experiment_id: int, phase: str) -> int:
 	return (SEED_OFFSET + experiment_id) * 1000 + (0 if phase == "training" else 500)
 
 
-def build_seeded(experiment_id: int, build, *args):
+def build_seeded(experiment_id: int, build: Callable[..., Built], *args: object) -> Built:
 	"""build(*args) right after seeding the replicate's RNGs, so every agent of a replicate starts from the same random state."""
 	seed_experiment(experiment_id)
 	return build(*args)
@@ -708,7 +667,7 @@ def seed_experiment(experiment_id: int) -> int:
 
 
 # pylint: disable=too-many-arguments,too-many-positional-arguments
-def run_experiment(experiment_id: int, output_dir: str, queue, variants: list, include_random: bool) -> None:
+def run_experiment(experiment_id: int, output_dir: str, queue: Queue | None, variants: list, include_random: bool) -> None:
 	"""Run a single experiment: train then test one ENAgent per variant row (plus the Random floor if asked)."""
 	post_update(experiment_id, queue, status="Initializing Agents...", progress=2)
 	seed_experiment(experiment_id)
@@ -744,13 +703,19 @@ def run_experiment(experiment_id: int, output_dir: str, queue, variants: list, i
 
 # pylint: disable=too-many-arguments,too-many-positional-arguments
 def train_and_test(
-	agents: list, experiment_id: int, output_dir: str, output_file, queue, worlds: list, testing_episodes: list = None, training=None, testing=None
+	agents: list,
+	experiment_id: int,
+	output_dir: str,
+	output_file: TextIO,
+	queue: Queue | None,
+	worlds: list,
+	testing_episodes: list = None,
+	training: dict | None = None,
+	testing: dict | None = None,
 ) -> None:
-	"""Train every agent on the worlds, then test them all frozen with their Hall of Fame restored (every study's lifecycle).
-
-	training / testing are extra keyword arguments for agent_training / agent_testing (a domain's
-	stopping rule, test worlds, threshold, chart range); testing_episodes defaults to CartPole's.
-	"""
+	"""Train every agent on the worlds, then test them all frozen with their Hall of Fame restored (every study's lifecycle)."""
+	# training / testing are extra keyword arguments for agent_training / agent_testing (a domain's
+	# stopping rule, test worlds, threshold, chart range); testing_episodes defaults to CartPole's.
 	common = {
 		"agents": agents,
 		"experiment_id": experiment_id,
@@ -797,7 +762,13 @@ def configure_worker_threads(threads: int = None) -> None:
 
 # pylint: disable=too-many-arguments,too-many-positional-arguments
 def run_experiment_worker(
-	experiment_id: int, reporting_queue, study_dir: str, variants: list, include_random: bool, experiment_fn=None, threads: int = None
+	experiment_id: int,
+	reporting_queue: Queue | None,
+	study_dir: str,
+	variants: list,
+	include_random: bool,
+	experiment_fn: Callable | None = None,
+	threads: int = None,
 ) -> None:
 	"""Wrapper that runs a single experiment in an isolated process."""
 	configure_worker_threads(threads)
@@ -852,8 +823,8 @@ def _positive_int(value: str) -> int:
 
 
 def study_ids(num_experiments: int, replicate: int = None) -> list:
-	"""The replicate ids a study runs: all of 0..num_experiments-1, or only exp_{replicate}'s (1-based, one machine per
-	replicate in the cloud). Seeding depends only on the id, so a replicate is the same run either way."""
+	"""The replicate ids a study runs: all of 0..num_experiments-1, or only exp_{replicate}'s (1-based, one machine per replicate in the cloud)."""
+	# Seeding depends only on the id, so a replicate is the same run either way.
 	if replicate is None:
 		return list(range(num_experiments))
 	if not 1 <= replicate <= num_experiments:
@@ -899,13 +870,14 @@ def run_study(
 	variants: list,
 	include_random: bool,
 	title: str,
-	experiment_fn=None,
+	experiment_fn: Callable | None = None,
 	workers: int = None,
 	threads_per_worker: int = None,
 	replicate: int = None,
 ) -> None:
-	"""Run num_experiments independent replicates in parallel worker processes, skipping any already complete (with
-	replicate, only exp_{replicate}: study_ids)."""
+	"""Run the study's replicates in parallel worker processes, skipping any already complete."""
+	# Run num_experiments independent replicates in parallel worker processes, skipping any already complete (with
+	# replicate, only exp_{replicate}: study_ids).
 	# experiment_fn(experiment_id, output_dir, queue, variants, include_random) runs one replicate —
 	# default run_experiment (ENAgent rows); another study can pass its own (e.g. cartpole_challenge.py).
 	# workers sets how many replicates run at once (default MAX_WORKERS); running again with a larger

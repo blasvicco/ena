@@ -1,6 +1,7 @@
 """Default Hall of Fame driver — the real archive-and-induction pipeline."""
 
 # General imports
+from typing import Callable
 import os
 import random
 import uuid
@@ -11,6 +12,9 @@ import numpy as np
 # App imports
 from agents.ena.skills.hall_of_fame.driver.abstract import ADriver
 from agents.ena.tools.genetic_similarity import genetic_similarity
+from agents.ena.memory import AgentMemory
+from agents.ena.skills.env_detection.main import EnvironmentRecognizer
+from agents.tools.normalizers import _RunningNormalizer
 
 
 class Instance(ADriver):  # pylint: disable=too-many-instance-attributes
@@ -31,7 +35,7 @@ class Instance(ADriver):  # pylint: disable=too-many-instance-attributes
 	GATE_TRUST = 0.5
 
 	# pylint: disable=too-many-arguments,too-many-positional-arguments
-	def __init__(self, max_per_niche, max_gladiator_ratio, brain, action_dim, state_dim, **_kwargs):
+	def __init__(self, max_per_niche: int, max_gladiator_ratio: float, brain: Callable, action_dim: int, state_dim: int, **_kwargs) -> None:
 		# max_per_niche:       max gladiators stored per recognised niche
 		# max_gladiator_ratio: fraction of pop_size that can be gladiators at injection time
 		# protect_confirmed:   (the olympic driver) only an Olympiad removes or re-scores a gladiator that
@@ -64,12 +68,12 @@ class Instance(ADriver):  # pylint: disable=too-many-instance-attributes
 	# pylint: disable=too-many-locals
 	def inject_gladiators(
 		self,
-		population,
-		pop_size,
-		obs_normalizer,
-		restore_trust=True,
-		admit=None,
-	):
+		population: list,
+		pop_size: int,
+		obs_normalizer: _RunningNormalizer,
+		restore_trust: bool = True,
+		admit: Callable[[dict], bool] | None = None,
+	) -> None:
 		"""Re-introduces Gladiators (those admit(record) accepts, if given) into the active population."""
 		# Strategy: round-robin across niches (1 per niche per round), best-first within
 		# each niche, until floor(pop_size * max_gladiator_ratio) population slots are filled.
@@ -122,7 +126,7 @@ class Instance(ADriver):  # pylint: disable=too-many-instance-attributes
 			target["olympic_confirmed"] = gladiator.get("olympic_confirmed", False)
 			target["olympic_return"] = gladiator.get("olympic_return")
 
-	def save_niche_details(self, output_dir, agent_name):
+	def save_niche_details(self, output_dir: str | None, agent_name: str) -> None:
 		"""Save the niche details to a file in the output directory."""
 		file_path = os.path.join(output_dir, f"niches_{agent_name}.txt")
 		with open(file_path, "w", encoding="utf-8") as file:
@@ -144,28 +148,28 @@ class Instance(ADriver):  # pylint: disable=too-many-instance-attributes
 	# pylint: disable=too-many-arguments,too-many-positional-arguments
 	def update(
 		self,
-		winner,
-		current_trust,
-		population,
-		memory,
-		recognizer,
-		obs_normalizer,
-		env_name="Unknown",
-	):
+		winner: dict,
+		current_trust: float,
+		population: list,
+		memory: AgentMemory,
+		recognizer: EnvironmentRecognizer | None,
+		obs_normalizer: _RunningNormalizer,
+		env_name: str = "Unknown",
+	) -> None:
 		"""Attempt to induct winner into the Hall of Fame."""
 		# env_name is the environment the winner just succeeded in. It labels a new record
 		# (first induction, or a cross-niche clone) and is never written onto an existing one —
 		# a gladiator's label is fixed at induction.
-		if not self.__passes_performance_gate(current_trust, population, memory.plasticity_history):
+		if not self._passes_performance_gate(current_trust, population, memory.plasticity_history):
 			return
 
 		# Late Identity Binding: Determine the niche ID for this successful individual
 		recognizer.match_niche(memory, winner, self, population=population)
 
-		if self.__continual_improvement(winner, current_trust, recognizer, obs_normalizer, env_name):
+		if self._continual_improvement(winner, current_trust, recognizer, obs_normalizer, env_name):
 			return
 
-		if self.__genetic_diversity(
+		if self._genetic_diversity(
 			winner,
 			current_trust,
 			recognizer,
@@ -175,10 +179,10 @@ class Instance(ADriver):  # pylint: disable=too-many-instance-attributes
 		):
 			return
 
-		if self.__slot_induction(winner, current_trust, recognizer, obs_normalizer, env_name):
+		if self._slot_induction(winner, current_trust, recognizer, obs_normalizer, env_name):
 			return
 
-		self.__eco_niche_protection(
+		self._eco_niche_protection(
 			winner,
 			current_trust,
 			recognizer,
@@ -189,7 +193,7 @@ class Instance(ADriver):  # pylint: disable=too-many-instance-attributes
 
 	# Private
 	# pylint: disable=too-many-arguments,too-many-positional-arguments
-	def __continual_improvement(self, winner, current_trust, recognizer, obs_normalizer, env_name):
+	def _continual_improvement(self, winner, current_trust, recognizer, obs_normalizer, env_name):
 		"""STEP 3: CHECK FOR EXISTING ID"""
 		individual_id = winner["individual_id"]
 		if individual_id not in self._records:
@@ -201,14 +205,14 @@ class Instance(ADriver):  # pylint: disable=too-many-instance-attributes
 
 		if current_env_id == existing_env_id:
 			# Same niche: update in place if strictly better. env_id and env_name stay frozen.
-			if self.__protected(existing):
+			if self._protected(existing):
 				return True
 			if current_trust > existing.get("trust", -99):
 				existing["model"].set_weights(winner["model"].get_weights())
 				existing["trust"] = current_trust
-				self.__stamp(existing, winner, obs_normalizer)
+				self._stamp(existing, winner, obs_normalizer)
 				winner["internal_env_id"] = current_env_id
-				self.__stamp(winner, winner, obs_normalizer)
+				self._stamp(winner, winner, obs_normalizer)
 			return True
 
 		# Cross-niche: winner is already a gladiator from a different niche.
@@ -219,12 +223,12 @@ class Instance(ADriver):  # pylint: disable=too-many-instance-attributes
 		niche_records = [individual for individual in self._records.values() if individual.get("internal_env_id") == current_env_id]
 		for record in niche_records:
 			if genetic_similarity(winner, record) > self.SIMILARITY_THRESHOLD:
-				if current_trust > record.get("trust", -99) and not self.__protected(record):
+				if current_trust > record.get("trust", -99) and not self._protected(record):
 					record["model"].set_weights(winner["model"].get_weights())
 					record["trust"] = current_trust
-					self.__stamp(record, winner, obs_normalizer)
+					self._stamp(record, winner, obs_normalizer)
 				return True
-		if len(niche_records) < self.__capacity():
+		if len(niche_records) < self._capacity():
 			clone_id = str(uuid.uuid4())
 			clone = {
 				"model": self._brain(self._action_dim, self._state_dim),
@@ -234,40 +238,40 @@ class Instance(ADriver):  # pylint: disable=too-many-instance-attributes
 				"internal_env_id": current_env_id,
 				"is_gladiator": True,
 			}
-			self.__stamp(clone, winner, obs_normalizer)
+			self._stamp(clone, winner, obs_normalizer)
 			clone["model"].set_weights(winner["model"].get_weights())
 			self._records[clone_id] = clone
 		return True
 
 	# pylint: disable=too-many-arguments,too-many-positional-arguments
-	def __eco_niche_protection(self, winner, current_trust, recognizer, obs_normalizer, population, env_name):
+	def _eco_niche_protection(self, winner, current_trust, recognizer, obs_normalizer, population, env_name):
 		"""STEP 6: SAME-NICHE REPLACEMENT — evict weakest in winner's niche if winner is better."""
 		current_niche_id = recognizer.current_niche_id
 		niche_records = [
 			individual
 			for individual in self._records.values()
-			if individual.get("internal_env_id") == current_niche_id and not self.__protected(individual)
+			if individual.get("internal_env_id") == current_niche_id and not self._protected(individual)
 		]
 		if not niche_records:
 			return
 		weakest = min(niche_records, key=lambda individual: individual.get("trust"))
 		if current_trust > weakest.get("trust"):
-			self.__evict(weakest["individual_id"], population)
-			self.__save(winner, current_trust, recognizer, obs_normalizer, env_name)
+			self._evict(weakest["individual_id"], population)
+			self._save(winner, current_trust, recognizer, obs_normalizer, env_name)
 
-	def records_in_niche(self, niche_id):
+	def records_in_niche(self, niche_id: int) -> list:
 		"""The archived records of one niche (the Olympics' competitors)."""
 		return [record for record in self._records.values() if record.get("internal_env_id") == niche_id]
 
-	def record(self, individual_id):
+	def record(self, individual_id: str) -> dict | None:
 		"""One archived record, or None."""
 		return self._records.get(individual_id)
 
-	def evict(self, individual_id, population):
+	def evict(self, individual_id: str, population: list) -> None:
 		"""Remove a record and clear its live copy's gladiator tags (the Olympics' eviction)."""
-		self.__evict(individual_id, population)
+		self._evict(individual_id, population)
 
-	def __evict(self, individual_id, population):
+	def _evict(self, individual_id, population):
 		"""Remove a record from the archive and clear its live population member's gladiator tags."""
 		# Without this, a population slot evicted from the archive keeps competing in
 		# evaluate() and staying protected in __evolve_population() as a "zombie
@@ -283,7 +287,7 @@ class Instance(ADriver):  # pylint: disable=too-many-instance-attributes
 				break
 
 	# pylint: disable=too-many-arguments,too-many-positional-arguments
-	def __genetic_diversity(self, winner, current_trust, recognizer, obs_normalizer, population, env_name):
+	def _genetic_diversity(self, winner, current_trust, recognizer, obs_normalizer, population, env_name):
 		"""STEP 4: NICHE PROTECTION (Genetic Similarity)"""
 		current_env_id = recognizer.current_niche_id
 		for hof_id, hof_record in list(self._records.items()):
@@ -293,19 +297,19 @@ class Instance(ADriver):  # pylint: disable=too-many-instance-attributes
 
 			similarity = genetic_similarity(winner, hof_record)
 			if similarity > self.SIMILARITY_THRESHOLD:
-				if self.__protected(hof_record):
+				if self._protected(hof_record):
 					# The twin waits for the next Olympiad beside it, provisional, if the niche has room.
-					self.__slot_induction(winner, current_trust, recognizer, obs_normalizer, env_name)
+					self._slot_induction(winner, current_trust, recognizer, obs_normalizer, env_name)
 					return True
 				existing_trust = hof_record.get("trust", -99)
 				if current_trust > existing_trust:
-					self.__evict(hof_id, population)
-					self.__save(winner, current_trust, recognizer, obs_normalizer, env_name)
+					self._evict(hof_id, population)
+					self._save(winner, current_trust, recognizer, obs_normalizer, env_name)
 				# Whether we replaced or not, twin found — exit
 				return True
 		return False
 
-	def __passes_performance_gate(self, current_trust, population, plasticity_history) -> bool:
+	def _passes_performance_gate(self, current_trust, population, plasticity_history) -> bool:
 		"""STEP 1: PERFORMANCE GATE — the winner's trust stands out (z-score, bar lowered by plasticity) or is high on its own."""
 		current_trusts = [guy["trust"] for guy in population]
 		avg_trust = np.mean(current_trusts)
@@ -320,7 +324,7 @@ class Instance(ADriver):  # pylint: disable=too-many-instance-attributes
 		return current_z_score >= z_score_required or current_trust >= self.GATE_TRUST
 
 	# pylint: disable=too-many-arguments,too-many-positional-arguments
-	def __save(self, individual, trust, recognizer, obs_normalizer, env_name):
+	def _save(self, individual, trust, recognizer, obs_normalizer, env_name):
 		"""Deep copy of a specialist into the Hall of Fame."""
 		backup = {}
 		backup["model"] = self._brain(self._action_dim, self._state_dim)
@@ -329,7 +333,7 @@ class Instance(ADriver):  # pylint: disable=too-many-instance-attributes
 		backup["trust"] = trust
 		backup["env_name"] = env_name
 		backup["internal_env_id"] = recognizer.current_niche_id
-		self.__stamp(backup, individual, obs_normalizer)
+		self._stamp(backup, individual, obs_normalizer)
 		self._records[individual["individual_id"]] = backup
 
 		# Mark the live population member as a gladiator immediately.
@@ -337,15 +341,15 @@ class Instance(ADriver):  # pylint: disable=too-many-instance-attributes
 		individual["is_gladiator"] = True
 		individual["internal_env_id"] = recognizer.current_niche_id
 		individual["env_name"] = backup["env_name"]
-		self.__stamp(individual, individual, obs_normalizer)
+		self._stamp(individual, individual, obs_normalizer)
 		if self.protect_confirmed:
 			individual["olympic_confirmed"] = False  # a new record is provisional until its first Olympiad
 
-	def __capacity(self) -> int:
+	def _capacity(self) -> int:
 		"""Records a niche may hold: max_per_niche, plus the qualifier seats when confirmed gladiators are protected."""
 		return self.max_per_niche + (self.qualifier_seats if self.protect_confirmed else 0)
 
-	def __stamp(self, target: dict, source: dict, obs_normalizer) -> None:
+	def _stamp(self, target: dict, source: dict, obs_normalizer) -> None:
 		"""Set target's normalization snapshot: source's own (aligned_statistics), else the normalizer's current one."""
 		if self.aligned_statistics and source.get("last_mu") is not None:
 			mean, var = source["last_mu"], source["last_var"]
@@ -353,16 +357,16 @@ class Instance(ADriver):  # pylint: disable=too-many-instance-attributes
 			mean, var = obs_normalizer.mean, obs_normalizer.var
 		target["last_mu"], target["last_var"] = np.copy(mean), np.copy(var)
 
-	def __protected(self, record) -> bool:
+	def _protected(self, record) -> bool:
 		"""Whether only an Olympiad may remove or re-score this record."""
 		return self.protect_confirmed and bool(record.get("olympic_confirmed", False))
 
 	# pylint: disable=too-many-arguments,too-many-positional-arguments
-	def __slot_induction(self, winner, current_trust, recognizer, obs_normalizer, env_name):
+	def _slot_induction(self, winner, current_trust, recognizer, obs_normalizer, env_name):
 		"""STEP 5: OPEN SLOT INDUCTION — induct if winner's niche is below budget."""
 		current_niche_id = recognizer.current_niche_id
 		niche_count = sum(1 for individual in self._records.values() if individual.get("internal_env_id") == current_niche_id)
-		if niche_count < self.__capacity():
-			self.__save(winner, current_trust, recognizer, obs_normalizer, env_name)
+		if niche_count < self._capacity():
+			self._save(winner, current_trust, recognizer, obs_normalizer, env_name)
 			return True
 		return False

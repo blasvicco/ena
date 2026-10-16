@@ -86,8 +86,9 @@ def test_ppo_set_total_steps_sizes_the_learning_rate_schedule(total_steps, expec
 
 
 def _forbid_tf_random(monkeypatch):
-	"""Make any eager tf.random sampling call fail: under tf.random.set_seed each eager call leaks ~36 KB
-	(measured: 30k seeded tf.random.categorical calls grew memory 588 MB -> 1,681 MB; unseeded and NumPy flat)."""
+	"""Make any eager tf.random sampling call fail, since each seeded eager call leaks memory."""
+	# Make any eager tf.random sampling call fail: under tf.random.set_seed each eager call leaks ~36 KB
+	# (measured: 30k seeded tf.random.categorical calls grew memory 588 MB -> 1,681 MB; unseeded and NumPy flat).
 
 	def _forbidden(*_args, **_kwargs):
 		raise AssertionError("eager tf.random sampling leaks memory under a global seed")
@@ -179,8 +180,8 @@ def test_ppo_with_a_constant_learning_rate_never_anneals() -> None:
 
 
 def test_ppo_annealing_raises_instead_of_silently_freezing_when_its_schedule_runs_out() -> None:
-	"""Regression: a schedule sized for 1.5M steps reached zero after the first environment and PPO trained
-	frozen for 5M more steps. An exhausted schedule must now fail loudly."""
+	"""Regression: a schedule sized for 1.5M steps reached zero after the first environment and PPO trained frozen for 5M more steps."""
+	# An exhausted schedule must now fail loudly.
 	with step("Arrange: an annealing PPO whose schedule covers 3 updates."):
 		agent = PPOAgent(brain=_brain, critic_brain=_brain, make_env=_DiscreteEnv, learning_rate=3e-4)
 		agent.set_total_steps(3 * agent.n_steps)

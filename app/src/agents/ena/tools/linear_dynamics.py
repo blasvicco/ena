@@ -59,7 +59,7 @@ class LinearGaussianDynamics:
 		return self._variance
 
 	def standardized_residuals(self, features: np.ndarray, targets: np.ndarray, variance_scale: float = 1.0) -> np.ndarray:
-		"""Residuals scaled by the model's residual std (times sqrt(variance_scale)) — ~N(0, I) on same-dynamics data at scale 1."""
+		"""Return the residuals scaled by the model's residual std (times sqrt(variance_scale)) — ~N(0, I) on same-dynamics data at scale 1."""
 		features = np.atleast_2d(features)
 		targets = np.atleast_2d(targets)
 		return (targets - features @ self.weights) / np.sqrt(self.variance * variance_scale)
@@ -70,7 +70,7 @@ class LinearGaussianDynamics:
 		return -0.5 * (np.sum(residuals * residuals, axis=1) + np.sum(np.log(2.0 * np.pi * self.variance * variance_scale)))
 
 	@classmethod
-	def fit(cls, features: np.ndarray, targets: np.ndarray, **kwargs) -> "LinearGaussianDynamics":
+	def fit(cls, features: np.ndarray, targets: np.ndarray, **kwargs: object) -> "LinearGaussianDynamics":
 		"""Build a model fitted on exactly this batch."""
 		features = np.atleast_2d(features)
 		targets = np.atleast_2d(targets)

@@ -6,6 +6,10 @@ from abc import ABC, abstractmethod
 # Libs imports
 import numpy as np
 
+# App imports
+from agents.ena.memory import AgentMemory
+from agents.ena.skills.env_detection.main import EnvironmentRecognizer
+
 
 class ADriver(ABC):
 	"""Picks which population member acts each episode: epsilon-greedy by trust in training, the driver's own rule at test time."""
@@ -16,13 +20,13 @@ class ADriver(ABC):
 	def __init__(self, exploration_rate: float = 0.1) -> None:
 		self._exploration_rate = exploration_rate
 
-	def select_individual(self, population: list, recognizer, memory, learn: bool) -> int:
-		"""Returns population index of the selected individual."""
+	def select_individual(self, population: list, recognizer: EnvironmentRecognizer | None, memory: AgentMemory, learn: bool) -> int:
+		"""Return the population index of the selected individual."""
 		if learn:
 			return self._select_train(population)
 		return self._select_test(population, recognizer, memory)
 
-	def record_episode_result(self, score: float, memory, recognizer=None) -> None:
+	def record_episode_result(self, score: float, memory: AgentMemory, recognizer: EnvironmentRecognizer | None = None) -> None:
 		"""Called at episode end during testing; drivers that learn from test returns override it."""
 
 	@abstractmethod

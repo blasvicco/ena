@@ -16,6 +16,8 @@ import numpy as np
 from agents.ena.skills.env_detection.driver.abstract import ADriver
 from agents.ena.tools.linear_dynamics import LinearGaussianDynamics
 from agents.ena.tools.pm_cusum import PMCuSum
+from agents.ena.memory import AgentMemory
+from agents.ena.skills.hall_of_fame.main import HallOfFame
 
 
 # pylint: disable=too-many-instance-attributes
@@ -52,18 +54,18 @@ class Instance(ADriver):
 	# pylint: disable=too-many-arguments,too-many-positional-arguments
 	def __init__(
 		self,
-		state_dim,
-		action_dim=1,
-		is_continuous=False,
-		cusum_false_alarm_steps=1e8,
-		residual_tolerance=3.0,
-		novelty_margin=2.0,
-		min_samples=100,
-		min_verify_samples=50,
-		recent_size=500,
-		var_floor=1e-6,
+		state_dim: int,
+		action_dim: int = 1,
+		is_continuous: bool = False,
+		cusum_false_alarm_steps: float = 1e8,
+		residual_tolerance: float = 3.0,
+		novelty_margin: float = 2.0,
+		min_samples: int = 100,
+		min_verify_samples: int = 50,
+		recent_size: int = 500,
+		var_floor: float = 1e-6,
 		**_kwargs,
-	):
+	) -> None:
 		self._state_dim = state_dim
 		self._action_dim = action_dim
 		self._is_continuous = is_continuous
@@ -93,7 +95,7 @@ class Instance(ADriver):
 
 	@property
 	def known_niche_ids(self) -> set:
-		"""Niches that own a dynamics model."""
+		"""Return the niches that own a dynamics model."""
 		return set(self._models.keys())
 
 	def start_episode(self) -> None:
@@ -107,7 +109,7 @@ class Instance(ADriver):
 		if len(self._recent) >= self._min_verify_samples:
 			self._current_niche_id = self._identify()
 
-	def observe(self, state, action, next_state, memory) -> None:
+	def observe(self, state: np.ndarray, action: int | np.ndarray, next_state: np.ndarray, memory: AgentMemory) -> None:
 		"""Record one transition and feed its residual under the current niche's model to PM-CuSum."""
 		features = self._features(state, action)
 		target = np.asarray(next_state, dtype=np.float64) - np.asarray(state, dtype=np.float64)
@@ -127,7 +129,7 @@ class Instance(ADriver):
 			self._alarm_niche_id = self._current_niche_id
 			self._alarm_evidence = [transition]
 
-	def detect_change(self, memory, learn: bool = True) -> bool:
+	def detect_change(self, memory: AgentMemory, learn: bool = True) -> bool:
 		"""Confirm or dismiss a pending PM-CuSum alarm once enough post-alarm evidence exists (models learn only in training)."""
 		if self._alarm_niche_id is None or len(self._alarm_evidence) < self._min_verify_samples:
 			return False
@@ -146,7 +148,7 @@ class Instance(ADriver):
 		self._carried_evidence = evidence
 		return True
 
-	def match_niche(self, memory, current_individual: dict, hall_of_fame, population: list = None) -> int:
+	def match_niche(self, memory: AgentMemory, current_individual: dict, hall_of_fame: HallOfFame, population: list = None) -> int:
 		"""Late Identity Binding: resolve the winner's recent transitions to a niche, refining or creating its model."""
 		held = self._held_niche()
 		if held is not None:
@@ -179,7 +181,7 @@ class Instance(ADriver):
 			return self._current_niche_id if current is not None else self._provision()
 		return None
 
-	def log_likelihoods(self, memory) -> dict:
+	def log_likelihoods(self, memory: AgentMemory) -> dict:
 		"""{niche_id: log-likelihood of this episode's transitions} for every niche with a usable model."""
 		if not self._episode:
 			return {}

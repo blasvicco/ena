@@ -1,8 +1,9 @@
 """Tests for paper_results.py: every number the paper quotes is generated from the study outputs."""
 
-# Libs imports
+# General imports
 import math
 
+# Libs imports
 import pandas as pd
 import pytest
 
@@ -24,10 +25,8 @@ from tools.paper_results import (
 	detection_ablation_entries,
 	cartpole_check_entries,
 	chirp_ablation_table,
-	clear_absent_outputs,
 	comparison_entries,
 	family_entries,
-	completed_replicates,
 	compute_ratio_entries,
 	candidate_share_entries,
 	episode_count_entries,
@@ -39,6 +38,7 @@ from tools.paper_results import (
 	detection_table,
 	parse_training_times,
 	reliability_figure,
+	TEST_METRICS,
 	slug,
 	results_table,
 	selection_comparisons,
@@ -87,17 +87,19 @@ def test_welch_p_separates_clear_differences_and_handles_degenerate_samples() ->
 		assert math.isnan(welch_p([1], [2, 3]))
 
 
-def test_parse_training_times_reads_both_log_formats(tmp_path) -> None:
-	"""Newer logs add env-steps after the seconds; older ones don't."""
-	with step("Arrange: an outputs.txt with both formats."):
+def test_parse_training_times_reads_seconds_and_env_steps(tmp_path) -> None:
+	"""Each agent's training-time line gives its seconds and env-steps."""
+	with step("Arrange: an outputs.txt training-time block."):
 		path = tmp_path / "outputs.txt"
 		path.write_text(
-			"  --- Training Performance vs Time ---\n  ENA-Combined: 3696.76 seconds, 7,519,387 env-steps\n  Random: 217.83 seconds\n\nTraining:\n",
+			"  --- Training Performance vs Time ---\n"
+			"  ENA-Combined: 3696.76 seconds, 7,519,387 env-steps\n"
+			"  Random: 217.83 seconds, 32,262 env-steps\n\nTraining:\n",
 			encoding="utf-8",
 		)
 
 	with step("Act/Assert: seconds and env-steps per agent."):
-		assert parse_training_times(str(path)) == {"ENA-Combined": (3696.76, 7519387), "Random": (217.83, None)}
+		assert parse_training_times(str(path)) == {"ENA-Combined": (3696.76, 7519387), "Random": (217.83, 32262)}
 
 
 def test_summary_entries_give_mean_std_and_replicate_count() -> None:
@@ -239,7 +241,7 @@ def test_cohens_d_is_the_difference_over_the_average_standard_deviation() -> Non
 
 
 def test_power_helpers_match_the_power_analysis_that_fixed_the_replicate_count() -> None:
-	"""At n = 30, alpha 0.05/7 and power 0.8 the smallest detectable d is 0.94 (docs/PLAN_ena_review.md); and back."""
+	"""At n = 30, alpha 0.05/7 and power 0.8 the smallest detectable d is 0.94; and back."""
 	with step("Act/Assert: detectable effect at 30, and replicates needed for it."):
 		assert detectable_d(30, 0.05 / 7) == pytest.approx(0.94, abs=0.01)
 		assert replicates_for_power(0.94, 0.05 / 7) in (30, 31)
@@ -280,11 +282,10 @@ def test_ablation_family_entries_give_holm_p_for_the_planned_comparisons_and_the
 		results = _results(rows)
 
 	with step("Act: the family entries for two pairs."):
-		entries = family_entries("ablation", results, [("ENA-NoSkill", "ENA-HoF"), ("ENA-NoSkill", "ENA-Missing")])
+		entries = family_entries("ablation", results, [("ENA-NoSkill", "ENA-HoF"), ("ENA-HoF", "ENA-NoSkill")])
 
-	with step("Assert: a Holm p for the pair with data, none for the missing one; the detectable d at n = 30 for a family of 2."):
+	with step("Assert: a Holm p per pair; the detectable d at n = 30 for a family of 2."):
 		assert entries["ablation/ENA-NoSkill-vs-ENA-HoF/test/rel/pholm"] == "$p=1.000$"
-		assert not [key for key in entries if "ENA-Missing" in key]
 		assert entries["ablation/mde"] == f"{detectable_d(30, 0.05 / 2):.2f}"
 		assert entries["ablation/family"] == "2"
 
@@ -351,30 +352,6 @@ def test_controller_entries_give_holm_and_paired_p_per_alternative_and_the_verdi
 		assert entries["controller/verdict"] == "Alt"
 
 
-def test_clear_absent_outputs_replaces_a_missing_studys_tables_and_removes_its_figures(tmp_path) -> None:
-	"""A study that has not run must not leave numbers from an older run in the paper: placeholder tables, no figures."""
-	with step("Arrange: stale challenge and ablation outputs from an earlier run."):
-		generated, images = tmp_path / "generated", tmp_path / "images"
-		generated.mkdir()
-		images.mkdir()
-		for name in ("table_challenge_test.tex", "table_challenge_adapt.tex", "table_ablation_test.tex"):
-			(generated / name).write_text("stale numbers", encoding="utf-8")
-		for name in ("challenge_reliability.pdf", "challenge_test_curves.pdf", "ablation_reliability.pdf"):
-			(images / name).write_bytes(b"stale")
-
-	with step("Act: only the ablation is present."):
-		clear_absent_outputs({"ablation"}, str(generated), str(images))
-
-	with step("Assert: challenge tables are placeholders, challenge figures gone; the ablation's files untouched."):
-		assert "\\todo" in (generated / "table_challenge_test.tex").read_text(encoding="utf-8")
-		assert "\\label{tab:challenge_test}" in (generated / "table_challenge_test.tex").read_text(encoding="utf-8")
-		assert "stale" not in (generated / "table_challenge_adapt.tex").read_text(encoding="utf-8")
-		assert not (images / "challenge_reliability.pdf").exists()
-		assert not (images / "challenge_test_curves.pdf").exists()
-		assert (generated / "table_ablation_test.tex").read_text(encoding="utf-8") == "stale numbers"
-		assert (images / "ablation_reliability.pdf").exists()
-
-
 def test_with_reference_rows_adds_another_studys_rows_for_the_same_replicates_only() -> None:
 	"""A study reusing another's runs of the same configuration takes those agents' rows for its own replicates."""
 	with step("Arrange: the study ran exp_1; the reference study has exp_1 and exp_2 of two agents."):
@@ -433,19 +410,6 @@ def test_compute_rank_entries_place_the_single_full_run_within_the_rams_replicat
 		assert entries["compute/rank/of"] == "4"
 
 
-def test_completed_replicates_counts_only_replicates_that_wrote_their_test_results(tmp_path) -> None:
-	"""A study whose run has started but finished nothing must count as not run (the generator then writes placeholders)."""
-	with step("Arrange: one finished replicate, one still training, one without outputs yet."):
-		(tmp_path / "exp_1").mkdir()
-		(tmp_path / "exp_1" / "outputs.txt").write_text("...\n  --- Experiment 1 Test Results ---\n", encoding="utf-8")
-		(tmp_path / "exp_2").mkdir()
-		(tmp_path / "exp_2" / "outputs.txt").write_text("Experiment 2 Log\n", encoding="utf-8")
-		(tmp_path / "exp_3").mkdir()
-
-	with step("Act/Assert: one."):
-		assert completed_replicates(str(tmp_path)) == 1
-
-
 def test_candidate_share_entries_give_the_share_of_training_steps_spent_on_candidates_per_replicate() -> None:
 	"""Per replicate candidate steps / training steps, then mean and std across replicates, in percent."""
 	with step("Arrange: two replicates spending 80% and 90% of their training steps on candidates."):
@@ -463,15 +427,14 @@ def test_candidate_share_entries_give_the_share_of_training_steps_spent_on_candi
 		assert entries["challenge/ENA/candshare/std"] == "7.1"
 
 
-def test_episode_count_entries_average_episodes_per_environment_over_complete_replicates(tmp_path) -> None:
-	"""Mean episodes per training environment per agent, from the live training logs of finished replicates."""
-	with step("Arrange: two finished replicates of one agent (2 environments of 3 and 5 episodes, then 5 and 7), one unfinished."):
-		for name, counts, done in (("exp_1", (3, 5), True), ("exp_2", (5, 7), True), ("exp_3", (100, 100), False)):
+def test_episode_count_entries_average_episodes_per_environment_over_the_replicates(tmp_path) -> None:
+	"""Mean episodes per training environment per agent, from the replicates' live training logs."""
+	with step("Arrange: two replicates of one agent (2 environments of 3 and 5 episodes, then 5 and 7)."):
+		for name, counts in (("exp_1", (3, 5)), ("exp_2", (5, 7))):
 			exp_dir = tmp_path / name
 			exp_dir.mkdir()
 			envs = ["A"] * counts[0] + ["B"] * counts[1]
 			pd.DataFrame({"env_id": envs, "score": 1.0}).to_csv(exp_dir / "live_training_ENA.csv", index=False)
-			(exp_dir / "outputs.txt").write_text("--- Test Results ---" if done else "log", encoding="utf-8")
 
 	with step("Act/Assert: (3 + 5 + 5 + 7) / 4 = 5 episodes per environment."):
 		assert episode_count_entries("challenge", str(tmp_path), ["ENA"]) == {"challenge/ENA/episodes/perenv": "5"}
@@ -566,9 +529,10 @@ def test_mcnemar_p_compares_two_paired_pass_records() -> None:
 
 
 def test_detection_ablation_entries_report_the_interval_and_holm_adjusted_paired_comparisons() -> None:
-	"""The chosen chirp's Clopper-Pearson interval on the confirmation seeds; the chirp vs the transition model (confirmation)
-	and the chosen configuration vs the best one without a wavelet train (grid), exact McNemar, Holm-adjusted together;
-	and the screened configuration's grid record."""
+	"""The detection entries report the chirp's interval and its Holm-adjusted paired comparisons."""
+	# The chosen chirp's Clopper-Pearson interval on the confirmation seeds; the chirp vs the transition model (confirmation)
+	# and the chosen configuration vs the best one without a wavelet train (grid), exact McNemar, Holm-adjusted together;
+	# and the screened configuration's grid record.
 	with step("Act: entries."):
 		grid, confirmation = _ablation_rows()
 		entries = detection_ablation_entries(grid, confirmation, chosen=("Wavelet train (Mexican hat)", "Packets Haar"))
@@ -606,8 +570,13 @@ def test_selection_comparisons_give_the_planned_family_and_paired_counts() -> No
 			"ENA-Combined-NicheMatch": [50.0, 55.0, 45.0, 70.0],
 			"ENA-Combined-BestTrust": [50.0, 55.0, 45.0, 70.0],
 		}
+		metrics = {metric: 0.0 for metric in TEST_METRICS}
 		results = _results(
-			[(f"exp_{index + 1}", agent, {"Reliability (%)": value}) for agent, values in reliability.items() for index, value in enumerate(values)]
+			[
+				(f"exp_{index + 1}", agent, {**metrics, "Reliability (%)": value})
+				for agent, values in reliability.items()
+				for index, value in enumerate(values)
+			]
 		)
 
 	with step("Act: the selection comparisons."):

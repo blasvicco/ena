@@ -4,7 +4,11 @@
 # Reference: Christodoulou, "Soft Actor-Critic for Discrete Action Settings" (2019)
 # https://arxiv.org/abs/1910.07207
 
+# General imports
+from typing import Callable
+
 # Libs imports
+import gymnasium as gym
 import numpy as np
 import tensorflow as tf
 from keras import optimizers
@@ -30,17 +34,17 @@ class SACDiscreteAgent(ABaseline):
 	# pylint: disable=too-many-arguments,too-many-positional-arguments
 	def __init__(
 		self,
-		brain,
-		make_env,
-		batch_size=64,
-		buffer_capacity=100_000,
-		gamma=0.99,
-		learning_rate=3e-4,
-		learning_starts=1_000,
-		target_entropy_ratio=0.98,
-		tau=0.005,
-		train_freq=4,
-	):
+		brain: Callable,
+		make_env: Callable[..., gym.Env],
+		batch_size: int = 64,
+		buffer_capacity: int = 100_000,
+		gamma: float = 0.99,
+		learning_rate: float = 3e-4,
+		learning_starts: int = 1_000,
+		target_entropy_ratio: float = 0.98,
+		tau: float = 0.005,
+		train_freq: int = 4,
+	) -> None:
 		super().__init__(brain, make_env)
 		self.learn = True
 
@@ -73,11 +77,11 @@ class SACDiscreteAgent(ABaseline):
 
 		self.buffer = ReplayBuffer(buffer_capacity, self.state_dim, 1)
 
-	def set_learning(self, mode, output_dir=None):
+	def set_learning(self, mode: bool, output_dir: str | None = None) -> None:
 		"""Switch between training (sample from the policy, update) and evaluation (greedy, frozen)."""
 		self.learn = mode
 
-	def act(self, env, state):
+	def act(self, env: gym.Env, state: np.ndarray) -> tuple:
 		"""Sample an action from the policy while learning; take the most probable one otherwise."""
 		probabilities = self._policy(tf.convert_to_tensor(state[np.newaxis], dtype=tf.float32)).numpy()[0]
 		if self.learn:
@@ -87,7 +91,7 @@ class SACDiscreteAgent(ABaseline):
 		next_state, reward, terminated, truncated, _ = env.step(action)
 		return next_state, reward, terminated, truncated, action
 
-	def train(self, **kwargs):
+	def train(self, **kwargs: object) -> None:
 		"""Store the transition and, on schedule, run one SAC-Discrete update on a sampled batch."""
 		step_data = kwargs["step_data"]
 		# Bootstrap through time-limit truncation: only a true termination zeroes the target.

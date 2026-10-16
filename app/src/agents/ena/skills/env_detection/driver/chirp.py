@@ -17,6 +17,9 @@ import numpy as np
 from agents.ena.skills.env_detection.driver.abstract import ADriver
 from agents.ena.tools.chirp_features import features
 from agents.ena.tools.chirp_signals import excitation, to_discrete
+from agents.ena.memory import AgentMemory
+from agents.ena.skills.hall_of_fame.main import HallOfFame
+
 
 DEFAULTS = {
 	"steps": 64,  # chirp length (a power of 2 for the dyadic transforms)
@@ -32,11 +35,10 @@ DEFAULTS = {
 
 
 def _merge(defaults: dict, overrides: dict) -> dict:
-	"""defaults with the given settings replacing them key by key; an unknown key is an error.
-
-	A given dict (features, excitation_params) replaces the default dict whole, never merges into it: a configuration is
-	then fully determined by what it passes (its missing keys fall back to the feature or signal function's defaults),
-	so results stay reproducible when DEFAULTS change."""
+	"""defaults with the given settings replacing them key by key; an unknown key is an error."""
+	# A given dict (features, excitation_params) replaces the default dict whole, never merges into it: a configuration is
+	# then fully determined by what it passes (its missing keys fall back to the feature or signal function's defaults),
+	# so results stay reproducible when DEFAULTS change.
 	unknown = set(overrides) - set(defaults)
 	if unknown:
 		raise ValueError(f"Unknown chirp settings: {sorted(unknown)}; expected {sorted(defaults)}")
@@ -63,7 +65,7 @@ class Instance(ADriver):
 	# new niche in training; at test time, no niche is ever created).
 
 	# pylint: disable=too-many-arguments,too-many-positional-arguments
-	def __init__(self, state_dim, action_dim=1, is_continuous=False, chirp=None, **_kwargs):
+	def __init__(self, state_dim: int, action_dim: int = 1, is_continuous: bool = False, chirp: dict | None = None, **_kwargs) -> None:
 		self._settings = _merge(DEFAULTS, chirp or {})
 		self._state_dim = state_dim
 		signal = excitation(self._settings["excitation"], self._settings["steps"], action_dim, **self._settings["excitation_params"])
@@ -77,7 +79,7 @@ class Instance(ADriver):
 		self._last = None  # the latest chirp features (log_likelihoods)
 
 	@property
-	def chirp_actions(self):
+	def chirp_actions(self) -> np.ndarray | None:
 		"""The fixed chirp: (steps, action_dim) actions (continuous) or (steps,) action indices (discrete)."""
 		return self._actions
 
@@ -88,37 +90,37 @@ class Instance(ADriver):
 
 	@property
 	def known_niche_ids(self) -> set:
-		"""Niches with chirp statistics."""
+		"""Return the niches with chirp statistics."""
 		return set(self._niches)
 
-	def observe_chirp(self, response) -> None:
+	def observe_chirp(self, response: np.ndarray) -> None:
 		"""One chirp's observations (start observation first) -> its feature vector, decided at detect_change."""
 		response = np.asarray(response, dtype=np.float64)
 		if self._settings["relative"]:
 			response = response[1:] - response[0]
 		self._pending = self._last = features(response, **self._settings["features"])
 
-	def detect_change(self, memory, learn: bool = True) -> bool:
+	def detect_change(self, memory: AgentMemory, learn: bool = True) -> bool:
 		"""Test this episode's chirp (with the window) against the current niche; True on a confirmed change."""
 		if self._pending is None:
 			return False
 		chirp, self._pending = self._pending, None
 		if self._current_niche_id == -1:
 			evidence, self._carried = self._carried + [chirp], []
-			self.__identify(evidence, learn)
+			self._identify(evidence, learn)
 			self._window.clear()
 			return False
 		niche = self._niches[self._current_niche_id]
-		if niche["count"] < self._settings["min_chirps"] or self.__pooled_variance() is None:
+		if niche["count"] < self._settings["min_chirps"] or self._pooled_variance() is None:
 			if learn:
-				self.__absorb(self._current_niche_id, [chirp])
+				self._absorb(self._current_niche_id, [chirp])
 			return False
 		self._window.append(chirp)
 		if len(self._window) < self._window.maxlen:
 			return False
-		if self.__statistic(list(self._window), self._current_niche_id) <= self._settings["margin"]:
+		if self._statistic(list(self._window), self._current_niche_id) <= self._settings["margin"]:
 			if learn:
-				self.__absorb(self._current_niche_id, [chirp])
+				self._absorb(self._current_niche_id, [chirp])
 			return False
 		recent = list(self._window)[-max(1, len(self._window) // 2) :]
 		self._carried = recent
@@ -126,24 +128,24 @@ class Instance(ADriver):
 		self._window.clear()
 		return True
 
-	def match_niche(self, memory, current_individual: dict, hall_of_fame, population: list = None) -> int:
+	def match_niche(self, memory: AgentMemory, current_individual: dict, hall_of_fame: HallOfFame, population: list = None) -> int:
 		"""Late Identity Binding: the chirps' niche (identified from a pending change's evidence, or provisioned if none)."""
 		if self._current_niche_id == -1 and self._carried:
 			evidence, self._carried = self._carried, []
-			self.__identify(evidence, learn=True)
+			self._identify(evidence, learn=True)
 		if self._current_niche_id == -1:
-			self._current_niche_id = self.__provision([])
+			self._current_niche_id = self._provision([])
 		return self._current_niche_id
 
 	def start_episode(self) -> None:
 		"""Nothing per episode: the evidence is the chirp."""
 
-	def observe(self, state, action, next_state, memory) -> None:
+	def observe(self, state: np.ndarray, action: int | np.ndarray, next_state: np.ndarray, memory: AgentMemory) -> None:
 		"""The acting individual's transitions are not used."""
 
-	def log_likelihoods(self, memory) -> dict:
+	def log_likelihoods(self, memory: AgentMemory) -> dict:
 		"""{niche_id: Gaussian log-likelihood of the latest chirp} over judged niches (BPR's dynamics evidence)."""
-		variance = self.__pooled_variance()
+		variance = self._pooled_variance()
 		if self._last is None or variance is None:
 			return {}
 		return {
@@ -162,16 +164,16 @@ class Instance(ADriver):
 	# Private
 	# ---------------------------------------------------------------
 
-	def __identify(self, evidence: list, learn: bool) -> None:
+	def _identify(self, evidence: list, learn: bool) -> None:
 		"""The judged niche explaining the evidence within the margin; else a new niche (training) or none (test)."""
 		judged = [niche_id for niche_id, stats in self._niches.items() if stats["count"] >= self._settings["min_chirps"]]
-		if judged and self.__pooled_variance() is not None:
-			scores = {niche_id: self.__statistic(evidence, niche_id) for niche_id in judged}
+		if judged and self._pooled_variance() is not None:
+			scores = {niche_id: self._statistic(evidence, niche_id) for niche_id in judged}
 			best = min(scores, key=scores.get)
 			if scores[best] <= self._settings["margin"]:
 				self._current_niche_id = best
 				if learn:
-					self.__absorb(best, evidence)
+					self._absorb(best, evidence)
 				return
 		if not learn:
 			self._current_niche_id = -1
@@ -180,19 +182,19 @@ class Instance(ADriver):
 		if immature:
 			# A niche still growing (provisioned before its chirps arrived) takes the evidence.
 			self._current_niche_id = immature[-1]
-			self.__absorb(immature[-1], evidence)
+			self._absorb(immature[-1], evidence)
 			return
-		self._current_niche_id = self.__provision(evidence)
+		self._current_niche_id = self._provision(evidence)
 
-	def __provision(self, evidence: list) -> int:
+	def _provision(self, evidence: list) -> int:
 		"""A new niche holding the evidence's chirps."""
 		niche_id = self._next_niche_id
 		self._next_niche_id += 1
 		self._niches[niche_id] = {"sum": 0.0, "sumsq": 0.0, "count": 0}
-		self.__absorb(niche_id, evidence)
+		self._absorb(niche_id, evidence)
 		return niche_id
 
-	def __absorb(self, niche_id: int, chirps: list) -> None:
+	def _absorb(self, niche_id: int, chirps: list) -> None:
 		"""Add chirps to a niche's statistics."""
 		stats = self._niches[niche_id]
 		for chirp in chirps:
@@ -200,7 +202,7 @@ class Instance(ADriver):
 			stats["sumsq"] = stats["sumsq"] + chirp * chirp
 			stats["count"] += 1
 
-	def __pooled_variance(self):
+	def _pooled_variance(self):
 		"""Per-feature within-niche variance pooled over niches with at least two chirps, or None."""
 		squares, degrees = 0.0, 0
 		for stats in self._niches.values():
@@ -211,9 +213,9 @@ class Instance(ADriver):
 			return None
 		return np.maximum(squares / degrees, self._settings["var_floor"])
 
-	def __statistic(self, chirps: list, niche_id: int) -> float:
+	def _statistic(self, chirps: list, niche_id: int) -> float:
 		"""RMS over features of the window mean's deviation from the niche mean, in standard errors (about 1 if the same)."""
 		stats = self._niches[niche_id]
-		standard_error = np.sqrt(self.__pooled_variance() * (1.0 / len(chirps) + 1.0 / stats["count"]))
+		standard_error = np.sqrt(self._pooled_variance() * (1.0 / len(chirps) + 1.0 / stats["count"]))
 		deviation = (np.mean(chirps, axis=0) - stats["sum"] / stats["count"]) / standard_error
 		return float(np.sqrt(np.mean(deviation**2)))

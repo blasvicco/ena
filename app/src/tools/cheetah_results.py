@@ -1,8 +1,9 @@
 #!/usr/bin/env python
-"""HalfCheetah's results for the paper: per replicate, the end of each training phase (the training return over its last
-100k env-steps), the test return there, and the retention and absolute forgetting of the environments left behind; ENA
-against each baseline on both; the hardware the wall-clock times were measured on; its table and figure.
-paper_results.py writes them."""
+"""HalfCheetah's paper results: end of phase, test return, retention and absolute forgetting, comparisons, hardware."""
+# HalfCheetah's results for the paper: per replicate, the end of each training phase (the training return over its last
+# 100k env-steps), the test return there, and the retention and absolute forgetting of the environments left behind; ENA
+# against each baseline on both; the hardware the wall-clock times were measured on; its table and figure.
+# paper_results.py writes them.
 
 # General imports
 import math
@@ -12,6 +13,7 @@ import os
 import pandas as pd
 
 # App imports
+from tools.replicates import get_experiment_directories
 from tools.paper_config import latex_table
 from tools.paper_figures import replicate_box_figure
 from tools.paper_stats import ALPHA, difference_entries, format_value, holm, p_macro, welch_p
@@ -27,40 +29,24 @@ CHEETAH_AGENTS = ["PPO", "SAC", "ENA-Combined"]
 END_OF_PHASE_STEPS = 100_000
 
 
-def _complete_replicates(study_dir: str) -> list:
-	"""The study's finished replicate directories (their outputs.txt holds the test results), sorted."""
-	finished = []
-	for exp_dir in sorted(os.listdir(study_dir)):
-		path = os.path.join(study_dir, exp_dir, "outputs.txt")
-		if exp_dir.startswith("exp_") and os.path.exists(path):
-			with open(path, encoding="utf-8") as outputs:
-				if "Test Results ---" in outputs.read():
-					finished.append(exp_dir)
-	return finished
-
-
 def end_of_phase(training: pd.DataFrame, env: str, last_steps: int = END_OF_PHASE_STEPS) -> float:
-	"""Mean training return of env's episodes that end within the last `last_steps` env-steps of its phase (NaN if the
-	environment was not trained). training is a live_training CSV: env_id, cumulative env_steps, score."""
+	"""Return the mean training return of the episodes ending in the last `last_steps` env-steps of env's phase."""
+	# training is a live_training CSV: env_id, cumulative env_steps, score.
 	phase = training[training["env_id"] == env]
-	if phase.empty:
-		return float("nan")
 	return float(phase.loc[phase["env_steps"] > phase["env_steps"].max() - last_steps, "score"].mean())
 
 
 def retention_rows(study_dir: str, agents: list, train_envs: list, last_steps: int = END_OF_PHASE_STEPS) -> pd.DataFrame:
-	"""Per finished replicate, agent and training environment: the end of its phase (end_of_phase over its last `last_steps`
-	env-steps, from the training episodes), the mean test return there, retention = test / end (%, none when the phase
-	ended at or below zero: nothing learned to retain) and the drop, end - test. Any study whose replicates log the same
-	live_training/live_testing CSVs can use it (the CartPole challenge does)."""
+	"""Tabulate, per replicate, agent and training environment, the end of phase, test return, retention and drop."""
+	# Per replicate, agent and training environment: the end of its phase (end_of_phase over its last `last_steps`
+	# env-steps, from the training episodes), the mean test return there, retention = test / end (%, none when the phase
+	# ended at or below zero: nothing learned to retain) and the drop, end - test. Any study whose replicates log the same
+	# live_training/live_testing CSVs can use it (the CartPole challenge does).
 	rows = []
-	for exp_dir in _complete_replicates(study_dir):
+	for exp_dir in get_experiment_directories(study_dir):
 		for agent in agents:
-			training_path = os.path.join(study_dir, exp_dir, f"live_training_{agent}.csv")
-			testing_path = os.path.join(study_dir, exp_dir, f"live_testing_{agent}.csv")
-			if not os.path.exists(training_path) or not os.path.exists(testing_path):
-				continue
-			training, testing = pd.read_csv(training_path), pd.read_csv(testing_path)
+			training = pd.read_csv(os.path.join(study_dir, exp_dir, f"live_training_{agent}.csv"))
+			testing = pd.read_csv(os.path.join(study_dir, exp_dir, f"live_testing_{agent}.csv"))
 			for env in train_envs:
 				end = end_of_phase(training, env, last_steps)
 				test = testing.loc[testing["env_id"] == env, "score"].mean()
@@ -80,9 +66,10 @@ def _left_behind(rows: pd.DataFrame, left_behind: list, column: str = "retention
 
 
 def retention_entries(study: str, rows: pd.DataFrame, left_behind: list) -> dict:
-	"""Mean and std per agent and training environment of the end of phase, retention and absolute forgetting (the drop,
-	end - test), and of each replicate's retention and forgetting over the environments left behind ('left'). The test
-	return is summary_entries' (same mean, outputs.txt)."""
+	"""Summarize end of phase, retention and absolute forgetting per agent and environment, and over those left behind."""
+	# Mean and std per agent and training environment of the end of phase, retention and absolute forgetting (the drop,
+	# end - test), and of each replicate's retention and forgetting over the environments left behind ('left'). The test
+	# return is summary_entries' (same mean, outputs.txt).
 	entries = {}
 	for (agent, env), group in rows.groupby(["Agent", "Env"], sort=False):
 		values = group["end"].dropna()
@@ -106,25 +93,28 @@ def retention_entries(study: str, rows: pd.DataFrame, left_behind: list) -> dict
 
 
 def retention_comparisons(study: str, rows: pd.DataFrame, left_behind: list, agent: str, baselines: list) -> dict:
-	"""agent vs each baseline on the left-behind retention, one Holm family over the baselines: Welch p (raw and
-	Holm-adjusted), difference agent - baseline with its interval, effect size d, and replicates per agent for 80% power
-	at the family's most stringent level."""
+	"""Compare the agent with each baseline on left-behind retention, as one Holm family over the baselines."""
+	# agent vs each baseline on the left-behind retention, one Holm family over the baselines: Welch p (raw and
+	# Holm-adjusted), difference agent - baseline with its interval, effect size d, and replicates per agent for 80% power
+	# at the family's most stringent level.
 	per_replicate = _left_behind(rows, left_behind)
 	values = {name: per_replicate.loc[per_replicate["Agent"] == name, "retention"] for name in [agent, *baselines]}
 	return _holm_comparisons(study, values, agent, baselines, "retention")
 
 
 def forgetting_comparisons(study: str, rows: pd.DataFrame, left_behind: list, agent: str, baselines: list) -> dict:
-	"""agent vs each baseline on the left-behind absolute forgetting (end - test, in return units), its own Holm family
-	over the baselines, with the same entries as retention_comparisons."""
+	"""Compare the agent with each baseline on left-behind absolute forgetting, as its own Holm family."""
+	# agent vs each baseline on the left-behind absolute forgetting (end - test, in return units), its own Holm family
+	# over the baselines, with the same entries as retention_comparisons.
 	per_replicate = _left_behind(rows, left_behind, "drop")
 	values = {name: per_replicate.loc[per_replicate["Agent"] == name, "drop"] for name in [agent, *baselines]}
 	return _holm_comparisons(study, values, agent, baselines, "forgetting")
 
 
 def _holm_comparisons(study: str, values: dict, agent: str, baselines: list, metric: str) -> dict:
-	"""agent vs each baseline on {name: per-replicate values}, one Holm family over the baselines, under
-	<study>/<baseline>-vs-<agent>/<metric>/left."""
+	"""Compare the agent with each baseline on per-replicate values, as one Holm family over the baselines."""
+	# agent vs each baseline on {name: per-replicate values}, one Holm family over the baselines, under
+	# <study>/<baseline>-vs-<agent>/<metric>/left.
 	entries, tested = {}, []
 	for baseline in baselines:
 		key = f"{study}/{baseline}-vs-{agent}/{metric}/left"
@@ -138,24 +128,26 @@ def _holm_comparisons(study: str, values: dict, agent: str, baselines: list, met
 
 
 def hardware_entries(study: str, study_dir: str) -> dict:
-	"""The machine and thread counts the study's finished replicates ran with (the runner's 'Hardware:' line); every
-	distinct one, so replicates from different machines are never reported as one."""
+	"""List every distinct machine and thread count the study's replicates ran with."""
+	# The machine and thread counts the study's replicates ran with (the runner's 'Hardware:' line); every
+	# distinct one, so replicates from different machines are never reported as one.
 	machines = []
-	for exp_dir in _complete_replicates(study_dir):
+	for exp_dir in get_experiment_directories(study_dir):
 		with open(os.path.join(study_dir, exp_dir, "outputs.txt"), encoding="utf-8") as outputs:
 			for line in outputs:
 				if line.strip().startswith("Hardware:"):
 					machine = line.strip()[len("Hardware:") :].strip()
 					if machine not in machines:
 						machines.append(machine)
-	return {f"{study}/hardware": "; ".join(machines)} if machines else {}
+	return {f"{study}/hardware": "; ".join(machines)}
 
 
 # pylint: disable=too-many-arguments,too-many-positional-arguments
 def retention_table(rows: pd.DataFrame, left_behind: list, agents: list, minutes: dict, caption: str, label: str) -> str:
-	"""A LaTeX table, one row per agent: per environment left behind, the end of its phase, the test return and retention
-	(means over replicates); then the mean left-behind retention and absolute forgetting, and the training time (minutes,
-	as given)."""
+	"""Build the LaTeX retention table: per agent, end of phase, test return and retention, then the left-behind means."""
+	# A LaTeX table, one row per agent: per environment left behind, the end of its phase, the test return and retention
+	# (means over replicates); then the mean left-behind retention and absolute forgetting, and the training time (minutes,
+	# as given).
 	headers = [part for env in left_behind for part in (f"{env.split('-')[0]} end", f"{env.split('-')[0]} test", f"{env.split('-')[0]} ret. (\\%)")]
 	lines = [
 		"\\hline",
@@ -168,12 +160,9 @@ def retention_table(rows: pd.DataFrame, left_behind: list, agents: list, minutes
 	for agent in agents:
 		cells = []
 		for env in left_behind:
-			if (agent, env) in means.index:
-				row = means.loc[(agent, env)]
-				cells += [_return(row["end"]), _return(row["test"]), format_value(row["retention"], "retention")]
-			else:
-				cells += ["--"] * 3
-		cells += [format_value(left.get(agent, float("nan")), "retention"), _return(forgetting.get(agent, float("nan"))), minutes.get(agent, "--")]
+			row = means.loc[(agent, env)]
+			cells += [_return(row["end"]), _return(row["test"]), format_value(row["retention"], "retention")]
+		cells += [format_value(left[agent], "retention"), _return(forgetting[agent]), minutes[agent]]
 		lines.append(f"{agent} & " + " & ".join(cells) + " \\\\")
 	lines.append("\\hline")
 	return latex_table(caption, label, f"|l|{'c|' * (len(headers) + 3)}", lines, fit="page")

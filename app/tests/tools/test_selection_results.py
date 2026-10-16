@@ -9,26 +9,24 @@ from helpers import step
 from tools.selection_results import SELECTION_AGENTS, SELECTION_REFERENCE, paired_count_entries, played_entries, training_identity_entries
 
 
-def _replicate(root, exp_dir, agents, testing_ids=(1,), complete=True):
-	"""Write one replicate's outputs.txt and, per agent, its training and testing logs."""
+def _replicate(root, exp_dir, agents, testing_ids=(1,)):
+	"""Write one replicate's training and testing logs, per agent."""
 	folder = root / exp_dir
 	folder.mkdir(parents=True)
-	(folder / "outputs.txt").write_text("--- Test Results ---\n" if complete else "header\n", encoding="utf-8")
 	for agent in agents:
 		(folder / f"live_training_{agent}.csv").write_text("episode,score\n1,10\n", encoding="utf-8")
 		pd.DataFrame({"specialist_id": list(testing_ids)}).to_csv(folder / f"live_testing_{agent}.csv", index=False)
 
 
-def test_training_identity_counts_byte_identical_logs_over_complete_replicates(tmp_path) -> None:
-	"""exp_1 identical for both variants, exp_2 differs for one; the incomplete exp_3 is not checked."""
+def test_training_identity_counts_byte_identical_logs(tmp_path) -> None:
+	"""exp_1 is identical for both variants, exp_2 differs for one."""
 	with step("Arrange: the reference study and the selection study."):
 		reference, study = tmp_path / "ablation", tmp_path / "selection"
-		for exp_dir in ("exp_1", "exp_2", "exp_3"):
+		for exp_dir in ("exp_1", "exp_2"):
 			_replicate(reference, exp_dir, [SELECTION_REFERENCE])
 		_replicate(study, "exp_1", SELECTION_AGENTS)
 		_replicate(study, "exp_2", SELECTION_AGENTS[:1])
 		(study / "exp_2" / f"live_training_{SELECTION_AGENTS[1]}.csv").write_text("episode,score\n1,11\n", encoding="utf-8")
-		_replicate(study, "exp_3", SELECTION_AGENTS, complete=False)
 
 	with step("Act: the identity entries."):
 		entries = training_identity_entries(str(study), str(reference))

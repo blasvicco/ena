@@ -90,7 +90,7 @@ EXCITATIONS = {
 }
 
 
-def excitation(name: str, steps: int, action_dim: int, **params) -> np.ndarray:
+def excitation(name: str, steps: int, action_dim: int, **params: float | str) -> np.ndarray:
 	"""(steps, action_dim) actions in [-1, 1] of the named excitation, with its parameters."""
 	if name not in EXCITATIONS:
 		raise ValueError(f"Unknown chirp excitation: {name!r}; expected one of {sorted(EXCITATIONS)}")

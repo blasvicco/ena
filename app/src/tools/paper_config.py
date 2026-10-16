@@ -1,13 +1,11 @@
 #!/usr/bin/env python
-"""The paper's configuration numbers, read from the code that ran: ENA's settings, the environments' physics, the protocols.
-
-Every setting the paper states is emitted as a \\resdef{cfg/...} macro (or a generated table), so
-the text cannot drift from the code. ENA's settings are read from an ENA-Combined built exactly as
-the studies build it (cartpole_ena_ablation.build_ena_agent); the physics from the environments the
-studies construct; the protocol constants from the study scripts. paper_results.py calls this.
-
-	python src/tools/paper_config.py          # print every entry
-"""
+"""The paper's configuration numbers, read from the code that ran: ENA's settings, the environments' physics, the protocols."""
+# Every setting the paper states is emitted as a \resdef{cfg/...} macro (or a generated table), so
+# the text cannot drift from the code. ENA's settings are read from an ENA-Combined built exactly as
+# the studies build it (cartpole_ena_ablation.build_ena_agent); the physics from the environments the
+# studies construct; the protocol constants from the study scripts. paper_results.py calls this.
+#
+#         python src/tools/paper_config.py          # print every entry
 
 # General imports
 import inspect
@@ -135,6 +133,10 @@ def protocol_entries() -> dict:
 	world = ablation.make_training_worlds()[0]
 	entries["cfg/cartpole/maxsteps"] = _number(world.spec.max_episode_steps)
 	world.close()
+	cheetah_world = cheetah.make_env()
+	entries["cfg/cheetah/maxsteps"] = _number(cheetah_world.spec.max_episode_steps)
+	cheetah_world.close()
+	entries["cfg/cheetah/maxeval"] = _number(cheetah.ENA_SETTINGS["max_eval_steps"])
 	return entries
 
 
@@ -143,8 +145,9 @@ def _row(cells: list) -> str:
 
 
 def latex_table(caption: str, label: str, column_spec: str, body: list, fit: str = None) -> str:
-	"""A captioned, labelled LaTeX table around body (header and rows, already formatted); fit="column" scales it to the
-	column, fit="page" spans both columns of the page and scales it to their width."""
+	"""Wrap a formatted header and rows in a captioned, labelled LaTeX table, fitted to the column or the page."""
+	# A captioned, labelled LaTeX table around body (header and rows, already formatted); fit="column" scales it to the
+	# column, fit="page" spans both columns of the page and scales it to their width.
 	environment, width = ("table*", "\\textwidth") if fit == "page" else ("table", "\\columnwidth")
 	opening = [f"\\begin{{{environment}}}[{'t' if fit == 'page' else 'htbp'}]", f"\\caption{{{caption}}}", "\\begin{center}", "\\footnotesize"]
 	if fit:

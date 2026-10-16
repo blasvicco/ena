@@ -3,23 +3,26 @@
 # Libs imports
 import numpy as np
 
+# App imports
+from agents.ena.memory import AgentMemory
+
 # Shared by the curves and Trust's reward normalizer (the paper reads them through tools/paper_config.py).
 WARMUP_RETURNS = 10  # fewer returns than this in the history: no reliable percentiles yet, full signal
 CONFIDENT_PERCENTILE = 90  # a return at or above this percentile of the history gives the minimum signal
 MIN_SIGNAL = 0.1  # the lowest failure signal: a confident agent still searches a little
 
 
-def zero(_reward: float, _memory) -> float:
-	"""Always zero."""
+def zero(_reward: float, _memory: AgentMemory) -> float:
+	"""Return zero, whatever the reward."""
 	return 0.0
 
 
-def full(_reward: float, _memory) -> float:
-	"""Always one."""
+def full(_reward: float, _memory: AgentMemory) -> float:
+	"""Return one, whatever the reward."""
 	return 1.0
 
 
-def linear_ramp(reward: float, memory) -> float:
+def linear_ramp(reward: float, memory: AgentMemory) -> float:
 	"""Percentile-scaled linear ramp: 0.1 at or above the 90th percentile of recent scores, rising linearly to 1.0 at the worst score seen this run."""
 	# No hard floor: a previous version clamped anything below the 10th percentile to a flat
 	# 1.0, so once the agent was consistently near-perfect (a very narrow percentile band), a
@@ -43,7 +46,7 @@ def linear_ramp(reward: float, memory) -> float:
 	return float(1.0 - (ratio * (1.0 - MIN_SIGNAL)))
 
 
-def quadratic(reward: float, memory) -> float:
+def quadratic(reward: float, memory: AgentMemory) -> float:
 	"""Aggressive curve using global benchmarks."""
 	if len(memory.reward_history) < WARMUP_RETURNS:
 		return 1.0

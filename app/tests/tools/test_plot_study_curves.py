@@ -107,8 +107,9 @@ def _write_steps_replicate(study, exp_name, steps, scores, envs):
 
 
 def test_load_binned_aligns_replicates_on_environment_steps(tmp_path) -> None:
-	"""Training curves are averaged by environment steps, not by episode number: replicates (and agents) play different
-	numbers of episodes for the same budget. Each bin holds the mean return of the episodes ending in it."""
+	"""Training curves are averaged by environment steps, not by episode number."""
+	# Training curves are averaged by environment steps, not by episode number: replicates (and agents) play different
+	# numbers of episodes for the same budget. Each bin holds the mean return of the episodes ending in it.
 	with step("Arrange: one replicate with 5k-step episodes, one with 10k-step episodes."):
 		_write_steps_replicate(tmp_path, "exp_1", [5_000, 10_000, 15_000, 20_000], [1, 3, 5, 7], ["Mars", "Mars", "Jupiter", "Jupiter"])
 		_write_steps_replicate(tmp_path, "exp_2", [10_000, 20_000], [2, 6], ["Mars", "Jupiter"])

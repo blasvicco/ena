@@ -37,8 +37,15 @@ def _bands(signal: np.ndarray, wavelet: str, transform: str, level, scales) -> l
 
 # pylint: disable=too-many-arguments
 def features(
-	response: np.ndarray, *, kind: str = "wavelet", wavelet: str = "haar", transform: str = "dwt", level=None, feature: str = "energy", scales=None
-):
+	response: np.ndarray,
+	*,
+	kind: str = "wavelet",
+	wavelet: str = "haar",
+	transform: str = "dwt",
+	level: int | None = None,
+	feature: str = "energy",
+	scales: np.ndarray | None = None,
+) -> np.ndarray:
 	"""Feature vector of a (steps, channels) response: raw, or per channel and band an energy (log) or its coefficients."""
 	response = np.asarray(response, dtype=np.float64)
 	if kind == "raw":

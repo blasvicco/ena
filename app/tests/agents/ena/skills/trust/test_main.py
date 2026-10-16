@@ -19,10 +19,11 @@ def test_reference_returns_minus_one_below_five_samples() -> None:
 
 
 def test_reset_population_leaves_gladiator_trust_untouched() -> None:
-	"""reset_population() must not dilute an established gladiator's trust on an unrelated
-	exploratory failure — only non-gladiators get blended toward the reference trust.
-	Gladiators are already protected from replacement in __evolve_population; there's no
-	reason a failure that has nothing to do with them should erode their trust."""
+	"""reset_population() blends only non-gladiators toward the reference trust, never a gladiator."""
+	# reset_population() must not dilute an established gladiator's trust on an unrelated
+	# exploratory failure — only non-gladiators get blended toward the reference trust.
+	# Gladiators are already protected from replacement in __evolve_population; there's no
+	# reason a failure that has nothing to do with them should erode their trust.
 	with step("Arrange: a population with one gladiator and one non-gladiator, both at a known trust."):
 		trust = Trust("zero")
 		memory = SimpleNamespace(reward_history=[])

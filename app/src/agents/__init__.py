@@ -1,5 +1,6 @@
 """Agents module"""
 
+# App imports
 from .dqn import DQNAgent
 from .ena import ENAgent
 from .ppo import PPOAgent

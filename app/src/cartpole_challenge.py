@@ -3,6 +3,7 @@
 """ENA vs. state-of-the-art RL on non-stationary CartPole — equal step budget for all, frozen test (50 replicates)."""
 
 # General imports
+from queue import Queue
 import argparse
 import functools
 import os
@@ -14,6 +15,7 @@ from keras.layers import Dense
 
 # App imports
 from agents import DQNAgent, PPOAgent, RandomAgent, SACDiscreteAgent
+from agents.tools.abstract import AAgent
 from cartpole_ena_ablation import (
 	ABLATION_VARIANTS,
 	TRAINING_EPISODES_ENA,
@@ -23,14 +25,14 @@ from cartpole_ena_ablation import (
 	make_env,
 	make_training_worlds,
 	parse_args,
-	post_update,
 	run_study,
 	seed_experiment,
 	select_variants,
 	train_and_test,
 )
+from tools.visualization import post_update, vprint
 from tools.early_stopping import StoppingRule
-from tools.visualization import vprint
+
 
 # Constants
 NUM_EXPERIMENTS = 50
@@ -111,7 +113,7 @@ def ppo_critic_brain(_action_dim: int, state_dim: int, hidden: tuple = (64, 64))
 	return Model(inputs, outputs)
 
 
-def build_agent(name: str, max_agent_threads: int):
+def build_agent(name: str, max_agent_threads: int) -> AAgent:
 	"""One challenge agent by name; its training episodes are set later (or replaced by ENA's step budget)."""
 	if name == ENA_NAME:
 		return build_ena_agent(next(row for row in ABLATION_VARIANTS if row["name"] == ENA_NAME), max_agent_threads)
@@ -155,7 +157,9 @@ def make_stopping_rule(protocol: str = "fixed-budget") -> StoppingRule:
 
 
 # pylint: disable=too-many-arguments,too-many-positional-arguments
-def run_experiment(experiment_id: int, output_dir: str, queue, variants: list, include_random: bool, protocol: str = "fixed-budget") -> None:
+def run_experiment(
+	experiment_id: int, output_dir: str, queue: Queue | None, variants: list, include_random: bool, protocol: str = "fixed-budget"
+) -> None:
 	"""Run one replicate: every agent trained under the same evaluation/stopping rule, then a frozen test."""
 	names = [row["name"] for row in variants]
 	post_update(experiment_id, queue, status="Initializing Agents...", progress=2)

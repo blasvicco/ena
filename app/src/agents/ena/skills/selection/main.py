@@ -1,7 +1,9 @@
 """Selection skill: picks which population member acts each episode via a pluggable driver."""
 
-# General imports
-import importlib
+# App imports
+from agents.ena.tools.driver_loader import load_driver
+from agents.ena.memory import AgentMemory
+from agents.ena.skills.env_detection.main import EnvironmentRecognizer
 
 
 class SelectionController:
@@ -9,28 +11,24 @@ class SelectionController:
 
 	# Usage: SelectionController("bpr", exploration_rate=0.2, return_scale=475.0).select_individual(population, recognizer, memory, learn=True)
 
-	def __init__(self, driver: str, **kwargs) -> None:
+	def __init__(self, driver: str, **kwargs: object) -> None:
 		"""Instantiate the appropriate driver based on the driver name."""
-		try:
-			module = importlib.import_module(f"agents.ena.skills.selection.driver.{driver}")
-		except ModuleNotFoundError as error:
-			raise ValueError(f"Unknown selection driver: {driver!r}") from error
-		self._instance = module.Instance(**kwargs)
+		self._instance = load_driver("selection", driver, **kwargs)
 
 	# ---------------------------------------------------------------
 	# Delegated public API
 	# ---------------------------------------------------------------
 
-	def select_individual(self, population: list, recognizer, memory, learn: bool) -> int:
-		"""Returns population index of the selected individual."""
+	def select_individual(self, population: list, recognizer: EnvironmentRecognizer | None, memory: AgentMemory, learn: bool) -> int:
+		"""Return the population index of the selected individual."""
 		return self._instance.select_individual(population, recognizer, memory, learn)
 
-	def on_episode_end(self, memory, learn: bool, env_detection) -> None:
+	def on_episode_end(self, memory: AgentMemory, learn: bool, env_detection: EnvironmentRecognizer) -> None:
 		"""Test time only: let the driver learn from the episode's result."""
 		if not learn:
 			self.record_episode_result(memory.last_episode_score, memory, recognizer=env_detection)
 
-	def record_episode_result(self, score: float, memory, recognizer=None) -> None:
+	def record_episode_result(self, score: float, memory: AgentMemory, recognizer: EnvironmentRecognizer | None = None) -> None:
 		"""Called at episode end during testing."""
 		self._instance.record_episode_result(score, memory, recognizer=recognizer)
 

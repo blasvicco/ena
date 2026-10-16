@@ -208,8 +208,9 @@ def _force_one_alarm(recognizer):
 
 
 def test_an_alarm_the_current_niche_still_explains_is_learned_from_not_declared() -> None:
-	"""Detect-then-verify: a CuSum alarm under unchanged physics (a coverage gap in the model) is
-	dismissed, and the post-alarm transitions are folded into the niche's model."""
+	"""An alarm the current niche still explains is dismissed and its transitions are folded into the niche's model."""
+	# Detect-then-verify: a CuSum alarm under unchanged physics (a coverage gap in the model) is
+	# dismissed, and the post-alarm transitions are folded into the niche's model.
 	with step("Arrange: niche 0 learned on A, and an alarm forced on the next step."):
 		recognizer = _recognizer()
 		_episode(recognizer, PHYSICS_A, seed=1)
@@ -248,9 +249,9 @@ def test_an_alarm_waits_for_enough_evidence_before_it_is_decided() -> None:
 
 
 def test_a_confirmed_shift_to_new_physics_fires_once_and_provisions_their_niche() -> None:
-	"""Regression: after a real switch, the post-alarm transitions must seed the new regime. Previously
-	reset() discarded them, the next induction re-attached the evidence-less regime to the ruled-out
-	niche, whose model alarmed again — a shift declared on every single episode, and no new niche."""
+	"""Regression: after a real switch, the post-alarm transitions must seed the new regime."""
+	# Previously reset() discarded them, the next induction re-attached the evidence-less regime to the ruled-out niche, whose model alarmed again — a
+	# shift declared on every single episode, and no new niche.
 	with step("Arrange: niche 0 learned on A over a few episodes."):
 		recognizer = _recognizer()
 		for seed in range(3):
@@ -273,9 +274,10 @@ def test_a_confirmed_shift_to_new_physics_fires_once_and_provisions_their_niche(
 
 
 def test_a_niche_recognizes_its_own_nonlinear_physics_on_states_it_saw_little_of() -> None:
-	"""Identification uses the same tolerance-widened variance as detection: a linear model of nonlinear
-	physics, fitted on a narrow state range, must still recognize those physics over a wider range
-	(e.g. a test-time policy visiting other states) — and still reject genuinely different physics."""
+	"""A niche recognizes its own nonlinear physics on states it saw little of, and still rejects other physics."""
+	# Identification uses the same tolerance-widened variance as detection: a linear model of nonlinear
+	# physics, fitted on a narrow state range, must still recognize those physics over a wider range
+	# (e.g. a test-time policy visiting other states) — and still reject genuinely different physics.
 
 	def _nonlinear(recognizer, gain, scale, seed):
 		rng = np.random.default_rng(seed)
@@ -305,8 +307,9 @@ def test_a_niche_recognizes_its_own_nonlinear_physics_on_states_it_saw_little_of
 
 
 def test_at_test_time_a_dismissed_alarm_does_not_change_the_niche_models() -> None:
-	"""Review #10: during the frozen test the detector still detects and identifies, but its dynamics
-	models stay as training left them — a dismissed alarm's transitions are not learned from."""
+	"""At test time a dismissed alarm leaves the niche models as training left them."""
+	# Review #10: during the frozen test the detector still detects and identifies, but its dynamics
+	# models stay as training left them — a dismissed alarm's transitions are not learned from.
 	with step("Arrange: niche 0 learned on A, and an alarm forced on the next step."):
 		recognizer = _recognizer()
 		_episode(recognizer, PHYSICS_A, seed=1)

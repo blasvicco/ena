@@ -67,8 +67,9 @@ def test_dynamics_likelihoods_concentrate_the_belief_and_pick_that_niches_gladia
 
 
 def test_returns_alone_move_the_belief_away_from_a_failing_specialist() -> None:
-	"""Without dynamics likelihoods (e.g. the none driver), a specialist scoring ~0 in what the belief
-	thought was its own niche shifts the belief elsewhere and another gladiator gets picked."""
+	"""Without dynamics likelihoods (e.g."""
+	# the none driver), a specialist scoring ~0 in what the belief thought was its own niche shifts the belief elsewhere and another gladiator gets
+	# picked.
 	with step("Arrange: a driver whose first pick is some niche's own gladiator."):
 		driver = _driver()
 		first = _episode(driver, score=0.0, recognizer=_FakeRecognizer())
@@ -125,10 +126,11 @@ def test_with_no_gladiators_it_plays_a_non_gladiator() -> None:
 
 
 def test_a_failing_own_niche_gladiator_is_abandoned_even_when_the_niche_is_certain() -> None:
-	"""Regression: the dynamics evidence is sure the environment is niche 0, but niche 0's highest-trust
-	gladiator keeps scoring ~0 — another gladiator must get tried (observed: a Mars specialist scoring
-	16/500 in Mars for a whole test phase, never replaced, while a pessimistic cross-niche prior of 0
-	made every alternative look worse untried)."""
+	"""A gladiator failing in its own niche is abandoned even when the niche is certain."""
+	# Regression: the dynamics evidence is sure the environment is niche 0, but niche 0's highest-trust
+	# gladiator keeps scoring ~0 — another gladiator must get tried (observed: a Mars specialist scoring
+	# 16/500 in Mars for a whole test phase, never replaced, while a pessimistic cross-niche prior of 0
+	# made every alternative look worse untried).
 	with step("Arrange: niche 0 has two gladiators (slot 1 has higher trust), niche 1 one; evidence says niche 0."):
 		population = [
 			{"individual_id": "mars-a", "trust": 1.0, "is_gladiator": True, "internal_env_id": 0},
@@ -152,10 +154,11 @@ def test_a_failing_own_niche_gladiator_is_abandoned_even_when_the_niche_is_certa
 
 
 def test_a_gladiator_solving_its_own_niche_strengthens_the_belief_in_that_niche() -> None:
-	"""Review #7/#8 regression: utility is return / solved return, so solving the environment (utility 1)
-	matches the own-niche prior and is evidence FOR the gladiator's niche. With the old step-count
-	scale (CartPole 1000), a perfect 475-500 read as utility ~0.5 — the cross-niche prior — and moved
-	the belief away from the right niche."""
+	"""A gladiator solving its own niche (utility 1) strengthens the belief in that niche."""
+	# Review #7/#8 regression: utility is return / solved return, so solving the environment (utility 1)
+	# matches the own-niche prior and is evidence FOR the gladiator's niche. With the old step-count
+	# scale (CartPole 1000), a perfect 475-500 read as utility ~0.5 — the cross-niche prior — and moved
+	# the belief away from the right niche.
 	with step("Arrange: three niches, uniform belief, no dynamics evidence."):
 		driver = _driver()
 		population = _population()
@@ -179,8 +182,9 @@ def _olympic_population():
 
 
 def test_a_confirmed_gladiators_prior_is_its_olympic_mean() -> None:
-	"""With an Olympic result, the own-niche prior utility is that mean return / the solved return, not 1: the champion plays
-	first, though its trust is lower, and a single episode at its level keeps it playing."""
+	"""A confirmed gladiator's own-niche prior is its Olympic mean return over the solved return."""
+	# With an Olympic result, the own-niche prior utility is that mean return / the solved return, not 1: the champion plays
+	# first, though its trust is lower, and a single episode at its level keeps it playing.
 	with step("Arrange: HalfCheetah's solved return 4,800; the Olympic population."):
 		driver = Instance(exploration_rate=0.0, return_scale=4_800.0)
 		population = _olympic_population()

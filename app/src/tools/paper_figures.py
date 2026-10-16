@@ -10,8 +10,9 @@ import numpy as np
 def replicate_box_figure(
 	samples: list, labels: list, ylabel: str, path: str, *, ylim: tuple = None, reference: float = None, rotate: bool = False
 ) -> str:
-	"""One box per sample (its replicates jittered as dots), labelled in order; an optional y range and dotted reference
-	line; rotate tilts long labels. Returns the path written."""
+	"""Draw one box per sample, its replicates as jittered dots, and return the path written."""
+	# One box per sample (its replicates jittered as dots), labelled in order; an optional y range and dotted reference
+	# line; rotate tilts long labels. Returns the path written.
 	figure, axis = plt.subplots(figsize=(3.5, 2.4))
 	axis.boxplot(samples, widths=0.55, showfliers=False, medianprops={"color": "#1f2937", "linewidth": 1.5}, boxprops={"color": "#6b7280"})
 	rng = np.random.default_rng(0)

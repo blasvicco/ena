@@ -1,13 +1,13 @@
 """Trust skill: computes a trust-decay factor via a pluggable driver."""
 
-# General imports
-import importlib
-
 # Libs imports
 import numpy as np
 
 # App imports
+from agents.ena.tools.driver_loader import load_driver
 from agents.ena.tools.reward_normalizer import normalize_reward
+from agents.ena.memory import AgentMemory
+
 
 REFERENCE_MIN_RETURNS = 5  # fewer training returns than this: no reference trust yet (reference() returns -1.0)
 
@@ -17,19 +17,15 @@ class Trust:
 
 	# Usage: Trust("linear_ramp").decay(reward, memory)
 
-	def __init__(self, driver: str, **kwargs) -> None:
+	def __init__(self, driver: str, **kwargs: object) -> None:
 		"""Instantiate the appropriate driver based on the driver name."""
-		try:
-			module = importlib.import_module(f"agents.ena.skills.trust.driver.{driver}")
-		except ModuleNotFoundError as error:
-			raise ValueError(f"Unknown trust driver: {driver!r}") from error
-		self._instance = module.Instance(**kwargs)
+		self._instance = load_driver("trust", driver, packages=("agents.ena.skills.failure_signal.driver",), **kwargs)
 
-	def decay(self, reward: float, memory) -> float:
+	def decay(self, reward: float, memory: AgentMemory) -> float:
 		"""Return the trust-decay factor for the given reward."""
-		return self._instance.decay(reward, memory)
+		return self._instance.value(reward, memory)
 
-	def reference(self, memory, return_scale: float) -> float:
+	def reference(self, memory: AgentMemory, return_scale: float) -> float:
 		"""Return the reference trust for a freshly built or reset individual."""
 		# Below REFERENCE_MIN_RETURNS samples, -1.0 keeps a fresh/reset slot ranked above any evaluated mutant
 		# (even one with a negative score) without creating an artificial ceiling at 0.0
@@ -39,7 +35,7 @@ class Trust:
 			return -1.0
 		return normalize_reward(float(np.mean(memory.reward_history)), memory, return_scale)
 
-	def reset_population(self, population: list, memory, return_scale: float, factor: float) -> None:
+	def reset_population(self, population: list, memory: AgentMemory, return_scale: float, factor: float) -> None:
 		"""Blend every non-gladiator's trust toward the reference trust, by the given factor."""
 		# Gladiators are excluded: they're already protected from replacement in
 		# __evolve_population, and an unrelated exploratory failure (e.g. the epsilon-greedy

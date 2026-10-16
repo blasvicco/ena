@@ -8,9 +8,7 @@ import pytest
 # App imports
 from helpers import step
 from tools.metrics import (
-	_build_transition_matrix,
 	_classify_niche_events,
-	_niche_env_labels,
 	_qualitative_colors,
 	calculate_compute_cost,
 	estimate_eval_cost,
@@ -70,18 +68,6 @@ def test_calculate_compute_cost_summarizes_logged_columns() -> None:
 		assert row["Total Candidate Env-Steps"] == "2,520"
 
 
-def test_calculate_compute_cost_skips_agents_without_the_column() -> None:
-	"""An agent with no compute-cost columns (e.g. RandomAgent) must be excluded, not error."""
-	with step("Arrange: a history with no compute-cost columns at all."):
-		history = pd.DataFrame({"episode": [1, 2], "score": [1.0, 1.0]})
-
-	with step("Act: summarize compute cost."):
-		cost_df = calculate_compute_cost([history], ["Random"])
-
-	with step("Assert: the agent is skipped entirely — no row, no error."):
-		assert cost_df.empty
-
-
 @pytest.mark.parametrize(
 	("series", "expected_events"),
 	[
@@ -100,8 +86,9 @@ def test_calculate_compute_cost_skips_agents_without_the_column() -> None:
 	],
 )
 def test_classify_niche_events(series: pd.Series, expected_events: list) -> None:
-	"""C1b: 'new' = never-seen id; 'switch' = a different, already-known id;
-	-1/NaN mean 'no niche resolved this episode' and must not count as events."""
+	"""Niche events: 'new' is a never-seen id, 'switch' a different known one; -1 and NaN are not events."""
+	# C1b: 'new' = never-seen id; 'switch' = a different, already-known id;
+	# -1/NaN mean 'no niche resolved this episode' and must not count as events.
 	with step("Act: classify the niche-id series into new/switch events."):
 		events = _classify_niche_events(series)
 
@@ -110,10 +97,9 @@ def test_classify_niche_events(series: pd.Series, expected_events: list) -> None
 
 
 def test_classify_niche_events_seeds_already_known_niches_as_switches() -> None:
-	"""A niche established before this series began (e.g. from training, for a test-phase
-	chart) must classify as a 'switch' the first time it appears here, not a spurious 'new
-	niche' — this function has no memory of anything outside the series it's given unless
-	told what's already known."""
+	"""A niche established before this series began (e.g."""
+	# from training, for a test-phase chart) must classify as a 'switch' the first time it appears here, not a spurious 'new niche' — this function
+	# has no memory of anything outside the series it's given unless told what's already known.
 	with step("Arrange: a series whose first value is a pre-known niche, seeded as such."):
 		series = pd.Series([5, 5, 7, 5])
 
@@ -124,60 +110,11 @@ def test_classify_niche_events_seeds_already_known_niches_as_switches() -> None:
 		assert events == [(2, 7, "new"), (3, 5, "switch")]
 
 
-def test_build_transition_matrix_counts_consecutive_changes() -> None:
-	"""C4: every consecutive value change is an edge, regardless of new-vs-switch."""
-	with step("Arrange: build a niche-id series with several consecutive changes."):
-		series = pd.Series([0, 0, 1, 0, 2, 2, 0, 3, 0])
-
-	with step("Act: build the transition matrix."):
-		counts = _build_transition_matrix(series)
-
-	with step("Assert: every consecutive (from, to) change is counted as one edge."):
-		assert counts == {
-			(0, 1): 1,
-			(1, 0): 1,
-			(0, 2): 1,
-			(2, 0): 1,
-			(0, 3): 1,
-			(3, 0): 1,
-		}
-
-
-def test_build_transition_matrix_surfaces_cross_environment_transitions() -> None:
-	"""A transition between niches belonging to two DIFFERENT true environments must
-	show up as its own (from, to) cell — the exact pattern the transition matrix is
-	meant to reveal (worse than mere within-env fragmentation)."""
-	with step("Arrange: build a DataFrame where niches 0/1 share an env and niche 2 is another."):
-		# niches 0 and 1 both belong to "Mars-Light" (fragmentation); niche 2 belongs to
-		# "Jupiter-Heavy" — the 1 -> 2 switch is a genuine cross-environment transition.
-		dataframe = pd.DataFrame(
-			{
-				"detected_env_id": [0, 0, 1, 1, 2, 2],
-				"gladiator_env": [
-					"Mars-Light",
-					"Mars-Light",
-					"Mars-Light",
-					"Mars-Light",
-					"Jupiter-Heavy",
-					"Jupiter-Heavy",
-				],
-			}
-		)
-
-	with step("Act: build the transition matrix and resolve each niche's true environment label."):
-		counts = _build_transition_matrix(dataframe["detected_env_id"])
-		labels = _niche_env_labels(dataframe)
-
-	with step("Assert: the 1 -> 2 cell crosses a true-environment boundary."):
-		assert counts == {(0, 1): 1, (1, 2): 1}
-		assert labels == {0: "Mars-Light", 1: "Mars-Light", 2: "Jupiter-Heavy"}
-		assert labels[1] != labels[2]  # the (1, 2) cell crosses a true-environment boundary
-
-
 def test_plot_academic_comparison_niche_markers_match_their_legend_swatch(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-	"""C0: every 'New Niche' marker and every 'Niche Switch' marker must share one fixed
-	color per kind, matching the legend swatch — regardless of how many distinct niche ids
-	are involved (previously colored per-niche-id while the legend only showed one swatch)."""
+	"""Every 'New Niche' and 'Niche Switch' marker shares its kind's legend color, however many niches there are."""
+	# C0: every 'New Niche' marker and every 'Niche Switch' marker must share one fixed
+	# color per kind, matching the legend swatch — regardless of how many distinct niche ids
+	# are involved (previously colored per-niche-id while the legend only showed one swatch).
 	with step(
 		"Arrange: a history whose detected_env_id produces 'new' events for two "
 		"different niche ids and 'switch' events for another, and prevent the figure "
@@ -190,6 +127,7 @@ def test_plot_academic_comparison_niche_markers_match_their_legend_swatch(tmp_pa
 				"score": [100.0, 110.0, 90.0, 95.0, 105.0, 98.0, 102.0],
 				"env_id": ["Env-A"] * 7,
 				"detected_env_id": [0, 0, 1, 1, 0, 2, 0],
+				"env_shift_detected": [False] * 7,
 			}
 		)
 
@@ -213,9 +151,10 @@ def test_plot_academic_comparison_niche_markers_match_their_legend_swatch(tmp_pa
 
 
 def test_plot_academic_comparison_seeds_known_niches_to_avoid_spurious_new_niche_markers(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-	"""A test-phase chart must not show 'New Niche' for a niche that was actually
-	established during training — known_niche_ids_by_history seeds each history's
-	already-known niches, so their first appearance here classifies as a 'switch'."""
+	"""A test-phase chart marks a niche established in training as a switch, not as a new niche."""
+	# A test-phase chart must not show 'New Niche' for a niche that was actually
+	# established during training — known_niche_ids_by_history seeds each history's
+	# already-known niches, so their first appearance here classifies as a 'switch'.
 	with step("Arrange: the same history as above, but with every niche it contains pre-declared as already known (as if all came from training)."):
 		monkeypatch.setattr(plt, "close", lambda *args, **kwargs: None)
 		dataframe = pd.DataFrame(
@@ -224,6 +163,7 @@ def test_plot_academic_comparison_seeds_known_niches_to_avoid_spurious_new_niche
 				"score": [100.0, 110.0, 90.0, 95.0, 105.0, 98.0, 102.0],
 				"env_id": ["Env-A"] * 7,
 				"detected_env_id": [0, 0, 1, 1, 0, 2, 0],
+				"env_shift_detected": [False] * 7,
 			}
 		)
 
@@ -247,10 +187,11 @@ def test_plot_academic_comparison_seeds_known_niches_to_avoid_spurious_new_niche
 
 
 def test_plot_specialist_transitions_explains_the_niche_ring_in_the_legend() -> None:
-	"""The outer ring around a gladiator marker encodes its recognized niche ID (distinct
-	from the fill color, which groups by ground-truth env name) — since ring colors are
-	per-niche and change every run, a single generic legend entry explains what the ring
-	means rather than one entry per color."""
+	"""The legend explains the niche ring around gladiator markers with one generic entry."""
+	# The outer ring around a gladiator marker encodes its recognized niche ID (distinct
+	# from the fill color, which groups by ground-truth env name) — since ring colors are
+	# per-niche and change every run, a single generic legend entry explains what the ring
+	# means rather than one entry per color.
 	with step("Arrange: a history with two gladiators sharing an env name but different niches."):
 		dataframe = pd.DataFrame(
 			{
@@ -274,8 +215,9 @@ def test_plot_specialist_transitions_explains_the_niche_ring_in_the_legend() -> 
 
 
 def test_plot_specialist_transitions_omits_ring_legend_entry_without_niche_data() -> None:
-	"""No internal_env_id data (or no gladiators) means no rings are drawn — the legend
-	must not claim a ring meaning that isn't actually on the chart."""
+	"""Without niche data no rings are drawn, and the legend has no ring entry."""
+	# No internal_env_id data (or no gladiators) means no rings are drawn — the legend
+	# must not claim a ring meaning that isn't actually on the chart.
 	with step("Arrange: a history with no gladiators at all."):
 		dataframe = pd.DataFrame(
 			{
@@ -284,6 +226,7 @@ def test_plot_specialist_transitions_omits_ring_legend_entry_without_niche_data(
 				"specialist_id": [1, 2, 3],
 				"is_gladiator": [False, False, False],
 				"gladiator_env": [None, None, None],
+				"internal_env_id": [-1, -1, -1],
 			}
 		)
 
@@ -356,12 +299,14 @@ def _budget_history(episodes_per_env, steps_per_episode):
 	frame = pd.DataFrame(rows)
 	frame["episode"] = range(1, len(frame) + 1)
 	frame["env_steps"] = [steps_per_episode * (index + 1) for index in range(len(frame))]
+	frame["detected_env_id"], frame["env_shift_detected"] = -1, False
 	return frame
 
 
 def test_plot_academic_comparison_can_put_agents_with_different_episode_lengths_on_one_step_axis(tmp_path, monkeypatch) -> None:
-	"""Under an equal step budget, an agent that spends most steps on candidate evaluation plays far fewer episodes;
-	on an environment-step axis both agents span the same range and their switches line up."""
+	"""On an environment-step axis, agents with different episode counts span the same range."""
+	# Under an equal step budget, an agent that spends most steps on candidate evaluation plays far fewer episodes;
+	# on an environment-step axis both agents span the same range and their switches line up.
 	with step("Arrange: a slow agent (4 episodes/env of 1000 steps) and a fast one (40 of 100); keep the figure open."):
 		monkeypatch.setattr(plt, "close", lambda *args, **kwargs: None)
 		slow, fast = _budget_history(4, 1000), _budget_history(40, 100)

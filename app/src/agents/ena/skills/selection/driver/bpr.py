@@ -8,6 +8,8 @@ import numpy as np
 
 # App imports
 from agents.ena.skills.selection.driver.abstract import ADriver
+from agents.ena.memory import AgentMemory
+from agents.ena.skills.env_detection.main import EnvironmentRecognizer
 
 
 # Algorithm: Bayesian Policy Reuse (BPR)
@@ -46,7 +48,16 @@ class Instance(ADriver):
 	# pylint: disable=too-many-arguments,too-many-positional-arguments
 	OWN_PRIOR = 1.0  # prior utility of a gladiator in its own niche: it was archived for solving it
 
-	def __init__(self, exploration_rate=0.1, return_scale=475.0, switch_rate=0.05, return_noise=0.2, prior_strength=1.0, cross_prior=0.5, **_kwargs):
+	def __init__(
+		self,
+		exploration_rate: float = 0.1,
+		return_scale: float = 475.0,
+		switch_rate: float = 0.05,
+		return_noise: float = 0.2,
+		prior_strength: float = 1.0,
+		cross_prior: float = 0.5,
+		**_kwargs
+	) -> None:
 		super().__init__(exploration_rate)
 		self._return_scale = float(return_scale)
 		self._switch_rate = switch_rate
@@ -74,7 +85,7 @@ class Instance(ADriver):
 		self._played = max(self._policies, key=lambda policy: (self._expected_utility(policy), policy[3]))
 		return self._played[0]
 
-	def record_episode_result(self, score, memory, recognizer=None):
+	def record_episode_result(self, score: float, memory: AgentMemory, recognizer: EnvironmentRecognizer | None = None) -> None:
 		"""Bayes-update the belief from this episode's utility (and dynamics likelihoods, if any)."""
 		if self._played is None:
 			return
@@ -95,10 +106,10 @@ class Instance(ADriver):
 
 		self._belief = (1.0 - self._switch_rate) * posterior + self._switch_rate / len(self._niches)
 
-	def evaluate(self, population):
+	def evaluate(self, population: list) -> None:
 		"""(Re)build the types and policy library from the population's gladiators and reset the belief to uniform."""
 		self._policies = [
-			(index, ind.get("individual_id", str(index)), ind["internal_env_id"], ind.get("trust", 0.0), self.__own_prior(ind))
+			(index, ind.get("individual_id", str(index)), ind["internal_env_id"], ind.get("trust", 0.0), self._own_prior(ind))
 			for index, ind in enumerate(population)
 			if ind.get("is_gladiator", False) and ind.get("internal_env_id", -1) >= 0
 		]
@@ -110,7 +121,7 @@ class Instance(ADriver):
 	# Private
 	# ---------------------------------------------------------------
 
-	def __own_prior(self, individual: dict) -> float:
+	def _own_prior(self, individual: dict) -> float:
 		"""Prior utility in the gladiator's own niche: its Olympic mean return if it competed, else solved (OWN_PRIOR)."""
 		if individual.get("olympic_return") is None:
 			return self.OWN_PRIOR

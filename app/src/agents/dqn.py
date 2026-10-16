@@ -5,10 +5,12 @@
 # https://doi.org/10.1038/nature14236
 
 # General imports
+from typing import Callable
 import collections
 import random
 
 # Libs imports
+import gymnasium as gym
 import numpy as np
 import tensorflow as tf
 from keras import optimizers
@@ -28,19 +30,19 @@ class DQNAgent(ABaseline):
 	# pylint: disable=too-many-arguments,too-many-positional-arguments
 	def __init__(
 		self,
-		brain,
-		make_env,
-		batch_size=64,
-		buffer_size=50_000,
-		epsilon_decay_steps=10_000,
-		epsilon_end=0.01,
-		epsilon_start=1.0,
-		gamma=0.99,
-		learning_rate=3e-4,
-		learning_starts=1_000,
-		target_update_freq=1_000,
-		train_freq=4,
-	):
+		brain: Callable,
+		make_env: Callable[..., gym.Env],
+		batch_size: int = 64,
+		buffer_size: int = 50_000,
+		epsilon_decay_steps: int = 10_000,
+		epsilon_end: float = 0.01,
+		epsilon_start: float = 1.0,
+		gamma: float = 0.99,
+		learning_rate: float = 3e-4,
+		learning_starts: int = 1_000,
+		target_update_freq: int = 1_000,
+		train_freq: int = 4,
+	) -> None:
 		"""Initialize DQNAgent."""
 		super().__init__(brain, make_env)
 		self.learn = True
@@ -76,11 +78,11 @@ class DQNAgent(ABaseline):
 	# ABaseline interface
 	# ------------------------------------------------------------------
 
-	def set_learning(self, mode, output_dir=None):
-		"""Switches between training and evaluation modes."""
+	def set_learning(self, mode: bool, output_dir: str | None = None) -> None:
+		"""Switch between training and evaluation modes."""
 		self.learn = mode
 
-	def act(self, env, state):
+	def act(self, env: gym.Env, state: np.ndarray) -> tuple:
 		"""Epsilon-greedy action selection."""
 		if self.learn:
 			epsilon = max(
@@ -97,7 +99,7 @@ class DQNAgent(ABaseline):
 		next_state, reward, terminated, truncated, _ = env.step(action)
 		return next_state, reward, terminated, truncated, action
 
-	def train(self, **kwargs):
+	def train(self, **kwargs: object) -> None:
 		"""Store transition and run a gradient step on schedule."""
 		step_data = kwargs["step_data"]
 		self.replay_buffer.append(transition(step_data))

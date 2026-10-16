@@ -20,7 +20,7 @@ TREND_MIN_RETURNS = 20
 class AgentMemory:
 	"""Centralized memory storage for all historical variables and statistics."""
 
-	def __init__(self, history_size, state_dim, max_eval_steps=500, obs_normalizer_max_count=None):
+	def __init__(self, history_size: int, state_dim: int, max_eval_steps: int = 500, obs_normalizer_max_count: int | None = None) -> None:
 		# 1. Global Statistics
 		self.max_seen = -np.inf
 		self.min_seen = np.inf
@@ -38,13 +38,13 @@ class AgentMemory:
 		self.current_episode_reward = 0
 		self.steps_this_episode = 0
 
-	def record_step(self, reward):
+	def record_step(self, reward: float) -> None:
 		"""Accumulate the running episode reward."""
 		self.current_episode_reward += reward
 
 	@property
-	def performance_derivative(self):
-		"""Returns the derivative of the moving average of reward history."""
+	def performance_derivative(self) -> float:
+		"""Return the derivative of the moving average of the reward history."""
 		if len(self.reward_history) < TREND_MIN_RETURNS:
 			return 0.0
 		history_list = list(self.reward_history)
@@ -52,8 +52,8 @@ class AgentMemory:
 		short_term = float(np.mean(history_list[-TREND_RECENT:]))
 		return short_term - baseline
 
-	def clear_training_history(self):
-		"""Clears the return history on a training-time environment shift, so the new regime's returns don't mix with the old one's."""
+	def clear_training_history(self) -> None:
+		"""Clear the return history on a training-time environment shift, so the new regime's returns don't mix with the old one's."""
 		self.reward_history.clear()
 		self.max_seen = -np.inf
 		self.min_seen = np.inf

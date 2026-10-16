@@ -29,10 +29,11 @@ def _run_one_episode(agent: ENAgent, env: Any) -> np.ndarray:
 
 
 def test_known_niche_ids_delegates_to_the_recognizer(agent: ENAgent) -> None:
-	"""ENAgent.known_niche_ids must expose the recognizer's own known_niche_ids — used by
-	cartpole_challenge.py to seed the test-phase chart's niche-event classification (see metrics.py's
-	_classify_niche_events) so an already-trained niche's first test-phase appearance isn't
-	mislabeled as a spurious 'new niche'."""
+	"""ENAgent.known_niche_ids exposes the recognizer's own known niche IDs."""
+	# ENAgent.known_niche_ids must expose the recognizer's own known_niche_ids — used by
+	# cartpole_challenge.py to seed the test-phase chart's niche-event classification (see metrics.py's
+	# _classify_niche_events) so an already-trained niche's first test-phase appearance isn't
+	# mislabeled as a spurious 'new niche'.
 	with step("Arrange: no niches known yet on a freshly built agent."):
 		assert agent.known_niche_ids == set()
 
@@ -46,8 +47,9 @@ def test_known_niche_ids_delegates_to_the_recognizer(agent: ENAgent) -> None:
 
 @pytest.mark.parametrize("is_training", [True, False], ids=["training-time", "test-time"])
 def test_env_shift_reward_history_clearing(agent: ENAgent, monkeypatch: pytest.MonkeyPatch, is_training: bool) -> None:
-	"""T3: a detected shift during training must clear the reward history; the training-only
-	clear must not fire for test-mode shifts (a separate concern)."""
+	"""A shift detected in training clears the reward history; a test-time shift does not."""
+	# T3: a detected shift during training must clear the reward history; the training-only
+	# clear must not fire for test-mode shifts (a separate concern).
 	with step("Arrange: seed the reward history and script a detected environment shift."):
 		if is_training:
 			assert agent.learn is True
@@ -73,8 +75,8 @@ def test_env_shift_reward_history_clearing(agent: ENAgent, monkeypatch: pytest.M
 
 
 def test_detect_change_calls_recognizer_reset_alongside_memory_reset(agent: ENAgent, monkeypatch: pytest.MonkeyPatch) -> None:
-	"""A detected shift must flush driver-owned recognizer state (e.g. dynamics_model's recent-transition
-	buffers), which lives on the driver instance, not in the agent's memory."""
+	"""A detected shift must flush driver-owned recognizer state (e.g."""
+	# dynamics_model's recent-transition buffers), which lives on the driver instance, not in the agent's memory.
 	with step("Arrange: script a detected shift and spy on the recognizer's reset()."):
 		# pylint: disable=protected-access
 		monkeypatch.setattr(agent._skills["env_detection"], "detect_change", lambda memory, learn=True: True)
@@ -91,8 +93,7 @@ def test_detect_change_calls_recognizer_reset_alongside_memory_reset(agent: ENAg
 
 
 def test_set_learning_false_calls_recognizer_reset(agent: ENAgent, monkeypatch: pytest.MonkeyPatch) -> None:
-	"""Entering test mode must flush strategy-owned recognizer state too, not just
-	AgentMemory's — same reasoning as the detect_change case above."""
+	"""Entering test mode must flush strategy-owned recognizer state too, not just AgentMemory's — same reasoning as the detect_change case above."""
 	with step("Arrange: spy on the recognizer's reset()."):
 		# pylint: disable=protected-access
 		reset_calls = []
@@ -136,10 +137,9 @@ def _spy_on_fast_call(individual: dict) -> dict:
 
 @pytest.mark.parametrize("is_gladiator", [True, False], ids=["gladiator", "non-gladiator"])
 def test_evaluate_individual_performance_always_uses_live_normalizer(agent: ENAgent, is_gladiator: bool) -> None:
-	"""Restored (Adding-Memory) behavior: every individual — gladiators included — is
-	normalized with the live, shared obs_normalizer. No special-casing: gladiators get
-	their weights continuously re-projected to match it (see tools/weight_projection.py),
-	so using the live normalizer for them is always correct."""
+	"""Restored (Adding-Memory) behavior: every individual — gladiators included — is normalized with the live, shared obs_normalizer."""
+	# No special-casing: gladiators get their weights continuously re-projected to match it (see tools/weight_projection.py), so using the live
+	# normalizer for them is always correct.
 	with step("Arrange: mark the individual, set distinctive live-normalizer stats, spy on its input."):
 		individual = agent.population[0]
 		individual["is_gladiator"] = is_gladiator
@@ -164,8 +164,9 @@ def test_evaluate_individual_performance_always_uses_live_normalizer(agent: ENAg
 
 
 def test_project_individual_weights_no_longer_skips_gladiators(agent: ENAgent) -> None:
-	"""Restored (Adding-Memory) behavior: gladiators must be re-projected to the live
-	normalizer just like everyone else — freezing them was the "Failed shit!" regression."""
+	"""Gladiators are re-projected to the live normalizer like every other individual."""
+	# Restored (Adding-Memory) behavior: gladiators must be re-projected to the live
+	# normalizer just like everyone else — freezing them was the "Failed shit!" regression.
 	with step("Arrange: a gladiator with stale last_mu/last_var, and a live normalizer with enough samples."):
 		individual = agent.population[0]
 		individual["is_gladiator"] = True
@@ -207,8 +208,9 @@ class _NeverEndsEnv:
 	ids=["explicit-cap", "defaults-to-max-eval-steps"],
 )
 def test_evaluate_individual_performance_respects_max_steps(agent: ENAgent, max_steps_override, expected_steps) -> None:
-	"""Candidate evaluation depth must honor an explicit cap, and fall back to
-	max_eval_steps when none is given — the mechanism plasticity-scaled depth relies on."""
+	"""Candidate evaluation honors an explicit step cap and falls back to max_eval_steps without one."""
+	# Candidate evaluation depth must honor an explicit cap, and fall back to
+	# max_eval_steps when none is given — the mechanism plasticity-scaled depth relies on.
 	with step("Arrange: an individual and an env that never terminates on its own."):
 		individual = agent.population[0]
 		env = _NeverEndsEnv(agent.state_dim)
@@ -226,9 +228,10 @@ def test_evaluate_individual_performance_respects_max_steps(agent: ENAgent, max_
 def test_train_handles_zero_plasticity_without_degenerate_eval_cap(
 	build_agent: Callable[..., ENAgent],
 ) -> None:
-	"""The min_eval_steps floor must keep eval_step_cap from degenerating to 0 when
-	plasticity is exactly 0.0 (the "zero" plasticity_algorithm) — train() must not hang
-	or crash evaluating candidates for a zero-length episode."""
+	"""The min_eval_steps floor keeps the evaluation cap above zero when plasticity is exactly zero."""
+	# The min_eval_steps floor must keep eval_step_cap from degenerating to 0 when
+	# plasticity is exactly 0.0 (the "zero" plasticity_algorithm) — train() must not hang
+	# or crash evaluating candidates for a zero-length episode.
 	with step("Arrange: an agent configured with the zero plasticity algorithm."):
 		agent = build_agent(plasticity_algorithm="zero", pop_size=5, max_threads=1)
 		env = agent.make_env()
@@ -259,8 +262,9 @@ def test_train_handles_zero_plasticity_without_degenerate_eval_cap(
 
 
 def test_candidate_evaluation_applies_eval_step_cap_uniformly(build_agent: Callable[..., ENAgent], monkeypatch: pytest.MonkeyPatch) -> None:
-	"""Restored (Adding-Memory) behavior: gladiators get exactly the same plasticity-scaled
-	eval_step_cap as every other candidate — no special-casing by is_gladiator."""
+	"""Gladiators get the same plasticity-scaled evaluation cap as every other candidate."""
+	# Restored (Adding-Memory) behavior: gladiators get exactly the same plasticity-scaled
+	# eval_step_cap as every other candidate — no special-casing by is_gladiator.
 	with step("Arrange: an agent at maximal plasticity, with one candidate marked a gladiator."):
 		agent = build_agent(pop_size=6, max_threads=1, plasticity_algorithm="full", min_eval_steps=7, max_eval_steps=50)
 		gladiator_idx = 1
@@ -328,9 +332,10 @@ def test_evolve_population_never_replaces_gladiators(build_agent: Callable[..., 
 
 
 def test_train_never_retags_a_gladiator_and_hands_the_current_env_to_the_hall_of_fame(agent: ENAgent, monkeypatch: pytest.MonkeyPatch) -> None:
-	"""S8: a gladiator's env label is set once, at induction — train() must not overwrite it
-	with whatever environment it's playing now; the Hall of Fame gets that name instead, so a
-	foreign-niche clone can be labeled with it."""
+	"""train() never relabels a gladiator's environment; it hands the current one to the Hall of Fame."""
+	# S8: a gladiator's env label is set once, at induction — train() must not overwrite it
+	# with whatever environment it's playing now; the Hall of Fame gets that name instead, so a
+	# foreign-niche clone can be labeled with it.
 	with step("Arrange: an all-gladiator population labeled Mars-Light, playing an env named Earth-Standard."):
 		for individual in agent.population:
 			individual.update({"is_gladiator": True, "internal_env_id": 0, "env_name": "Mars-Light"})
@@ -357,8 +362,9 @@ def test_train_never_retags_a_gladiator_and_hands_the_current_env_to_the_hall_of
 
 
 def test_act_reports_every_real_transition_and_each_episode_start_to_env_detection(agent: ENAgent, monkeypatch: pytest.MonkeyPatch) -> None:
-	"""S12: the dynamics_model driver learns from the acting individual's real transitions, so act()
-	must hand over every (state, action, next_state) and signal each episode start."""
+	"""act() hands every real transition and each episode start to environment detection."""
+	# S12: the dynamics_model driver learns from the acting individual's real transitions, so act()
+	# must hand over every (state, action, next_state) and signal each episode start.
 	with step("Arrange: count observe()/start_episode() calls, and real steps via memory.record_step()."):
 		calls = {"observe": 0, "start_episode": 0, "steps": 0}
 		recognizer = agent._skills["env_detection"]  # pylint: disable=protected-access
@@ -435,8 +441,9 @@ def test_bpr_selection_with_dynamics_model_runs_train_then_test(build_agent: Cal
 
 
 def test_total_env_steps_counts_played_and_candidate_evaluation_steps(build_agent: Callable[..., ENAgent]) -> None:
-	"""S16: the challenge experiment equalizes environment steps across agents, so ENA must count every
-	step it consumes — the played episode's and every candidate evaluation's — not just the played ones."""
+	"""ENA counts every environment step it consumes, played and candidate evaluation alike."""
+	# S16: the challenge experiment equalizes environment steps across agents, so ENA must count every
+	# step it consumes — the played episode's and every candidate evaluation's — not just the played ones.
 	with step("Arrange: a zero-plasticity agent (2 candidates x at most 10 steps per training episode)."):
 		agent = build_agent(plasticity_algorithm="zero", pop_size=5)
 		env = agent.make_env()
@@ -482,8 +489,9 @@ def test_evaluation_episode_plays_the_highest_trust_individual_without_side_effe
 
 
 def test_episode_length_and_return_scale_come_from_the_environment_spec(build_agent) -> None:
-	"""Review #7/#8: ENA reads the episode length and the 'solved' return from the environment's spec
-	(CartPole-v1: 500 steps, solved at 475) instead of a hand-set value that can be wrong."""
+	"""ENA reads the episode length and the solved return from the environment's spec."""
+	# Review #7/#8: ENA reads the episode length and the 'solved' return from the environment's spec
+	# (CartPole-v1: 500 steps, solved at 475) instead of a hand-set value that can be wrong.
 	with step("Act: a default agent, and one with explicit values."):
 		default = build_agent()
 		explicit = build_agent(max_episode_steps=200, return_scale=100.0)
@@ -511,8 +519,9 @@ def test_an_environment_without_a_spec_needs_explicit_values(build_agent) -> Non
 
 
 def test_a_candidate_surviving_a_short_evaluation_never_outscores_a_full_episode(agent: ENAgent) -> None:
-	"""Review #7 regression: a truncated evaluation is rescaled to the real episode length (CartPole 500),
-	so a barely tested survivor can at most tie a perfect episode, never beat it (it used to score 1000)."""
+	"""A candidate surviving a short evaluation can at most tie a perfect full episode, never beat it."""
+	# Review #7 regression: a truncated evaluation is rescaled to the real episode length (CartPole 500),
+	# so a barely tested survivor can at most tie a perfect episode, never beat it (it used to score 1000).
 	with step("Act: evaluate the whole population with a 10-step cap on real CartPole."):
 		env = agent.make_env()
 		# pylint: disable-next=protected-access
@@ -523,8 +532,9 @@ def test_a_candidate_surviving_a_short_evaluation_never_outscores_a_full_episode
 
 
 def test_fresh_individuals_use_the_brains_own_initializers(build_agent) -> None:
-	"""Review #11: a fresh individual created by evolution is drawn like the initial population — from
-	the brain's own initializers — not from a hard-coded orthogonal scheme."""
+	"""A fresh individual created by evolution is drawn from the brain's own initializers."""
+	# Review #11: a fresh individual created by evolution is drawn like the initial population — from
+	# the brain's own initializers — not from a hard-coded orthogonal scheme.
 
 	def _constant_brain(action_dim, state_dim):
 		return Sequential(

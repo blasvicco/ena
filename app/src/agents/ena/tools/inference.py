@@ -4,8 +4,11 @@
 import numpy as np
 import tensorflow as tf
 
+# App imports
+from agents.ena.memory import AgentMemory
 
-def infer_action(individual: dict, state: np.ndarray, memory, is_continuous: bool) -> np.ndarray:
+
+def infer_action(individual: dict, state: np.ndarray, memory: AgentMemory, is_continuous: bool) -> np.ndarray:
 	"""Normalize state through the individual's frozen or live statistics and extract an action."""
 	# Gladiators normalize against the mean/variance snapshot frozen at induction time (their
 	# weights were aligned to it); everyone else normalizes against the live obs_normalizer.

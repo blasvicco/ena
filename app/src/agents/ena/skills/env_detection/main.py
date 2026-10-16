@@ -1,7 +1,17 @@
 """Environment-detection skill: unsupervised shift detection and niche identification via a pluggable driver."""
 
 # General imports
-import importlib
+from typing import TYPE_CHECKING
+
+# Libs imports
+import numpy as np
+
+# App imports
+from agents.ena.tools.driver_loader import load_driver
+from agents.ena.memory import AgentMemory
+
+if TYPE_CHECKING:  # the Hall of Fame facade's own hints refer back to this one: import for hints only
+	from agents.ena.skills.hall_of_fame.main import HallOfFame
 
 
 class EnvironmentRecognizer:
@@ -9,13 +19,9 @@ class EnvironmentRecognizer:
 
 	# Usage: EnvironmentRecognizer("dynamics_model", state_dim, action_dim=2).log_likelihoods(memory) -> {niche_id: log-likelihood}
 
-	def __init__(self, driver: str, state_dim: int, **kwargs) -> None:
+	def __init__(self, driver: str, state_dim: int, **kwargs: object) -> None:
 		"""Instantiate the appropriate driver based on the driver name."""
-		try:
-			module = importlib.import_module(f"agents.ena.skills.env_detection.driver.{driver}")
-		except ModuleNotFoundError as error:
-			raise ValueError(f"Unknown env_detection driver: {driver!r}") from error
-		self._instance = module.Instance(state_dim, **kwargs)
+		self._instance = load_driver("env_detection", driver, state_dim, **kwargs)
 
 	@property
 	def current_niche_id(self) -> int:
@@ -23,11 +29,11 @@ class EnvironmentRecognizer:
 		return self._instance.current_niche_id
 
 	@property
-	def chirp_actions(self):
+	def chirp_actions(self) -> np.ndarray | None:
 		"""The driver's fixed chirp actions, or None if it does not chirp."""
 		return self._instance.chirp_actions
 
-	def observe_chirp(self, response) -> None:
+	def observe_chirp(self, response: np.ndarray) -> None:
 		"""Hand the driver a chirp's observations (start observation first)."""
 		self._instance.observe_chirp(response)
 
@@ -36,11 +42,11 @@ class EnvironmentRecognizer:
 		"""Set of niche IDs that have physical prototypes."""
 		return self._instance.known_niche_ids
 
-	def detect_change(self, memory, learn: bool = True) -> bool:
+	def detect_change(self, memory: AgentMemory, learn: bool = True) -> bool:
 		"""Check if the environment has significantly shifted from the baseline (the driver learns only when learn)."""
 		return self._instance.detect_change(memory, learn)
 
-	def evaluate(self, memory, learn: bool) -> bool:
+	def evaluate(self, memory: AgentMemory, learn: bool) -> bool:
 		"""Check for an environment shift and, if found, flush stale physics/observation state."""
 		shifted = self.detect_change(memory, learn)
 		if shifted:
@@ -53,7 +59,7 @@ class EnvironmentRecognizer:
 				memory.clear_training_history()
 		return shifted
 
-	def match_niche(self, memory, current_individual: dict, hall_of_fame, population: list = None) -> int:
+	def match_niche(self, memory: AgentMemory, current_individual: dict, hall_of_fame: "HallOfFame", population: list = None) -> int:
 		"""Late Identity Binding: called only when a gladiator is being inducted."""
 		return self._instance.match_niche(memory, current_individual, hall_of_fame, population=population)
 
@@ -61,11 +67,11 @@ class EnvironmentRecognizer:
 		"""Called once at the start of every episode, before the first action."""
 		self._instance.start_episode()
 
-	def observe(self, state, action, next_state, memory) -> None:
+	def observe(self, state: np.ndarray, action: int | np.ndarray, next_state: np.ndarray, memory: AgentMemory) -> None:
 		"""Record one real (state, action, next_state) transition of the acting individual."""
 		self._instance.observe(state, action, next_state, memory)
 
-	def log_likelihoods(self, memory) -> dict:
+	def log_likelihoods(self, memory: AgentMemory) -> dict:
 		"""{niche_id: log-likelihood of this episode's transitions} — empty if the driver has no dynamics model."""
 		return self._instance.log_likelihoods(memory)
 

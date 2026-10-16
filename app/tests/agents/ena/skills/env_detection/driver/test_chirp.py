@@ -137,8 +137,9 @@ def test_unknown_chirp_settings_are_rejected() -> None:
 
 
 def test_given_features_and_excitation_parameters_replace_the_defaults_whole() -> None:
-	"""A configuration is fully determined by what it passes: features {'kind': 'wavelet'} is the feature function's own default
-	(a Haar DWT), never merged with the driver's default packets; likewise excitation parameters."""
+	"""Given features and excitation parameters replace the driver's defaults whole, never merging into them."""
+	# A configuration is fully determined by what it passes: features {'kind': 'wavelet'} is the feature function's own default
+	# (a Haar DWT), never merged with the driver's default packets; likewise excitation parameters.
 	# pylint: disable=protected-access
 	with step("Act: a chirp driver given plain wavelet features and empty excitation parameters for a linear chirp."):
 		detector = EnvironmentRecognizer(

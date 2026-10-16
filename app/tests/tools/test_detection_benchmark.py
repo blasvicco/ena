@@ -83,8 +83,9 @@ def test_the_cartpole_detector_meets_the_benchmark() -> None:
 
 @pytest.mark.parametrize("seed", range(5))
 def test_the_half_cheetah_detector_meets_the_benchmark(seed) -> None:
-	"""Guards HalfCheetah's detection (the chirp driver): on each of 5 benchmark seeds (other policies and resets),
-	Mars -> Heavy -> Earth under drifting policies is detected as CartPole's is."""
+	"""HalfCheetah's chirp detector meets the detection benchmark on each of 5 seeds."""
+	# Guards HalfCheetah's detection (the chirp driver): on each of 5 benchmark seeds (other policies and resets),
+	# Mars -> Heavy -> Earth under drifting policies is detected as CartPole's is.
 	with step(f"Act: HalfCheetah Mars -> Heavy -> Earth, the study's detector settings, benchmark seed {seed}."):
 		result = run("half_cheetah", seed=seed)
 

@@ -1,19 +1,18 @@
 #!/usr/bin/env python
-"""Replay a recorded ENA run's environment-detection calls through a fresh detector with other settings.
-
-A live ENA run costs an hour; the detector's behavior depends only on the transitions it observes and on the
-order of its calls. record() wraps an agent's detector so a chirp run writes that call sequence (episode starts,
-transitions, episode-end evaluations, niche assignments) to an .npz file; replay() feeds it to a new detector
-built with any settings and reports, per training episode, the confirmed changes and the niche assigned.
-
-Approximation: the transitions are the recorded run's. A detector with other settings would have changed ENA's
-behavior (fewer resets, other policies), so replay compares settings on the same evidence; the chosen settings
-are then confirmed by a live run. Replayed with the recorded settings it must reproduce the recorded changes
-exactly (check_replay), or the replay is not trusted.
-
-	python src/tools/detection_replay.py --recording half_cheetah_probe_outputs/<run>/detection.npz \\
-		--training-log half_cheetah_probe_outputs/<run>/live_training.csv --set recognizer_min_samples=10000
-"""
+"""Replay a recorded ENA run's environment-detection calls through a fresh detector with other settings."""
+# A live ENA run costs an hour; the detector's behavior depends only on the transitions it observes and on the
+# order of its calls. record() wraps an agent's detector so a chirp run writes that call sequence (episode starts,
+# transitions, episode-end evaluations, niche assignments) to an .npz file; replay() feeds it to a new detector
+# built with any settings and reports, per training episode, the confirmed changes and the niche assigned.
+#
+# Approximation: the transitions are the recorded run's. A detector with other settings would have changed ENA's
+# behavior (fewer resets, other policies), so replay compares settings on the same evidence; the chosen settings
+# are then confirmed by a live run. Replayed with the recorded settings it must reproduce the recorded changes
+# exactly (check_replay), or the replay is not trusted.
+#
+# A recording is a Recorder wrapped around an agent's detector during training (Recorder.save); replay it with
+#         python src/tools/detection_replay.py --recording <run>/detection.npz --training-log <run>/live_training.csv \
+#                 --set recognizer_min_samples=10000
 
 # General imports
 import argparse
@@ -30,6 +29,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # App imports
 # pylint: disable=wrong-import-position
 from agents.ena.skills.env_detection.main import EnvironmentRecognizer
+from agents.ena.memory import AgentMemory
+from agents.ena.skills.hall_of_fame.main import HallOfFame
+
 
 START, OBSERVE, EVALUATE, MATCH, CHIRP = 0, 1, 2, 3, 4
 # ENAgent argument -> detector (driver) keyword.
@@ -48,7 +50,7 @@ SETTING_NAMES = {
 class Recorder:  # pylint: disable=too-many-instance-attributes
 	"""Wraps a detector facade's calls, keeping their order, every transition and every outcome."""
 
-	def __init__(self, facade):
+	def __init__(self, facade: EnvironmentRecognizer) -> None:
 		self.kinds, self.learn, self.outcomes, self.states, self.actions, self.next_states = [], [], [], [], [], []
 		self.chirps = []
 		self._start_episode, self._observe = facade.start_episode, facade.observe
@@ -66,7 +68,7 @@ class Recorder:  # pylint: disable=too-many-instance-attributes
 		self._event(START)
 		self._start_episode()
 
-	def observe(self, state, action, next_state, memory) -> None:
+	def observe(self, state: np.ndarray, action: int | np.ndarray, next_state: np.ndarray, memory: AgentMemory) -> None:
 		"""Record the transition, then delegate."""
 		self._event(OBSERVE)
 		self.states.append(np.asarray(state, dtype=np.float32))
@@ -74,19 +76,19 @@ class Recorder:  # pylint: disable=too-many-instance-attributes
 		self.next_states.append(np.asarray(next_state, dtype=np.float32))
 		self._observe(state, action, next_state, memory)
 
-	def evaluate(self, memory, learn: bool) -> bool:
+	def evaluate(self, memory: AgentMemory, learn: bool) -> bool:
 		"""Delegate, then record whether a change was confirmed."""
 		shifted = self._evaluate(memory, learn)
 		self._event(EVALUATE, learn, float(shifted))
 		return shifted
 
-	def match_niche(self, memory, current_individual, hall_of_fame, population=None) -> int:
+	def match_niche(self, memory: AgentMemory, current_individual: dict, hall_of_fame: HallOfFame, population: list = None) -> int:
 		"""Delegate, then record the niche assigned."""
 		niche = self._match_niche(memory, current_individual, hall_of_fame, population=population)
 		self._event(MATCH, outcome=float(niche))
 		return niche
 
-	def observe_chirp(self, response) -> None:
+	def observe_chirp(self, response: np.ndarray) -> None:
 		"""Record a chirp's observations, then delegate."""
 		self._event(CHIRP)
 		self.chirps.append(np.asarray(response, dtype=np.float32))
@@ -113,9 +115,8 @@ def _memory() -> SimpleNamespace:
 
 # pylint: disable=too-many-arguments,too-many-positional-arguments
 def replay(recording: dict, state_dim: int, action_dim: int, settings: dict, strategy: str = None, is_continuous: bool = True) -> pd.DataFrame:
-	"""One row per recorded training episode: whether a fresh detector confirmed a change, and the niche it assigned.
-
-	The driver is `strategy`, else the settings' recognizer_strategy, else dynamics_model."""
+	"""One row per recorded training episode: whether a fresh detector confirmed a change, and the niche it assigned."""
+	# The driver is `strategy`, else the settings' recognizer_strategy, else dynamics_model.
 	settings = dict(settings)
 	strategy = strategy or settings.pop("recognizer_strategy", "dynamics_model")
 	settings.pop("recognizer_strategy", None)
@@ -160,9 +161,39 @@ def summarize(replayed: pd.DataFrame, env_ids: pd.Series) -> pd.DataFrame:
 	return summary
 
 
+def _layer_sizes(value: str) -> tuple:
+	"""'32x16' -> (32, 16); ValueError otherwise."""
+	sizes = tuple(int(size) for size in value.split("x"))
+	if len(sizes) < 2:
+		raise ValueError(value)
+	return sizes
+
+
+def parse_overrides(pairs: list) -> dict:
+	"""Parse KEY=VALUE strings into a dict of typed values, with dotted keys nesting."""
+	# KEY=VALUE strings to a dict, values as int, float, layer sizes (32x16 -> (32, 16)) or text; dotted keys nest
+	# (recognizer_probe.features.wavelet=db4).
+	overrides = {}
+	for pair in pairs:
+		key, value = pair.split("=", 1)
+		for cast in (int, float, _layer_sizes):
+			try:
+				value = cast(value)
+				break
+			except ValueError:
+				continue
+		*parents, leaf = key.split(".")
+		target = overrides
+		for parent in parents:
+			target = target.setdefault(parent, {})
+		target[leaf] = value
+	return overrides
+
+
 def main() -> None:
-	"""Replay a recording through a driver and settings; reports whether it reproduces the recorded changes (it must,
-	when given the settings the run was recorded with)."""
+	"""Replay a recording through a driver and settings and report whether it reproduces the recorded changes."""
+	# Replay a recording through a driver and settings; reports whether it reproduces the recorded changes (it must,
+	# when given the settings the run was recorded with).
 	parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 	parser.add_argument("--recording", required=True)
 	parser.add_argument("--training-log", required=True, help="The run's live_training.csv (environment per episode).")
@@ -170,7 +201,6 @@ def main() -> None:
 	parser.add_argument("--strategy", default=None, help="Detector driver (default: the settings' recognizer_strategy, else dynamics_model).")
 	args = parser.parse_args()
 	# pylint: disable=import-outside-toplevel
-	from tools.half_cheetah_probe import parse_overrides
 
 	recording = dict(np.load(args.recording))
 	env_ids = pd.read_csv(args.training_log)["env_id"]

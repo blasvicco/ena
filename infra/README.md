@@ -27,8 +27,7 @@ All `aws`/`cdk` commands run in the toolbox: `docker compose up -d ena_infra`, t
 | Bootstrap (once per account/region) | `npm run cdk -- bootstrap` | |
 | Deploy | `npm run cdk -- deploy ena-experiment` | creates ECR, S3, network, role, launch template |
 | Push the image (host) | `infra/scripts/push-image.sh` | builds `hub/cloud/Dockerfile` for arm64, tags it with the commit; refuses uncommitted image inputs unless `--allow-dirty` |
-| Reproduction check | `bash /home/scripts/launch.sh 1` | replicate 1 is the local validation replicate: after ~25 min (ENA done), `exp_1/live_training_ENA-Combined.csv` in S3 must equal `app/half_cheetah_validation_outputs/exp_1/`'s |
-| Launch the rest | `bash /home/scripts/launch.sh 2-20` | one machine each, tagged `Name=exp_k`, `Project=ena-experiment`; running or complete replicates are skipped |
+| Launch | `bash /home/scripts/launch.sh 1-20` | one machine each, tagged `Name=exp_k`, `Project=ena-experiment`; running or complete replicates are skipped |
 | Follow | `bash /home/scripts/status.sh` | machines, and each replicate's last status line (`run.log`) |
 | Download | `bash /home/scripts/download.sh` | into `app/half_cheetah_outputs/`, then `python src/tools/paper_results.py` in the experiment container |
 | Terminate stragglers | `bash /home/scripts/terminate.sh` | before destroy |

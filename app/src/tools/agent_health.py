@@ -1,12 +1,16 @@
 #!/usr/bin/env python
-"""The internal quantities of an agent that diverged or froze in earlier studies, read during training without side
-effects (SAC's sample of its buffer uses its own fixed generator, never the replicate's random stream)."""
+"""Agent internals that diverged or froze in earlier studies, read during training without side effects."""
+# The internal quantities of an agent that diverged or froze in earlier studies, read during training without side
+# effects (SAC's sample of its buffer uses its own fixed generator, never the replicate's random stream).
 
 # Libs imports
 import numpy as np
 
+# App imports
+from agents.tools.abstract import AAgent
 
-def agent_health(agent) -> dict:
+
+def agent_health(agent: AAgent) -> dict:
 	"""The internal quantities that diverged or froze in earlier studies, for the agent's type."""
 	health = {}
 	if hasattr(agent, "log_alpha") and hasattr(agent, "critic_1") and getattr(agent.buffer, "size", 0) >= 256:

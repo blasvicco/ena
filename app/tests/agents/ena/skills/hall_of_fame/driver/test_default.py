@@ -26,8 +26,9 @@ def _build_hall_of_fame(max_per_niche=5, max_gladiator_ratio=0.5):
 
 
 def test_evict_clears_the_live_population_members_gladiator_tags() -> None:
-	"""A record removed from the archive must not leave a 'zombie gladiator' behind —
-	the corresponding live population slot must lose is_gladiator/internal_env_id/env_name."""
+	"""Evicting a record clears its live population slot's gladiator tags, leaving no zombie gladiator."""
+	# A record removed from the archive must not leave a 'zombie gladiator' behind —
+	# the corresponding live population slot must lose is_gladiator/internal_env_id/env_name.
 	with step("Arrange: a hall of fame with one archived record, and a matching live population slot."):
 		hall_of_fame = _build_hall_of_fame()
 		individual_id = "gladiator-1"
@@ -47,7 +48,7 @@ def test_evict_clears_the_live_population_members_gladiator_tags() -> None:
 		]
 
 	with step("Act: evict the record."):
-		hall_of_fame._Instance__evict(individual_id, population)
+		hall_of_fame._evict(individual_id, population)
 
 	with step("Assert: the archive entry is gone and the live population slot is no longer a gladiator."):
 		assert individual_id not in hall_of_fame._records
@@ -68,7 +69,7 @@ def test_evict_leaves_other_population_members_untouched() -> None:
 		]
 
 	with step("Act: evict only the first record."):
-		hall_of_fame._Instance__evict("gladiator-1", population)
+		hall_of_fame._evict("gladiator-1", population)
 
 	with step("Assert: the second population slot is untouched."):
 		assert population[1]["is_gladiator"] is True
@@ -77,8 +78,9 @@ def test_evict_leaves_other_population_members_untouched() -> None:
 
 
 def test_eco_niche_protection_evicts_the_weakest_and_clears_its_zombie_tags() -> None:
-	"""Integration: __eco_niche_protection's eviction path must go through __evict (not a bare
-	'del self._records[...]') so the replaced gladiator's population slot is cleared too."""
+	"""Niche protection evicts through _evict, so the replaced gladiator's population slot is cleared too."""
+	# Integration: __eco_niche_protection's eviction path must go through __evict (not a bare
+	# 'del self._records[...]') so the replaced gladiator's population slot is cleared too.
 	with step("Arrange: one weak archived gladiator with a matching live population slot, and a winner from the same niche with higher trust."):
 		hall_of_fame = _build_hall_of_fame()
 		obs_normalizer = SimpleNamespace(mean=np.zeros(2), var=np.ones(2))
@@ -103,7 +105,7 @@ def test_eco_niche_protection_evicts_the_weakest_and_clears_its_zombie_tags() ->
 
 	with step("Act: run eco_niche_protection with a winner that beats the weak gladiator's trust."):
 		# pylint: disable-next=protected-access
-		hall_of_fame._Instance__eco_niche_protection(
+		hall_of_fame._eco_niche_protection(
 			winner,
 			current_trust=5.0,
 			recognizer=_FakeRecognizer(),
@@ -159,8 +161,7 @@ def _update(hall_of_fame, winner, population, *, niche_id, env_name, trust=5.0):
 
 
 def test_gladiator_winning_in_a_foreign_niche_is_cloned_there_with_the_current_env_label() -> None:
-	"""S8: the original keeps its niche and label; a clone joins the new niche, labeled with
-	the environment it just succeeded in."""
+	"""S8: the original keeps its niche and label; a clone joins the new niche, labeled with the environment it just succeeded in."""
 	with step("Arrange: a Mars-Light gladiator (niche 0), live in the population."):
 		hall_of_fame = _build_hall_of_fame()
 		gladiator = _archived_gladiator(hall_of_fame)
@@ -182,8 +183,9 @@ def test_gladiator_winning_in_a_foreign_niche_is_cloned_there_with_the_current_e
 
 
 def test_repeated_foreign_niche_wins_refresh_the_existing_clone_instead_of_duplicating_it() -> None:
-	"""S8: the same gladiator winning in the same foreign niche again must not fill that niche
-	with copies of itself — its existing clone is refreshed when the new trust is higher."""
+	"""A repeated win in the same foreign niche refreshes the existing clone instead of adding copies."""
+	# S8: the same gladiator winning in the same foreign niche again must not fill that niche
+	# with copies of itself — its existing clone is refreshed when the new trust is higher.
 	with step("Arrange: a Mars-Light gladiator that has already been cloned into niche 1 once."):
 		hall_of_fame = _build_hall_of_fame()
 		gladiator = _archived_gladiator(hall_of_fame)
@@ -334,7 +336,7 @@ def test_a_lucky_twin_never_replaces_a_confirmed_gladiator_but_joins_as_provisio
 		obs_normalizer = SimpleNamespace(mean=np.zeros(2), var=np.ones(2))
 
 	with step("Act: the genetic-diversity step."):
-		handled = hall_of_fame._Instance__genetic_diversity(winner, 0.9, _NicheZero(), obs_normalizer, population, "Earth")
+		handled = hall_of_fame._genetic_diversity(winner, 0.9, _NicheZero(), obs_normalizer, population, "Earth")
 
 	with step("Assert: the confirmed record stays, untouched; the winner is archived, and its live copy is a provisional gladiator."):
 		assert handled
@@ -351,7 +353,7 @@ def test_a_lucky_twin_is_dropped_when_the_niche_is_full() -> None:
 		obs_normalizer = SimpleNamespace(mean=np.zeros(2), var=np.ones(2))
 
 	with step("Act: the genetic-diversity step."):
-		hall_of_fame._Instance__genetic_diversity(winner, 0.9, _NicheZero(), obs_normalizer, population, "Earth")
+		hall_of_fame._genetic_diversity(winner, 0.9, _NicheZero(), obs_normalizer, population, "Earth")
 
 	with step("Assert: the archive is unchanged."):
 		assert list(hall_of_fame._records) == ["confirmed-0"]
@@ -366,7 +368,7 @@ def test_eco_niche_protection_evicts_only_provisional_gladiators() -> None:
 		obs_normalizer = SimpleNamespace(mean=np.zeros(2), var=np.ones(2))
 
 	with step("Act: eco-niche protection."):
-		hall_of_fame._Instance__eco_niche_protection(winner, 0.9, _NicheZero(), obs_normalizer, population, "Earth")
+		hall_of_fame._eco_niche_protection(winner, 0.9, _NicheZero(), obs_normalizer, population, "Earth")
 
 	with step("Assert: the provisional one was replaced, though the confirmed one has lower trust."):
 		assert sorted(hall_of_fame._records) == ["confirmed-0", "winner"]
@@ -380,7 +382,7 @@ def test_eco_niche_protection_drops_the_winner_when_every_gladiator_is_confirmed
 		obs_normalizer = SimpleNamespace(mean=np.zeros(2), var=np.ones(2))
 
 	with step("Act: eco-niche protection with a far better one-episode trust."):
-		hall_of_fame._Instance__eco_niche_protection(winner, 5.0, _NicheZero(), obs_normalizer, population, "Earth")
+		hall_of_fame._eco_niche_protection(winner, 5.0, _NicheZero(), obs_normalizer, population, "Earth")
 
 	with step("Assert: unchanged."):
 		assert list(hall_of_fame._records) == ["confirmed-0"]
@@ -396,7 +398,7 @@ def test_a_confirmed_gladiator_winning_again_keeps_its_olympic_weights_and_trust
 		obs_normalizer = SimpleNamespace(mean=np.zeros(2), var=np.ones(2))
 
 	with step("Act: the continual-improvement step."):
-		handled = hall_of_fame._Instance__continual_improvement(live, 0.9, _NicheZero(), obs_normalizer, "Earth")
+		handled = hall_of_fame._continual_improvement(live, 0.9, _NicheZero(), obs_normalizer, "Earth")
 
 	with step("Assert: handled; the record's trust and weights unchanged."):
 		record = hall_of_fame._records["confirmed-0"]
@@ -414,15 +416,16 @@ def test_without_protection_a_twin_still_replaces_the_gladiator() -> None:
 		obs_normalizer = SimpleNamespace(mean=np.zeros(2), var=np.ones(2))
 
 	with step("Act: the genetic-diversity step."):
-		hall_of_fame._Instance__genetic_diversity(winner, 0.9, _NicheZero(), obs_normalizer, population, "Earth")
+		hall_of_fame._genetic_diversity(winner, 0.9, _NicheZero(), obs_normalizer, population, "Earth")
 
 	with step("Assert: replaced."):
 		assert list(hall_of_fame._records) == ["winner"]
 
 
 def test_qualifier_seats_let_new_winners_in_beside_a_full_niche_of_confirmed_gladiators() -> None:
-	"""A niche full of confirmed gladiators still admits provisional entrants into its qualifier seats; beyond them, the
-	weakest provisional entrant is replaced, never a confirmed one."""
+	"""Qualifier seats admit provisional entrants beside a full niche of confirmed gladiators, never replacing one."""
+	# A niche full of confirmed gladiators still admits provisional entrants into its qualifier seats; beyond them, the
+	# weakest provisional entrant is replaced, never a confirmed one.
 	with step("Arrange: one confirmed seat (full) and two qualifier seats."):
 		hall_of_fame, population = _confirmed_archive(max_per_niche=1)
 		hall_of_fame.qualifier_seats = 2

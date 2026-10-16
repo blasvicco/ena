@@ -69,8 +69,9 @@ def test_an_olympiad_is_due_once_per_interval_of_environment_steps() -> None:
 
 
 def test_an_olympiad_evicts_below_the_bar_relegates_beyond_capacity_and_confirms_the_rest() -> None:
-	"""Competitors play the shared seeds through ENA's callback; below the bar they are evicted (never the champion), beyond
-	max_per_niche relegated; survivors take their Olympic trust and mean return, on the record and the live copy."""
+	"""An Olympiad evicts competitors below the bar, relegates those beyond capacity and confirms the rest."""
+	# Competitors play the shared seeds through ENA's callback; below the bar they are evicted (never the champion), beyond
+	# max_per_niche relegated; survivors take their Olympic trust and mean return, on the record and the live copy.
 	with step("Arrange: capacity 3, five gladiators with scripted returns, a bar of 100, trust = return / 100."):
 		hall_of_fame = _olympic(olympics_episodes=2)
 		population = _archive(hall_of_fame, ["a", "b", "c", "d", "e"])
@@ -158,8 +159,9 @@ def _induct(hall_of_fame, winner_mu):
 
 
 def test_the_olympic_archive_stores_the_statistics_a_gladiators_weights_are_aligned_to() -> None:
-	"""A record keeps the winner's own normalization (last_mu/last_var, set when its weights were last projected), not the
-	normalizer's current statistics; the live copy keeps its own too. Otherwise the stored weights and statistics disagree."""
+	"""The Olympic archive stores the normalization statistics a gladiator's weights are aligned to."""
+	# A record keeps the winner's own normalization (last_mu/last_var, set when its weights were last projected), not the
+	# normalizer's current statistics; the live copy keeps its own too. Otherwise the stored weights and statistics disagree.
 	with step("Act: induct a winner aligned to mean 1.0 while the normalizer reads 5.0."):
 		hall_of_fame = _olympic()
 		winner = _induct(hall_of_fame, winner_mu=1.0)
@@ -180,9 +182,10 @@ def test_the_default_archive_keeps_its_original_stamping() -> None:
 
 
 def test_the_olympic_archive_marks_its_live_gladiators_as_provisional() -> None:
-	"""As in CartPole, the live winner becomes a gladiator of its niche and keeps playing during training; the olympic
-	driver marks it provisional until its first Olympiad (an Olympiad evicts mediocre ones, so they cannot anchor
-	the search)."""
+	"""The Olympic archive marks a live winner provisional until its first Olympiad."""
+	# As in CartPole, the live winner becomes a gladiator of its niche and keeps playing during training; the olympic
+	# driver marks it provisional until its first Olympiad (an Olympiad evicts mediocre ones, so they cannot anchor
+	# the search).
 	with step("Act: induct a winner into the olympic archive."):
 		hall_of_fame = _olympic()
 		winner = _induct(hall_of_fame, winner_mu=1.0)
@@ -201,8 +204,9 @@ def test_the_default_archive_still_marks_its_live_gladiators() -> None:
 
 
 def test_reinjected_olympic_records_are_gladiators_at_test() -> None:
-	"""An archived record is a gladiator by definition: its re-injected copy must be one, or test time has none to play
-	(the record itself carries no gladiator tag)."""
+	"""A re-injected Olympic record is a gladiator at test, so test time has gladiators to play."""
+	# An archived record is a gladiator by definition: its re-injected copy must be one, or test time has none to play
+	# (the record itself carries no gladiator tag).
 	with step("Arrange: a confirmed record, and a plain population."):
 		hall_of_fame = _olympic()
 		_induct(hall_of_fame, winner_mu=1.0)
