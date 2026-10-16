@@ -47,7 +47,7 @@ class Instance(ADriver):
 	OWN_PRIOR = 1.0  # prior utility of a gladiator in its own niche: it was archived for solving it
 
 	def __init__(self, exploration_rate=0.1, return_scale=475.0, switch_rate=0.05, return_noise=0.2, prior_strength=1.0, cross_prior=0.5, **_kwargs):
-		self._exploration_rate = exploration_rate
+		super().__init__(exploration_rate)
 		self._return_scale = float(return_scale)
 		self._switch_rate = switch_rate
 		self._return_noise = return_noise
@@ -66,10 +66,8 @@ class Instance(ADriver):
 		"""{niche_id: probability that niche is the active environment}."""
 		return dict(zip(self._niches, self._belief.tolist()))
 
-	def select_individual(self, population, recognizer, memory, learn):
-		"""Training: epsilon-greedy trust; testing: the gladiator with the highest expected utility under the belief."""
-		if learn:
-			return self._select_train(population)
+	def _select_test(self, population, recognizer, memory):
+		"""The gladiator with the highest expected utility under the belief."""
 		if not self._policies:
 			self._played = None
 			return self._select_desperate(population)
@@ -111,21 +109,6 @@ class Instance(ADriver):
 	# ---------------------------------------------------------------
 	# Private
 	# ---------------------------------------------------------------
-
-	def _select_train(self, population):
-		"""Training: epsilon-greedy — a random non-gladiator with probability exploration_rate, else the highest trust."""
-		if np.random.rand() < self._exploration_rate:
-			non_gladiators = [index for index, ind in enumerate(population) if not ind.get("is_gladiator", False)]
-			if non_gladiators:
-				return int(np.random.choice(non_gladiators))
-		trust_scores = [ind["trust"] for ind in population]
-		return int(np.argmax(trust_scores))
-
-	@staticmethod
-	def _select_desperate(population):
-		"""Test time without any gladiator: a random non-gladiator."""
-		non_gladiators = [index for index, ind in enumerate(population) if not ind.get("is_gladiator", False)]
-		return int(np.random.choice(non_gladiators)) if non_gladiators else 0
 
 	def __own_prior(self, individual: dict) -> float:
 		"""Prior utility in the gladiator's own niche: its Olympic mean return if it competed, else solved (OWN_PRIOR)."""

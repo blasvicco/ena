@@ -242,6 +242,21 @@ def test_build_ena_agent_takes_trust_from_the_row_or_the_study_default(row_trust
 		assert type(agent._skills["trust"]._instance).__module__.endswith(expected)  # pylint: disable=protected-access
 
 
+@pytest.mark.parametrize("row_driver, expected", [(None, "bpr"), ("niche_match", "niche_match")])
+def test_build_ena_agent_takes_selection_from_the_row_or_the_study_default(row_driver, expected) -> None:
+	"""selection_driver is an optional per-row key; rows without it use the study-wide bpr."""
+	with step("Arrange: the Combined row, with or without a selection override."):
+		row = dict(next(variant for variant in ABLATION_VARIANTS if variant["name"] == "ENA-Combined"))
+		if row_driver is not None:
+			row["selection_driver"] = row_driver
+
+	with step("Act: build the agent."):
+		agent = cartpole_ena_ablation.build_ena_agent(row, max_agent_threads=1)
+
+	with step("Assert: its selection driver module is the expected one."):
+		assert type(agent._skills["selection"]._instance).__module__.endswith(expected)  # pylint: disable=protected-access
+
+
 def test_agent_training_tells_agents_the_true_total_budget_under_a_stopping_rule(monkeypatch, tmp_path) -> None:
 	"""Regression: under a stopping rule nothing told PPO its total budget, so its LR schedule used a
 	1.5M-step default and hit zero after the first environment. The total is max_steps x environments."""

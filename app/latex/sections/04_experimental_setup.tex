@@ -6,12 +6,12 @@ We evaluate ENA in two non-stationary domains built on Gymnasium~\cite{towers202
 \subsection{Environments}
 
 \subsubsection{CartPole}
-Each environment changes the gravity $g$, the pole mass $m_p$ and the pole half-length $\ell$ (Table~\ref{tab:cartpole_worlds}). The training sequence is Mars, Jupiter, Earth. The test sequence interleaves them with two unseen environments: Mars, Neptune, Jupiter, Brown-dwarf, Earth. Neptune is close to Earth; Brown-dwarf extrapolates beyond Jupiter's gravity. An episode ends when the pole falls or after \Res{cfg/cartpole/maxsteps} steps; a return of \Res{cfg/cartpole/solved} or more counts as a success, the threshold at which Gymnasium considers \texttt{CartPole-v1} solved.
+The agent balances a pole hinged on a cart by pushing the cart left or right. Each environment changes the gravity $g$, the pole mass $m_p$ and the pole half-length $\ell$ (Table~\ref{tab:cartpole_worlds}). The environments are named after the planet or star whose gravity they use, and the training ones also by their pole (Mars-Light, Jupiter-Heavy, Earth-Standard); in the text we shorten them to Mars, Jupiter and Earth. The training sequence is Mars, Jupiter, Earth. The test sequence interleaves them with two unseen environments: Mars, Neptune, Jupiter, Brown-dwarf, Earth. Neptune is close to Earth; Brown-dwarf extrapolates beyond Jupiter's gravity. An episode ends when the pole falls or after \Res{cfg/cartpole/maxsteps} steps; a return of \Res{cfg/cartpole/solved} or more counts as a success, the threshold at which Gymnasium considers \texttt{CartPole-v1} solved.
 
 \input{generated/table_cartpole_envs}
 
 \subsubsection{HalfCheetah}
-Each environment changes the gravity, the ground friction (applied to every contact surface, since MuJoCo uses the larger friction of two touching bodies) and the wind (Table~\ref{tab:cheetah_worlds}). The training sequence is Earth, with a soft head wind, Heavy-Rough (1.5 times Earth's gravity, on rough ground) and Mars-Slippery (Mars's gravity on a slippery floor); the test sequence adds the unseen Ice-Floor and High-Wind, which keep Earth's gravity and change only the ground or the strength of the wind. Gymnasium's registered reward threshold for \texttt{HalfCheetah-v5} is \Res{cfg/cheetah/solved}, shown as a reference line in the figures; no agent reaches it reliably on the non-stationary stream, so \textit{retention} (Section~\ref{sec:metrics}) replaces reliability as the primary metric.
+The agent controls the six joints of a planar two-legged robot and is rewarded for running forward. Each environment changes the gravity, the ground friction (applied to every contact surface, since MuJoCo uses the larger friction of two touching bodies) and the wind (Table~\ref{tab:cheetah_worlds}). The training sequence is Earth (Earth-Standard in the tables), with a soft head wind, Heavy-Rough (1.5 times Earth's gravity, on rough ground) and Mars-Slippery (Mars's gravity on a slippery floor); the test sequence adds the unseen Ice-Floor and High-Wind, which keep Earth's gravity and change only the ground or the strength of the wind. Gymnasium's registered reward threshold for \texttt{HalfCheetah-v5} is \Res{cfg/cheetah/solved}, shown as a reference line in the figures; no agent reaches it reliably on the non-stationary stream, so \textit{retention} (Section~\ref{sec:metrics}) replaces reliability as the primary metric.
 
 \input{generated/table_cheetah_envs}
 ENA detects HalfCheetah's environments with its chirp (Section~\ref{sec:chirp}) instead of the transition models.
@@ -19,14 +19,16 @@ ENA detects HalfCheetah's environments with its chirp (Section~\ref{sec:chirp}) 
 \subsection{Protocols}
 
 \subsubsection{Skill ablation (CartPole)}
-Each ENA variant trains for \Res{cfg/cartpole/train} episodes per environment and is then tested for \Res{cfg/cartpole/test} episodes per environment. We run \Res{ablation/n} independent replicates. Replicate $i$ seeds Python's, NumPy's and TensorFlow's random number generators with $\Res{cfg/cartpole/seedoffsetraw} + i$ before each agent is built, trained and tested, and seeds every environment from the same number, so all the agents of a replicate start from the same random state and meet the same initial states: they differ only in what they are.
+Each ENA variant (Section~\ref{sec:variants}, Table~\ref{tab:variants}) trains for \Res{cfg/cartpole/train} episodes per environment and is then tested for \Res{cfg/cartpole/test} episodes per environment. We run \Res{ablation/n} independent replicates. Replicate $i$ seeds Python's, NumPy's and TensorFlow's random number generators with $\Res{cfg/cartpole/seedoffsetraw} + i$ before each agent is built, trained and tested, and seeds every environment from the same number, so all the agents of a replicate start from the same random state and meet the same initial states: they differ only in what they are.
 
-\subsubsection{Comparison with gradient-based agents}
-Comparing a population method with single-policy agents is only fair at equal interaction. Every agent therefore trains on each environment for the same budget of environment steps: \Res{cfg/challenge/budget} in CartPole and \Res{cfg/cheetah/budget} in HalfCheetah. ENA's budget includes every step it spends evaluating candidates~\eqref{eq:plasticity}, holding Olympiads, and playing its chirp excitation~\eqref{sec:chirp}, not only the learning episodes. Because ENA spends \Res{challenge/ENA-Combined/candshare/mean}\% of its CartPole training steps evaluating candidates, it plays far fewer episodes within the same budget: about \Res{challenge/ENA-Combined/episodes/perenv} per environment on CartPole, against \Res{challenge/DQN/episodes/perenv} for DQN, \Res{challenge/PPO/episodes/perenv} for PPO and \Res{challenge/SAC-Discrete/episodes/perenv} for SAC-Discrete. On HalfCheetah, ENA plays about \Res{cheetah/ENA-Combined/episodes/perenv} episodes per environment, against \Res{cheetah/PPO/episodes/perenv} for PPO and \Res{cheetah/SAC/episodes/perenv} for SAC. Training is therefore compared against environment steps, not episodes, so every agent spans the same budget. The frozen test needs no such normalization, since every agent plays the same number of test episodes. No agent observes the physical parameters or is told when the environment changes; Appendix~\ref{app:information} lists what each agent receives. On CartPole, every \Res{cfg/challenge/checkevery} training steps the agent is evaluated, frozen, for \Res{cfg/challenge/evalepisodes} episodes on a separate copy of the current environment; these checks never stop or alter training and their steps are not counted as training; they record the \textit{first solve}, the number of training steps into an environment at which the evaluation mean first reaches the success threshold. HalfCheetah uses no intermediate evaluation checks: no agent clears its threshold reliably on the non-stationary stream, so first-solve is not measured there. After training, all agents are tested frozen on \Res{cfg/cheetah/test} episodes per environment, exactly as in the ablation. The CartPole comparison runs \Res{challenge/n} replicates; its \Res{challenge/family} comparisons (ENA-Combined against each baseline on test reliability) form one Holm family. The HalfCheetah comparison runs \Res{cheetah/n} replicates; its two comparisons (ENA-Combined against PPO and SAC on left-behind retention) form one Holm family.
+\subsubsection{Forgetting in single-policy learners}
+\label{sec:forgetting_protocol}
+To measure how severe forgetting is without architectural memory, standard single-policy learners train on the same streams. Measuring their forgetting next to ENA's is only fair at equal interaction. Every agent therefore trains on each environment for the same budget of environment steps: \Res{cfg/challenge/budget} in CartPole and \Res{cfg/cheetah/budget} in HalfCheetah. ENA's budget includes every step it spends evaluating candidates~\eqref{eq:plasticity}, holding Olympiads, and playing its chirp excitation~\eqref{sec:chirp}, not only the learning episodes. Because ENA spends \Res{challenge/ENA-Combined/candshare/mean}\% of its CartPole training steps evaluating candidates, it plays far fewer episodes within the same budget: about \Res{challenge/ENA-Combined/episodes/perenv} per environment on CartPole, against \Res{challenge/DQN/episodes/perenv} for DQN, \Res{challenge/PPO/episodes/perenv} for PPO and \Res{challenge/SAC-Discrete/episodes/perenv} for SAC-Discrete. On HalfCheetah, ENA plays about \Res{cheetah/ENA-Combined/episodes/perenv} episodes per environment, against \Res{cheetah/PPO/episodes/perenv} for PPO and \Res{cheetah/SAC/episodes/perenv} for SAC. Training is therefore compared against environment steps, not episodes, so every agent spans the same budget. The frozen test needs no such normalization, since every agent plays the same number of test episodes. No agent observes the physical parameters or is told when the environment changes; Appendix~\ref{app:information} lists what each agent receives. On CartPole, every \Res{cfg/challenge/checkevery} training steps the agent is evaluated, frozen, for \Res{cfg/challenge/evalepisodes} episodes on a separate copy of the current environment; these checks never stop or alter training and their steps are not counted as training; they record the \textit{first solve}, the number of training steps into an environment at which the evaluation mean first reaches the success threshold. HalfCheetah uses no intermediate evaluation checks: no agent clears its threshold reliably on the non-stationary stream, so first-solve is not measured there. After training, all agents are tested frozen on \Res{cfg/cheetah/test} episodes per environment, exactly as in the ablation. The CartPole comparison runs \Res{challenge/n} replicates; its \Res{challenge/family} comparisons (ENA-Combined against each baseline on test reliability) form one Holm family. The HalfCheetah comparison runs \Res{cheetah/n} replicates; its two comparisons (ENA-Combined against PPO and SAC on left-behind retention) form one Holm family.
 
 \subsection{Agents}
 
 \subsubsection{ENA variants}
+\label{sec:variants}
 The three skills under study are switched on and off as in Table~\ref{tab:variants}; every other setting is shared. ``Plasticity off'' means the zero controller (Section~\ref{sec:controllers}): $\mathcal{P} = 0$, the minimum search. ``Plasticity on'' means the linear ramp. Environment detection only acts through the Hall of Fame, whose archive it organizes into niches, so it is never tested without it. A random agent gives the floor. The full configuration is listed in Appendix~\ref{app:hyperparameters}.
 
 \begin{table}[htbp]
@@ -48,7 +50,7 @@ ENA-Combined & \checkmark & \checkmark & \checkmark \\
 \end{center}
 \end{table}
 
-\subsubsection{Gradient-based baselines}
+\subsubsection{Single-policy baselines}
 On CartPole we compare ENA-Combined with DQN~\cite{mnih2015human}, PPO~\cite{schulman2017proximal} and the discrete-action variant of SAC~\cite{christodoulou2019soft}; on HalfCheetah with PPO and SAC~\cite{haarnoja2018soft}. These standard single-policy baselines are included to quantify the baseline magnitude of catastrophic forgetting under these specific physical shifts when continuous parameter updates operate without architectural memory or policy preservation. All are our own implementations, with common hyperparameters for these benchmarks (Appendix~\ref{app:hyperparameters}) and two changes that the non-stationary stream made necessary, both found in full-length runs before the reported study:
 \begin{itemize}
 \item \textit{PPO uses a constant learning rate.} With the usual linear annealing to zero over the training budget, PPO reaches its last environment with almost no learning rate left; a learner in a non-stationary stream has no reason to learn less in a later environment than in an earlier one.
@@ -60,12 +62,37 @@ During the frozen test, the baselines act greedily with their final learned para
 \label{sec:metrics}
 \begin{itemize}
 \item \textit{Reliability} (CartPole): the percentage of test episodes whose return reaches the success threshold, over all five test environments.
-\item \textit{Retention} (HalfCheetah): the test return as a percentage of the end-of-phase training return (the mean return of the episodes ending in the last \Res{cfg/cheetah/budget}\,/\,10 steps of a phase), for each training environment; and the mean of that percentage over the environments left behind (all training environments except the last).
+\item \textit{Retention}: the test return as a percentage of the end-of-phase training return (the mean return of the episodes ending in the last tenth of a phase's step budget), for each training environment; and the mean of that percentage over the environments left behind (all training environments except the last). It is the primary metric on HalfCheetah and is reported descriptively on CartPole. End-of-phase returns include the training exploration of every agent, so retention can exceed 100\%.
+\item \textit{Absolute forgetting}: the end-of-phase training return minus the test return, in return units, per training environment and averaged over the environments left behind. Unlike retention, it does not reward an agent for having learned little: a weak policy kept intact and a strong policy partly lost are told apart by their returns.
 \item \textit{Mean return} per environment.
-\item \textit{Stability gap}: the mean return of the \Res{cfg/metrics/stabilitywindow} episodes before the first environment switch minus that of the \Res{cfg/metrics/stabilitywindow} episodes after it; values near zero mean the switch costs nothing.
 \item \textit{Steps to first solve} per training environment (CartPole comparison only), at the \Res{cfg/challenge/checkevery}-step resolution of the evaluation checks.
-\item \textit{Compute}: training environment steps, ENA's candidate-evaluation steps among them, and wall-clock training time.
+\item \textit{Compute}: training environment steps and ENA's candidate-evaluation steps among them, which are properties of the algorithms; and wall-clock training time, which also depends on our implementations and hardware (Appendix~\ref{app:compute}).
 \end{itemize}
 Every metric is computed per replicate and reported as mean and standard deviation over replicates. Each difference between two agents is reported in three ways: the difference of means with its \Res{stats/ci}\% confidence interval, the effect size $d$ (the difference over the average of the two standard deviations), and a Welch's $t$-test at $\alpha = \Res{stats/alpha}$.
 
 The skill ablation makes \Res{ablation/family} planned comparisons: each skill added on its own and on top of the others. We treat them as one family and correct their $p$-values with Holm's method. The number of replicates was fixed before the runs by a power analysis. With \Res{ablation/n} replicates per variant, a two-sided test at the family's most stringent level ($\Res{stats/alpha}/\Res{ablation/family}$) has \Res{stats/power}\% power for effects of $d \ge \Res{ablation/mde}$.
+
+The Plasticity-controller and selection studies each form their own Holm family (Sections~\ref{sec:controller} and~\ref{sec:selection_ablation}). The HalfCheetah comparison on absolute forgetting (ENA-Combined against PPO and SAC) forms another; it was added in revision, after the study had run. The CartPole retention and absolute forgetting, and every per-environment comparison, are descriptive and uncorrected.
+
+\subsection{Research Questions and Evidence}
+Table~\ref{tab:rq_map} maps each research question to the study that answers it. The skill ablation is the primary evidence for RQ1; the single-policy learners give the reference for how severe forgetting is without architectural memory.
+
+\begin{table}[htbp]
+\caption{Research Questions and the Evidence for Each}
+\begin{center}
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{|l|p{0.62\columnwidth}|l|}
+\hline
+\textbf{RQ} & \textbf{Evidence} & \textbf{Section} \\
+\hline
+RQ1 & skill ablation; forgetting of single-policy learners & \ref{sec:ablation}, \ref{sec:forgetting_cartpole}, \ref{sec:cheetah} \\
+RQ1a & ablation: Hall of Fame with and without detection; selection ablation & \ref{sec:ablation}, \ref{sec:selection_ablation} \\
+RQ1b & ablation: candidate steps with and without the archive & \ref{sec:ablation} \\
+RQ1c & recognition per phase (CartPole); detection benchmark (HalfCheetah) & \ref{sec:appendix_detection}, \ref{sec:detection_benchmark} \\
+RQ2 & ablation; compute study; controller study & \ref{sec:ablation}, \ref{sec:compute}, \ref{sec:controller} \\
+\hline
+\end{tabular}
+\label{tab:rq_map}
+\end{center}
+\end{table}

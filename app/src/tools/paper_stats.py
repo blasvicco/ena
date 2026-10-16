@@ -20,7 +20,8 @@ CI_LEVEL = 0.95
 
 
 # Metrics shown as whole numbers with thousands separators; everything else to one decimal.
-COUNT_METRICS = ("steps", "Steps", "candsteps")
+# Metrics printed as whole numbers with thousands separators: step counts, and absolute forgetting (in return units).
+COUNT_METRICS = ("steps", "Steps", "candsteps", "forgetting")
 
 
 def format_value(value: float, metric_slug: str) -> str:

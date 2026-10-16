@@ -1,4 +1,5 @@
-"""Tests for cheetah_results.py, paper_results.py's HalfCheetah entries: test return, retention of the environments left behind, compute."""
+"""Tests for cheetah_results.py, paper_results.py's HalfCheetah entries: test return, retention and absolute forgetting of the
+environments left behind, compute."""
 
 # Libs imports
 import math
@@ -10,6 +11,7 @@ import pytest
 from helpers import step
 from tools.cheetah_results import (
 	end_of_phase,
+	forgetting_comparisons,
 	hardware_entries,
 	retention_comparisons,
 	retention_entries,
@@ -93,6 +95,20 @@ def test_retention_rows_compare_each_test_with_the_training_return_at_the_end_of
 		assert math.isnan(rows.loc[("exp_2", "Heavy"), "retention"])
 
 
+def test_retention_rows_take_the_end_of_phase_window_as_given(tmp_path) -> None:
+	"""A study with a longer phase (the CartPole challenge: 2.5M steps) passes its own end-of-phase window."""
+	with step("Arrange: one replicate, Mars's episodes ending at 50k, 100k, 150k and 200k."):
+		_replicate(tmp_path / "exp_1", {"Mars": [100, 200, 300, 400]}, {"Mars": [400]})
+
+	with step("Act: the rows with the default 100k window and with a 150k one."):
+		default = retention_rows(str(tmp_path), ["SAC"], ["Mars"]).iloc[0]
+		wider = retention_rows(str(tmp_path), ["SAC"], ["Mars"], last_steps=150_000).iloc[0]
+
+	with step("Assert: the last 100k are the episodes ending after 100k (350); the last 150k, after 50k (300)."):
+		assert (default["end"], default["drop"]) == (350.0, -50.0)
+		assert (wider["end"], wider["drop"]) == (300.0, -100.0)
+
+
 def test_retention_entries_give_per_environment_values_and_the_mean_over_the_environments_left_behind() -> None:
 	"""Per agent and environment: end of phase and retention (mean, std); 'left' averages each replicate's retention over
 	the environments left behind, then over replicates. The test return per environment is the summary's
@@ -109,6 +125,25 @@ def test_retention_entries_give_per_environment_values_and_the_mean_over_the_env
 		assert not any("/test/" in key for key in entries)
 		assert entries["cheetah/SAC/retention/left/mean"] == "60.0"
 		assert entries["cheetah/SAC/retention/left/std"] == "0.0"
+
+	with step("Assert: absolute forgetting (end - test) per environment and over the environments left behind (400 and 400)."):
+		assert entries["cheetah/SAC/forgetting/Mars/mean"] == "600"
+		assert entries["cheetah/SAC/forgetting/Heavy/mean"] == "200"
+		assert entries["cheetah/SAC/forgetting/left/mean"] == "400"
+		assert entries["cheetah/SAC/forgetting/left/std"] == "0"
+
+
+def test_forgetting_is_negative_when_the_test_beats_the_end_of_phase() -> None:
+	"""An agent whose frozen test exceeds its end-of-phase training return has lost nothing: its forgetting is negative."""
+	with step("Arrange: one replicate tested above its end of phase on both environments left behind."):
+		rows = _rows({"ENA": [("e1", "Mars", 800, 1000), ("e1", "Heavy", 900, 1000)]})
+
+	with step("Act: the entries."):
+		entries = retention_entries("cheetah", rows, LEFT)
+
+	with step("Assert: -200 and -100, -150 over the environments left behind."):
+		assert entries["cheetah/ENA/forgetting/Mars/mean"] == "-200"
+		assert entries["cheetah/ENA/forgetting/left/mean"] == "-150"
 
 
 def test_retention_comparisons_test_the_agent_against_each_baseline_as_one_holm_family() -> None:
@@ -127,6 +162,24 @@ def test_retention_comparisons_test_the_agent_against_each_baseline_as_one_holm_
 		assert float(entries["cheetah/PPO-vs-ENA/retention/left/pholm"].strip("$p=<")) < 0.05
 		assert float(entries["cheetah/SAC-vs-ENA/retention/left/pholm"].strip("$p=<")) > 0.05
 		assert {"ci/low", "ci/high", "d", "nreq", "p"} <= {key.split("/left/")[1] for key in entries if key.startswith("cheetah/SAC-vs-ENA/")}
+
+
+def test_forgetting_comparisons_test_the_agent_against_each_baseline_as_their_own_holm_family() -> None:
+	"""ENA vs each baseline on the left-behind absolute forgetting, under .../forgetting/left: same entries as retention."""
+	with step("Arrange: ENA forgets about nothing, PPO about 3,000, SAC about 20, over four replicates (end 5,000)."):
+		values = {"ENA": [5000, 5010, 4990, 5000], "PPO": [2000, 2100, 1900, 2000], "SAC": [4980, 4990, 4970, 4985]}
+		rows = _rows({agent: [(f"e{index}", "Mars", 5000, value) for index, value in enumerate(series)] for agent, series in values.items()})
+
+	with step("Act: the comparisons."):
+		entries = forgetting_comparisons("cheetah", rows, ["Mars"], "ENA", ["PPO", "SAC"])
+
+	with step("Assert: the difference is ENA minus the baseline (ENA forgets 3,000 less than PPO), significant after Holm."):
+		assert entries["cheetah/PPO-vs-ENA/forgetting/left/diff"] == "-3,000"
+		assert float(entries["cheetah/PPO-vs-ENA/forgetting/left/pholm"].strip("$p=<")) < 0.05
+		assert {"ci/low", "ci/high", "d", "nreq", "p", "pholm"} <= {
+			key.split("/left/")[1] for key in entries if key.startswith("cheetah/SAC-vs-ENA/")
+		}
+		assert not any("/retention/" in key for key in entries)
 
 
 def test_hardware_entries_read_the_runner_s_hardware_line(tmp_path) -> None:
@@ -150,7 +203,8 @@ def test_hardware_entries_list_every_distinct_machine(tmp_path) -> None:
 
 
 def test_retention_table_has_one_row_per_agent_with_end_test_retention_and_time() -> None:
-	"""Per environment left behind: end of phase, test and retention; then the mean retention and the training time."""
+	"""Per environment left behind: end of phase, test and retention; then the mean retention, the mean absolute forgetting
+	and the training time."""
 	with step("Arrange: two agents, one replicate each."):
 		rows = _rows({"SAC": [("e1", "Mars", 1000, 500), ("e1", "Heavy", 2000, 1000)], "ENA": [("e1", "Mars", 800, 720), ("e1", "Heavy", 900, 900)]})
 
@@ -159,8 +213,9 @@ def test_retention_table_has_one_row_per_agent_with_end_test_retention_and_time(
 
 	with step("Assert: the rows' values."):
 		assert "\\label{tab:cheetah_retention}" in table
-		assert "SAC & 1,000 & 500 & 50.0 & 2,000 & 1,000 & 50.0 & 50.0 & 1,200.0 \\\\" in table
-		assert "ENA & 800 & 720 & 90.0 & 900 & 900 & 100.0 & 95.0 & 40.0 \\\\" in table
+		assert table.count("\\begin{table*}") == 1 and "max width=\\textwidth" in table
+		assert "SAC & 1,000 & 500 & 50.0 & 2,000 & 1,000 & 50.0 & 50.0 & 750 & 1,200.0 \\\\" in table
+		assert "ENA & 800 & 720 & 90.0 & 900 & 900 & 100.0 & 95.0 & 40 & 40.0 \\\\" in table
 
 
 def test_retention_figure_writes_one_box_per_agent(tmp_path) -> None:

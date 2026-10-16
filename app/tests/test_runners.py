@@ -1,7 +1,9 @@
 """Cross-runner tests — behavior every domain runner must share (they stay structurally parallel)."""
 
 # General imports
+import ast
 import importlib
+import os
 
 # Libs imports
 import pandas as pd
@@ -58,3 +60,29 @@ def test_agent_testing_live_logs_each_agent_to_its_own_testing_csv(runner_name, 
 			"Agent-A": str(tmp_path / "live_testing_Agent-A.csv"),
 			"Agent-B": str(tmp_path / "live_testing_Agent-B.csv"),
 		}
+
+
+STUDY_SCRIPTS = [
+	"cartpole_ena_ablation",
+	"cartpole_ena_compute",
+	"cartpole_ena_plasticity_controller",
+	"cartpole_ena_selection",
+	"cartpole_challenge",
+	"half_cheetah",
+]
+
+
+@pytest.mark.parametrize("script", STUDY_SCRIPTS)
+def test_every_study_script_passes_replicate_to_run_study(script) -> None:
+	"""Regression: --replicate was parsed but not forwarded, so "only exp_K" silently ran the whole study."""
+	with step("Arrange: the script's source."):
+		path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src", f"{script}.py")
+		with open(path, encoding="utf-8") as source:
+			tree = ast.parse(source.read())
+
+	with step("Act: every run_study(...) call's keyword arguments."):
+		calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "run_study"]
+
+	with step("Assert: at least one call, and each passes replicate."):
+		assert calls
+		assert all("replicate" in {keyword.arg for keyword in call.keywords} for call in calls)

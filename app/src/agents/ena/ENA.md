@@ -2,7 +2,7 @@
 
 This document describes the current implementation of the ENA agent as it stands in this package (`app/src/agents/ena/`). It is a code-accurate snapshot, not the paper's algorithm description — see `app/latex/` for the formal presentation.
 
-Specialist selection uses Bayesian Policy Reuse (`bpr`); environment detection uses per-niche dynamics models (`dynamics_model`).
+Specialist selection uses Bayesian Policy Reuse (`bpr`); `niche_match` and `best_trust` are simpler test-time drivers used only by the selection study (`cartpole_ena_selection.py`). Environment detection uses per-niche dynamics models (`dynamics_model`).
 
 ## 1. Big picture
 
@@ -23,7 +23,7 @@ agents/ena/
 │   ├── plasticity/             main.py + driver/{abstract,zero,full,linear_ramp,quadratic}.py
 │   ├── hall_of_fame/            main.py + driver/{abstract,default,olympic,none}.py
 │   ├── env_detection/            main.py + driver/{abstract,dynamics_model,chirp,none}.py
-│   └── selection/                 main.py + driver/{abstract,bpr}.py
+│   └── selection/                 main.py + driver/{abstract,bpr,niche_match,best_trust}.py
 └── tools/
     ├── curves.py              — zero/full/linear_ramp/quadratic formulas shared by trust & plasticity
     ├── genetic_similarity.py   — cosine similarity of two individuals' weight vectors
@@ -53,7 +53,7 @@ Key constructor parameters and what they configure:
 - `mutation_rate` / `mutation_noise` — forwarded to the Mutation skill's `gaussian` driver (§5).
 - `olympics_interval`, `olympics_episodes`, `olympics_qualifier_seats` — the `olympic` Hall of Fame driver's Olympiads: environment steps between them, full episodes per competitor, provisional seats per niche beyond `max_per_niche` (§8.1). The other drivers ignore them.
 - `hall_of_fame_driver` — `"default"` (the real archive) or `"none"` (disables specialist archiving/recall entirely — everything else, e.g. exploration/mutation, still runs); forwarded with `max_per_niche`/`max_gladiator_ratio` (§8).
-- `selection_driver` — `"bpr"` (default, the only driver), forwarded to the Selection skill with `exploration_rate` and `return_scale` (§4).
+- `selection_driver` — `"bpr"` (default), `"niche_match"` or `"best_trust"`, forwarded to the Selection skill with `exploration_rate` and `return_scale` (§4).
 - `recognizer_strategy` — `"dynamics_model"` (default) or `"none"` (disables environment detection — always resolves to a single universal niche); selects the environment-detection driver (§3.1). `recognizer_residual_tolerance` / `recognizer_novelty_margin` / `recognizer_cusum_false_alarm_steps` are forwarded to it.
 - `max_episode_steps` / `return_scale` — the episode length and the return that counts as solving the task, read from the environment's spec when not given (CartPole-v1: 500 / 475; HalfCheetah-v5: 1000 / 4800); construction fails if neither is available. A truncated candidate evaluation is extrapolated to `max_episode_steps` (`__evaluate_individual_performance`); `return_scale` is BPR's utility scale (§4) and the warmup scale of return normalization (§6).
 - `max_eval_steps` / `min_eval_steps` — the range of the plasticity-scaled candidate-evaluation depth during `train()` (§7).
@@ -109,14 +109,23 @@ The facade `EnvironmentRecognizer(driver, state_dim, **kwargs)` delegates `detec
 
 The facade `SelectionController(driver, **kwargs)` delegates `select_individual`, `record_episode_result` and `evaluate` to its driver; `on_episode_end(memory, learn, env_detection)` passes each test episode's result to `record_episode_result` (training episodes don't update the selector).
 
+**Training selection is shared** (`driver/abstract.py`): epsilon-greedy — with probability `exploration_rate` a random non-gladiator, otherwise `argmax(trust)` over the whole population. Drivers differ only in `_select_test`, so a seeded training run is identical whichever driver is configured. The base class also provides the no-gladiator fallback (a random non-gladiator) and a no-op `record_episode_result` for drivers that don't learn at test.
+
 ### `bpr` (`driver/bpr.py`) — Bayesian Policy Reuse (Rosman, Hawasly & Ramamoorthy, 2016)
 
-- **Training**: epsilon-greedy — with probability `exploration_rate` a random non-gladiator, otherwise `argmax(trust)` over the whole population.
 - **Types and policies** (test time): the types are the niches with a gladiator in the population, and every gladiator is a policy (rebuilt, with a uniform belief, by `evaluate(population)` — on entering test mode and on every detected shift). Ties go to the higher-trust gladiator. With no gladiator at all, a random non-gladiator plays.
 - **Selection**: the policy with the highest expected utility under the belief (BPR's greedy criterion), utility = `score / return_scale`, so solving the task reads as utility 1 (the own-niche prior).
 - **Belief update** (`record_episode_result`): Bayes' rule from the episode's utility under a Gaussian performance model `P(u | niche, policy)` (noise `return_noise`, default 0.2), times — when the `env_detection` driver provides them for every niche (`dynamics_model`) — the episode transitions' per-niche log-likelihoods. Without them (`none`) it is return-only BPR, as in the original paper.
 - **Performance model**, learned online (the paper builds it offline by playing every policy on every type): prior mean utility 1 for a gladiator in its own niche, an uncertain `cross_prior` (default 0.5) elsewhere, worth `prior_strength` pseudo-observations (default 1); every observed utility is credited to each niche in proportion to its posterior. `cross_prior` must not be pessimistic: at 0, an own-niche gladiator failing at test time is never abandoned, since no alternative can look better without first being tried.
 - **Non-stationarity**: the paper assumes one fixed type per trial; here a Fixed-Share switching prior mixes `switch_rate` (default 0.05) of uniform mass back in after every update, so a changed environment can win the belief back.
+
+### `niche_match` (`driver/niche_match.py`) — detector-only retrieval
+
+At test, plays the highest-trust gladiator of `recognizer.current_niche_id`, read at every episode; when that niche has no gladiator (start of a phase, after a confirmed shift until the detector has enough evidence, novel physics), the highest-trust gladiator overall. No belief and no learning from test returns: a gladiator failing in its own niche keeps playing while the detector stays there. It is BPR without the return evidence, for the selection ablation.
+
+### `best_trust` (`driver/best_trust.py`) — retrieval floor
+
+At test, always plays the highest-trust gladiator, ignoring both the detector and the returns. Against `niche_match` it shows whether the niche index matters at retrieval.
 
 ## 5. `mutation` and `crossover` skills (`skills/mutation/`, `skills/crossover/`)
 

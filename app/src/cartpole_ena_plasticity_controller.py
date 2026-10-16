@@ -34,4 +34,5 @@ if __name__ == "__main__":
 		"ENA PLASTICITY CONTROLLER",
 		workers=ARGS.workers,
 		threads_per_worker=ARGS.threads_per_worker,
+		replicate=ARGS.replicate,
 	)

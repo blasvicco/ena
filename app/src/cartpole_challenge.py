@@ -205,4 +205,5 @@ if __name__ == "__main__":
 		experiment_fn=functools.partial(run_experiment, protocol=ARGS.protocol),
 		workers=ARGS.workers,
 		threads_per_worker=ARGS.threads_per_worker,
+		replicate=ARGS.replicate,
 	)

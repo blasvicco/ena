@@ -41,6 +41,7 @@ from tools.paper_results import (
 	reliability_figure,
 	slug,
 	results_table,
+	selection_comparisons,
 	summary_entries,
 	with_reference_rows,
 	write_macros,
@@ -595,3 +596,28 @@ def test_cartpole_check_entries_count_the_seeds_passing() -> None:
 	with step("Act/Assert: 2 of 3."):
 		entries = cartpole_check_entries(pd.DataFrame({"seed": [35, 36, 37], "passes": [True, True, False]}))
 		assert (entries["detbench/cartpole/passes"], entries["detbench/cartpole/seeds"]) == ("2", "3")
+
+
+def test_selection_comparisons_give_the_planned_family_and_paired_counts() -> None:
+	"""Q1 (ENA-Combined vs. NicheMatch) and Q2 (NicheMatch vs. BestTrust): Holm over 2, and per pair the replicates lower/higher."""
+	with step("Arrange: 4 replicates; NicheMatch below ENA-Combined in 3 of them, BestTrust level with NicheMatch."):
+		reliability = {
+			"ENA-Combined": [90.0, 85.0, 80.0, 60.0],
+			"ENA-Combined-NicheMatch": [50.0, 55.0, 45.0, 70.0],
+			"ENA-Combined-BestTrust": [50.0, 55.0, 45.0, 70.0],
+		}
+		results = _results(
+			[(f"exp_{index + 1}", agent, {"Reliability (%)": value}) for agent, values in reliability.items() for index, value in enumerate(values)]
+		)
+
+	with step("Act: the selection comparisons."):
+		entries = selection_comparisons(results)
+
+	with step("Assert: a family of two with Holm p per pair, and the paired counts."):
+		assert entries["selection/family"] == "2"
+		assert "selection/ENA-Combined-vs-ENA-Combined-NicheMatch/test/rel/pholm" in entries
+		assert "selection/ENA-Combined-NicheMatch-vs-ENA-Combined-BestTrust/test/rel/pholm" in entries
+		first = "selection/ENA-Combined-vs-ENA-Combined-NicheMatch/test/rel"
+		assert (entries[f"{first}/lower"], entries[f"{first}/higher"], entries[f"{first}/pairs"]) == ("3", "1", "4")
+		second = "selection/ENA-Combined-NicheMatch-vs-ENA-Combined-BestTrust/test/rel"
+		assert (entries[f"{second}/lower"], entries[f"{second}/higher"], entries[f"{second}/pairs"]) == ("0", "0", "4")

@@ -54,6 +54,8 @@ SUCCESS_THRESHOLD = 475.0
 Y_LIM = (-10, 550)
 # Trust driver for every row that doesn't set its own "trust_algorithm" (Trust is held constant, not ablated).
 TRUST_ALGORITHM = "linear_ramp"
+# Test-time selection driver for every row that doesn't set its own "selection_driver" (cartpole_ena_selection.py ablates it).
+SELECTION_DRIVER = "bpr"
 
 # Every meaningful on/off combination of the three studied skills, every other ENAgent argument
 # held constant (see run_experiment()). "Off" is plasticity "zero" (2 candidates x 10 steps per
@@ -667,7 +669,7 @@ def build_ena_agent(variant: dict, max_agent_threads: int) -> ENAgent:
 		mutation_rate=0.05,
 		physics=["gravity", "masspole", "length"],
 		pop_size=100,
-		selection_driver="bpr",
+		selection_driver=variant.get("selection_driver", SELECTION_DRIVER),
 		trust_algorithm=variant.get("trust_algorithm", TRUST_ALGORITHM),
 		plasticity_algorithm=variant["plasticity_algorithm"],
 		hall_of_fame_driver=variant["hall_of_fame_driver"],
@@ -983,4 +985,5 @@ if __name__ == "__main__":
 		"ENA ABLATION",
 		workers=ARGS.workers,
 		threads_per_worker=ARGS.threads_per_worker,
+		replicate=ARGS.replicate,
 	)

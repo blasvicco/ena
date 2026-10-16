@@ -142,12 +142,14 @@ def _row(cells: list) -> str:
 	return " & ".join(cells) + " \\\\"
 
 
-def latex_table(caption: str, label: str, column_spec: str, body: list, fit_width: bool = False) -> str:
-	"""A captioned, labelled LaTeX table around body (header and rows, already formatted); fit_width scales it to the column."""
-	opening = ["\\begin{table}[htbp]", f"\\caption{{{caption}}}", "\\begin{center}", "\\footnotesize"]
-	if fit_width:
-		opening += ["\\setlength{\\tabcolsep}{3pt}", "\\begin{adjustbox}{max width=\\columnwidth}"]
-	closing = ["\\end{tabular}"] + (["\\end{adjustbox}"] if fit_width else []) + [f"\\label{{{label}}}", "\\end{center}", "\\end{table}"]
+def latex_table(caption: str, label: str, column_spec: str, body: list, fit: str = None) -> str:
+	"""A captioned, labelled LaTeX table around body (header and rows, already formatted); fit="column" scales it to the
+	column, fit="page" spans both columns of the page and scales it to their width."""
+	environment, width = ("table*", "\\textwidth") if fit == "page" else ("table", "\\columnwidth")
+	opening = [f"\\begin{{{environment}}}[{'t' if fit == 'page' else 'htbp'}]", f"\\caption{{{caption}}}", "\\begin{center}", "\\footnotesize"]
+	if fit:
+		opening += ["\\setlength{\\tabcolsep}{3pt}", f"\\begin{{adjustbox}}{{max width={width}}}"]
+	closing = ["\\end{tabular}"] + (["\\end{adjustbox}"] if fit else []) + [f"\\label{{{label}}}", "\\end{center}", f"\\end{{{environment}}}"]
 	return "\n".join(opening + [f"\\begin{{tabular}}{{{column_spec}}}"] + body + closing) + "\n"
 
 
