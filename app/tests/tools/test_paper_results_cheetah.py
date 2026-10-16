@@ -21,6 +21,7 @@ from tools.cheetah_results import (
 	retention_rows,
 	retention_table,
 )
+from tools.paper_stats import MINUS
 
 TRAIN = ["Mars", "Heavy", "Earth"]
 LEFT = ["Mars", "Heavy"]
@@ -66,6 +67,17 @@ def test_end_of_phase_is_the_mean_training_return_over_the_phase_last_100k_steps
 		assert end_of_phase(training, "Mars") == 4.0
 		assert end_of_phase(training, "Earth") == 99.0
 		assert math.isnan(end_of_phase(training, "Heavy"))
+
+
+def test_end_of_phase_over_the_last_episodes_ignores_how_many_steps_they_took() -> None:
+	"""With an episode budget (the CartPole ablation), the end of phase is the mean of the phase's last episodes."""
+	with step("Arrange: four Mars episodes of very different lengths, then one Earth episode."):
+		training = pd.DataFrame(
+			{"env_id": ["Mars"] * 4 + ["Earth"], "env_steps": [10, 5_000, 5_010, 9_000, 9_100], "score": [1.0, 2.0, 3.0, 5.0, 99.0]}
+		)
+
+	with step("Act/Assert: the last two Mars episodes, whatever their env-steps: (3 + 5) / 2."):
+		assert end_of_phase(training, "Mars", last_episodes=2) == 4.0
 
 
 def test_retention_rows_compare_each_test_with_the_training_return_at_the_end_of_the_phase(tmp_path) -> None:
@@ -146,9 +158,9 @@ def test_forgetting_is_negative_when_the_test_beats_the_end_of_phase() -> None:
 	with step("Act: the entries."):
 		entries = retention_entries("cheetah", rows, LEFT)
 
-	with step("Assert: -200 and -100, -150 over the environments left behind."):
-		assert entries["cheetah/ENA/forgetting/Mars/mean"] == "-200"
-		assert entries["cheetah/ENA/forgetting/left/mean"] == "-150"
+	with step("Assert: -200 and -100, -150 over the environments left behind, with a true minus sign."):
+		assert entries["cheetah/ENA/forgetting/Mars/mean"] == f"{MINUS}200"
+		assert entries["cheetah/ENA/forgetting/left/mean"] == f"{MINUS}150"
 
 
 def test_retention_comparisons_test_the_agent_against_each_baseline_as_one_holm_family() -> None:
@@ -180,7 +192,7 @@ def test_forgetting_comparisons_test_the_agent_against_each_baseline_as_their_ow
 		entries = forgetting_comparisons("cheetah", rows, ["Mars"], "ENA", ["PPO", "SAC"])
 
 	with step("Assert: the difference is ENA minus the baseline (ENA forgets 3,000 less than PPO), significant after Holm."):
-		assert entries["cheetah/PPO-vs-ENA/forgetting/left/diff"] == "-3,000"
+		assert entries["cheetah/PPO-vs-ENA/forgetting/left/diff"] == f"{MINUS}3,000"
 		assert float(entries["cheetah/PPO-vs-ENA/forgetting/left/pholm"].strip("$p=<")) < 0.05
 		assert {"ci/low", "ci/high", "d", "nreq", "p", "pholm"} <= {
 			key.split("/left/")[1] for key in entries if key.startswith("cheetah/SAC-vs-ENA/")
@@ -221,6 +233,19 @@ def test_retention_table_has_one_row_per_agent_with_end_test_retention_and_time(
 		assert table.count("\\begin{table*}") == 1 and "max width=\\textwidth" in table
 		assert "SAC & 1,000 & 500 & 50.0 & 2,000 & 1,000 & 50.0 & 50.0 & 750 & 1,200.0 \\\\" in table
 		assert "ENA & 800 & 720 & 90.0 & 900 & 900 & 100.0 & 95.0 & 40 & 40.0 \\\\" in table
+
+
+def test_retention_table_without_minutes_has_no_time_column() -> None:
+	"""A study whose times the paper reports elsewhere (the CartPole ablation) gets the table without its time column."""
+	with step("Arrange: one agent, one replicate."):
+		rows = _rows({"ENA": [("e1", "Mars", 800, 720), ("e1", "Heavy", 900, 900)]})
+
+	with step("Act: the table without minutes."):
+		table = retention_table(rows, LEFT, ["ENA"], None, "Retention", "tab:ablation_retention")
+
+	with step("Assert: the row ends with the forgetting, and there is no time header."):
+		assert "ENA & 800 & 720 & 90.0 & 900 & 900 & 100.0 & 95.0 & 40 \\\\" in table
+		assert "Time" not in table
 
 
 def test_retention_figure_writes_one_box_per_agent(tmp_path) -> None:

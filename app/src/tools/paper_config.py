@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import cartpole_challenge
 import cartpole_ena_ablation
 import half_cheetah
+from agents import DQNAgent, PPOAgent, SACAgent, SACDiscreteAgent
 from agents.ena import ena as ena_module
 from agents.ena import memory as ena_memory
 from agents.ena.skills.crossover.driver import uniform_mask
@@ -32,13 +33,60 @@ from agents.ena.tools.chirp_features import features as chirp_features
 from tools import detection_ablation, detection_benchmark
 from tools import metrics
 from tools import sac_discrete_entropy_check as sac_check
+from tools.paper_stats import signed
+
+# Keras activation names as the paper prints them.
+ACTIVATION_NAMES = {"relu": "ReLU", "tanh": "tanh"}
 
 
-def _number(value) -> str:
-	"""A setting as the paper prints it: integers with thousands separators, the rest as short decimals."""
+def _number(value: float) -> str:
+	"""A setting as the paper prints it: integers with thousands separators, tiny values as powers of ten, the rest as short decimals."""
 	if float(value).is_integer():
-		return f"{int(value):,}"
-	return f"{value:g}"
+		return signed(f"{int(value):,}")
+	if abs(value) < 1e-3:
+		mantissa, exponent = f"{value:e}".split("e")
+		return f"${float(mantissa):g}\\times10^{{{int(exponent)}}}$"
+	return signed(f"{value:g}")
+
+
+def _setting(value: object) -> str:
+	"""A setting of any kind as the paper prints it: a flag as yes/no, text with spaces for underscores, a number through _number."""
+	if isinstance(value, bool):
+		return "yes" if value else "no"
+	if isinstance(value, str):
+		return value.replace("_", " ")
+	return _number(value)
+
+
+def _layers(model: object) -> str:
+	"""A network's hidden layer sizes and activation as the paper prints them, e.g. 64 x 64 ReLU."""
+	hidden = [layer for layer in model.layers if hasattr(layer, "units")][:-1]
+	return " $\\times$ ".join(str(layer.units) for layer in hidden) + " " + ACTIVATION_NAMES[hidden[0].activation.__name__]
+
+
+def agent_settings(prefix: str, agent_class: type, settings: dict) -> dict:
+	"""cfg/<prefix>/<setting> for every keyword setting of an agent class: its default, unless the study overrides it."""
+	parameters = inspect.signature(agent_class.__init__).parameters.values()
+	values = {parameter.name: parameter.default for parameter in parameters if parameter.default is not inspect.Parameter.empty}
+	values.update(settings)
+	# Macro keys carry no underscore: an undefined key is printed in text mode, where "_" is an error.
+	return {f"cfg/{prefix}/{name.replace('_', '')}": _setting(value) for name, value in values.items() if value is not None}
+
+
+def baseline_entries() -> dict:
+	"""The single-policy baselines' settings (class defaults plus each study's overrides) and networks, as the comparisons build them."""
+	challenge, cheetah = cartpole_challenge, half_cheetah
+	return {
+		**agent_settings("dqn", DQNAgent, challenge.DQN_SETTINGS),
+		**agent_settings("ppo", PPOAgent, challenge.PPO_SETTINGS),
+		**agent_settings("sacdiscrete", SACDiscreteAgent, challenge.SAC_DISCRETE_SETTINGS),
+		**agent_settings("cheetahppo", PPOAgent, cheetah.PPO_SETTINGS),
+		**agent_settings("cheetahsac", SACAgent, cheetah.SAC_SETTINGS),
+		# CartPole has 4 observations and 2 actions; HalfCheetah 17 and 6.
+		"cfg/challenge/mlpnet": _layers(challenge.mlp_brain(2, 4)),
+		"cfg/challenge/pponet": _layers(challenge.ppo_actor_brain(2, 4)),
+		"cfg/cheetah/baselinenet": _layers(cheetah.mlp_brain(6, 17)),
+	}
 
 
 def ena_entries() -> dict:
@@ -103,6 +151,7 @@ def ena_entries() -> dict:
 		"hof/gatetrust": HallOfFame.GATE_TRUST,
 	}
 	entries = {f"cfg/ena/{key}": _number(value) for key, value in values.items()}
+	entries["cfg/ena/brain"] = _layers(agent.population[0]["model"])
 	# The CuSum alarm threshold is log(gamma); gamma is printed as a power of ten.
 	entries["cfg/ena/detect/gammaexp"] = _number(round(detection._cusum._threshold / math.log(10)))
 	return entries
@@ -159,7 +208,7 @@ def latex_table(caption: str, label: str, column_spec: str, body: list, fit: str
 def environment_table(rows: list, headers: list, caption: str, label: str) -> str:
 	"""A small LaTeX table, one row per environment."""
 	body = ["\\hline", _row([f"\\textbf{{{header}}}" for header in headers]), "\\hline", *[_row(row) for row in rows], "\\hline"]
-	return latex_table(caption, label, f"|l|{'c|' * (len(headers) - 1)}", body)
+	return latex_table(caption, label, f"|l|{'c|' * (len(headers) - 1)}", body, fit="column")
 
 
 def cartpole_rows(training_worlds: list, test_only_worlds: list) -> list:
@@ -173,13 +222,15 @@ def cartpole_rows(training_worlds: list, test_only_worlds: list) -> list:
 
 
 def cheetah_rows() -> list:
-	"""(environment, g, friction, wind, seen) rows for HalfCheetah's training and never-trained worlds."""
+	"""(environment, g, friction, wind, air density, seen) rows for HalfCheetah's training and never-trained worlds."""
 	rows = []
 	for worlds, seen in ((half_cheetah.make_training_worlds(), "yes"), (half_cheetah.make_unseen_worlds(), "no")):
 		for world in worlds:
 			physics = world.unwrapped
 			wind = getattr(physics, "wind", (0.0, 0.0, 0.0))
-			rows.append([physics.name, _number(abs(physics.gravity)), _number(physics.friction), _number(wind[0]), seen])
+			rows.append(
+				[physics.name, _number(abs(physics.gravity)), _number(physics.friction), _number(wind[0]), _number(physics.model.opt.density), seen]
+			)
 			world.close()
 	return rows
 
@@ -189,13 +240,16 @@ TRANSFORM_NAMES = {"dwt": "DWT", "swt": "SWT", "packet": "wavelet packet", "cwt"
 
 
 def chirp_entries() -> dict:
-	"""HalfCheetah's chirp detector as the study builds it, and the detection benchmark's protocol."""
+	"""HalfCheetah's ENA (search settings, network, chirp detector) as the study builds it, and the detection benchmark's protocol."""
 	agent = half_cheetah.build_ena_agent(1)
 	settings = agent._skills["env_detection"]._instance._settings  # pylint: disable=protected-access
 	feature_defaults = {name: parameter.default for name, parameter in inspect.signature(chirp_features).parameters.items()}
 	features = {**feature_defaults, **settings["features"]}
 	case = detection_benchmark.domain_case("half_cheetah")
+	ena_settings = {**half_cheetah.ENA_SETTINGS, **half_cheetah.ENA_HALL_OF_FAME}
 	entries = {
+		**{f"cfg/cheetahena/{name.replace('_', '')}": _setting(value) for name, value in ena_settings.items()},
+		"cfg/cheetahena/brain": _layers(agent.population[0]["model"]),
 		"cfg/cheetah/chirp/steps": _number(settings["steps"]),
 		"cfg/cheetah/chirp/excitation": settings["excitation"].replace("_", " "),
 		"cfg/cheetah/chirp/excitationwavelet": WAVELET_NAMES.get(
@@ -210,6 +264,11 @@ def chirp_entries() -> dict:
 		"cfg/cheetah/chirp/minchirps": _number(settings["min_chirps"]),
 		"cfg/cheetah/chirp/margin": _number(settings["margin"]),
 		"cfg/cheetah/chirp/share": _number(round(100 * settings["steps"] / agent.max_episode_steps, 6)),
+		# The transition-model detector as the benchmark calibrates it for HalfCheetah (its CartPole settings are cfg/ena/detect/*).
+		**{
+			f"cfg/detbench/transition/{name.removeprefix('recognizer_').replace('_', '')}": _number(value)
+			for name, value in detection_ablation.DYNAMICS_MODEL_CHEETAH.items()
+		},
 		"cfg/detbench/episodes": _number(case["episodes_per_world"]),
 		"cfg/detbench/block": _number(case["policy_block"]),
 		"cfg/detbench/window": _number(case["window"]),
@@ -227,7 +286,7 @@ def chirp_entries() -> dict:
 
 def config_entries() -> dict:
 	"""Every configuration macro."""
-	return {**ena_entries(), **protocol_entries(), **chirp_entries()}
+	return {**ena_entries(), **protocol_entries(), **chirp_entries(), **baseline_entries()}
 
 
 if __name__ == "__main__":

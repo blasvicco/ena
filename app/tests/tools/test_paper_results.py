@@ -22,6 +22,13 @@ from tools.paper_stats import (
 	welch_p,
 )
 from tools.paper_results import (
+	ABLATION_FAMILY,
+	ablation_family_table,
+	comparison_table,
+	detection_total_entries,
+	seed_entries,
+	value_slug,
+	variant_skills,
 	detection_ablation_entries,
 	cartpole_check_entries,
 	chirp_ablation_table,
@@ -163,7 +170,7 @@ def test_results_table_has_one_row_per_agent_with_mean_and_std() -> None:
 
 	with step("Act: build the table."):
 		columns = [("Mars-Light Avg", "Mars-Light", False), ("Reliability (%)", "Reliability (\\%)", True)]
-		table = results_table(results, "Test", ["ENA-Combined"], columns, caption="Test", label="tab:test")
+		table = results_table("ablation", results, "Test", ["ENA-Combined"], columns, caption="Test", label="tab:test")
 
 	with step("Assert: header, the row, the label, and a width cap so it never overflows the column."):
 		assert "Mars-Light" in table
@@ -539,7 +546,8 @@ def test_detection_ablation_entries_report_the_interval_and_holm_adjusted_paired
 
 	with step("Assert: the interval, the best other configuration, both adjusted p-values and the screened record."):
 		assert entries["detbench/chosen/lower"] == "39.8" and entries["detbench/chosen/upper"] == "100.0"
-		assert entries["detbench/bestother/excitation"] == "Linear chirp" and entries["detbench/bestother/passes"] == "1"
+		# A swept-sine excitation prints as a frequency sweep: "chirp" names ENA's probe.
+		assert entries["detbench/bestother/excitation"] == "linear sweep" and entries["detbench/bestother/passes"] == "1"
 		# vs transition: 4 discordant, all for the chirp -> 0.125; vs best other: 3 discordant, all for the chosen -> 0.25.
 		# Holm (2): 0.125 * 2 = 0.25; max(0.25, 0.25 * 1) = 0.25.
 		assert entries["detbench/cmp/chirp/p"] == "$p=0.250$" and entries["detbench/cmp/other/p"] == "$p=0.250$"
@@ -590,3 +598,74 @@ def test_selection_comparisons_give_the_planned_family_and_paired_counts() -> No
 		assert (entries[f"{first}/lower"], entries[f"{first}/higher"], entries[f"{first}/pairs"]) == ("3", "1", "4")
 		second = "selection/ENA-Combined-NicheMatch-vs-ENA-Combined-BestTrust/test/rel"
 		assert (entries[f"{second}/lower"], entries[f"{second}/higher"], entries[f"{second}/pairs"]) == ("0", "0", "4")
+
+
+@pytest.mark.parametrize(
+	"variant, skills",
+	[("ENA-NoSkill", set()), ("ENA-HoF+EnvDetection", {"Hall of Fame", "Detection"}), ("ENA-Combined", {"Plasticity", "Hall of Fame", "Detection"})],
+)
+def test_variant_skills_read_the_ablation_s_variant_table(variant, skills) -> None:
+	"""The skills a variant switches on come from its row in the ablation's variant table."""
+	with step("Act/Assert: the variant's skills."):
+		assert variant_skills(variant) == skills
+
+
+def test_ablation_family_table_lists_every_planned_comparison_with_the_skill_it_adds() -> None:
+	"""One row per planned comparison: the skill added, the variant it is added to, and the comparison's numbers."""
+	with step("Arrange: the same numbers for every comparison."):
+		entries = {"ablation/n": "30"}
+		for base, with_b in ABLATION_FAMILY:
+			key = f"ablation/{base}-vs-{with_b}/test/rel"
+			entries.update({f"{key}/diff": "+1.0", f"{key}/ci/low": "0.5", f"{key}/ci/high": "1.5", f"{key}/d": "0.10", f"{key}/pholm": "$p=0.040$"})
+
+	with step("Act: the table."):
+		table = ablation_family_table(entries)
+
+	with step("Assert: every comparison is a row; Plasticity added to ENA-HoF is one of them."):
+		assert table.count("+1.0 & 0.5 to 1.5 & 0.10 & $p=0.040$") == len(ABLATION_FAMILY)
+		assert "Plasticity & ENA-HoF & +1.0" in table
+		assert "\\label{tab:ablation_family}" in table
+
+
+def test_comparison_table_prints_the_difference_interval_effect_and_holm_p() -> None:
+	"""A generic planned-comparison row: two labels, then difference, interval, d and Holm-adjusted p."""
+	with step("Act: one row."):
+		entries = {"k/diff": "+6.0", "k/ci/low": "0.1", "k/ci/high": "12.6", "k/d": "0.48", "k/pholm": "$p=0.141$"}
+		table = comparison_table(entries, [("Quadratic", "Reliability", "k")], ["Controller", "Metric"], "Caption", "tab:x")
+
+	with step("Assert: the row and the headers."):
+		assert "Quadratic & Reliability & +6.0 & 0.1 to 12.6 & 0.48 & $p=0.141$ \\\\" in table
+		assert "\\textbf{Controller}" in table and "\\textbf{Holm}" in table
+
+
+def test_seed_entries_give_the_seeds_of_the_first_and_last_replicate(tmp_path) -> None:
+	"""exp_<k> runs experiment k - 1, seeded SEED_OFFSET + k - 1."""
+	with step("Arrange: replicates 1, 2 and 10."):
+		for number in (1, 2, 10):
+			(tmp_path / f"exp_{number}").mkdir()
+
+	with step("Act/Assert: seeds 1000 and 1009."):
+		assert seed_entries("study", str(tmp_path)) == {"seeds/study/first": "1000", "seeds/study/last": "1009"}
+
+
+def test_detection_total_entries_average_each_replicate_s_changes_over_a_phase() -> None:
+	"""Changes are summed over a replicate's environments in a phase, then averaged over replicates."""
+	with step("Arrange: two replicates, two training environments each."):
+		rows = [("e1", "Mars", 1), ("e1", "Earth", 2), ("e2", "Mars", 0), ("e2", "Earth", 1)]
+		detection = pd.DataFrame(
+			[{"agent": "ENA", "exp": exp, "phase": "train", "env_id": env, "metric": "changes", "value": value} for exp, env, value in rows]
+			+ [{"agent": "ENA", "exp": "e1", "phase": "train", "env_id": "Mars", "metric": "unrecognized", "value": 7}]
+		)
+
+	with step("Act/Assert: (3 + 1) / 2 changes; other metrics are ignored."):
+		assert detection_total_entries("ablation", detection) == {"ablation/ENA/detect/train/changes/total": "2.0"}
+
+
+@pytest.mark.parametrize(
+	"study, metric, expected",
+	[("cheetah", "Heavy-Rough Avg", "return"), ("cheetah", "Reliability (%)", "rel"), ("ablation", "Mars-Light Avg", "Mars-Light")],
+)
+def test_value_slug_prints_only_halfcheetah_s_returns_whole(study, metric, expected) -> None:
+	"""HalfCheetah's per-environment returns print as whole numbers; everything else keeps its own format."""
+	with step("Act/Assert: the format slug."):
+		assert value_slug(study, metric) == expected

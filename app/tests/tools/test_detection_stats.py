@@ -9,7 +9,15 @@ import pytest
 
 # App imports
 from helpers import step
-from tools.detection_stats import phase_detection, niches_per_env, replicate_detection, study_detection, summarize, write_detection_report
+from tools.detection_stats import (
+	majority_recognition,
+	niches_per_env,
+	phase_detection,
+	replicate_detection,
+	study_detection,
+	summarize,
+	write_detection_report,
+)
 
 NICHES_TXT = "\n".join(
 	[
@@ -134,3 +142,21 @@ def test_write_detection_report_lists_every_agent_phase_and_env(tmp_path) -> Non
 		assert written.endswith("detection_summary.txt")
 		assert "ENA-Combined" in report and "Training" in report and "Test" in report and "Brown" in report
 		assert not (tmp_path / "empty" / "detection_summary.txt").exists()
+
+
+def test_majority_recognition_names_each_test_environment_by_the_training_environment_of_its_niche(tmp_path) -> None:
+	"""A test environment is recognized as the training environment owning its most frequent niche, or as unrecognized."""
+	with step("Arrange: Mars trained in niche 0, Earth in niche 2; at test, Neptune mostly in niche 2, Brown mostly unrecognized."):
+		training = _history(["Mars"] * 3 + ["Earth"] * 3, [0, 0, -1, 2, 2, 1], [False] * 6).assign(gladiator_env="Unknown")
+		testing = _history(["Neptune"] * 3 + ["Brown"] * 3, [2, 2, 0, -1, -1, 2], [False] * 6).assign(
+			gladiator_env=["Earth", "Earth", "Mars", "Earth", "Earth", "Earth"]
+		)
+		training.to_csv(tmp_path / "live_training_ENA.csv", index=False)
+		testing.to_csv(tmp_path / "live_testing_ENA.csv", index=False)
+
+	with step("Act: the replicate's recognition."):
+		rows = majority_recognition(str(tmp_path), "ENA")
+
+	with step("Assert: Neptune as Earth, Brown unrecognized, Earth's gladiators played, and distinct training niches."):
+		assert rows.set_index("env_id")["recognized"].to_dict() == {"Neptune": "Earth", "Brown": "unrecognized"}
+		assert set(rows["played"]) == {"Earth"} and rows["distinct"].all()

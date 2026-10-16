@@ -9,11 +9,15 @@
 #         <study>/<agent>/<phase>/<metric>/mean|std   phase: train, test, compute, adapt
 #         <study>/<agent>/time/min/mean|std           wall-clock training time, minutes
 #         <study>/<A>-vs-<B>/<phase>/<metric>/p|diff  Welch's t-test p-value and mean(B) - mean(A)
-#         <study>/<agent>/end|retention/<env>/mean|std  HalfCheetah: end of phase (its last 3 checks), retention (%)
+#         <study>/<agent>/end|retention/<env>/mean|std  end of phase (last 10% of the phase), retention (%)
 #         <study>/<agent>/retention/left/mean|std     retention over the environments left behind
 #         <study>/<B>-vs-<agent>/retention/left/p|pholm|diff|ci/low|ci/high|d|nreq
 #         <study>/<agent>/forgetting/<env>|left/mean|std  HalfCheetah and the CartPole challenge: absolute forgetting, end of phase - test
 #         <study>/<B>-vs-<agent>/forgetting/left/p|pholm|diff|ci/low|ci/high|d|nreq
+#         <study>/<agent>/recog/<env>/<training env|unrecognized|other>  replicates whose test env is mostly recognized so
+#         <study>/<agent>/played/<env>/<training env>  replicates whose test env is mostly played by that env's gladiators
+#         <study>/<agent>/detect/<phase>/changes/total  confirmed changes per replicate and phase (training or test)
+#         seeds/<study>/first|last                    the RNG seeds of the study's first and last replicate
 #         <study>/hardware                            the machine and thread counts the replicates ran with
 #         selection/identity/identical|checked        selection study: training logs byte-identical to the ablation's ENA-Combined
 #         selection/<agent>/played/mean               selection study: distinct individuals played per test
@@ -36,7 +40,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # App imports
 # pylint: disable=wrong-import-position
-from cartpole_ena_ablation import make_training_worlds, make_unseen_worlds
+from cartpole_ena_ablation import ABLATION_VARIANTS, SEED_OFFSET, TRAINING_EPISODES_ENA, make_training_worlds, make_unseen_worlds
 from cartpole_ena_compute import REFERENCES as COMPUTE_REFERENCES
 from half_cheetah import SOLVED_SCORE as CHEETAH_SOLVED, Y_LIM as CHEETAH_Y_LIM, build_ena_agent as build_cheetah_ena
 from tools.aggregate_metrics import collect_results
@@ -55,7 +59,7 @@ from tools.cheetah_results import (
 	retention_table,
 )
 from tools.detection_ablation import SCREENED, pass_table, study_labels
-from tools.detection_stats import study_detection, summarize as summarize_detection
+from tools.detection_stats import majority_recognition, study_detection, summarize as summarize_detection
 from tools.plot_study_curves import plot as plot_study_curves
 from tools.paper_figures import replicate_box_figure
 from tools.paper_stats import (
@@ -98,8 +102,11 @@ TIME_PATTERN = re.compile(r"^\s+(?P<agent>\S.*?): (?P<seconds>[\d.]+) seconds, (
 
 CARTPOLE_ENVS = ["Mars-Light", "Neptune", "Jupiter-Heavy", "Brown-dwarf", "Earth-Standard"]
 CARTPOLE_TRAIN_ENVS = ["Mars-Light", "Jupiter-Heavy", "Earth-Standard"]
-# The CartPole challenge's end of phase: the last 10% of its per-environment budget, as HalfCheetah's.
+# The CartPole challenge's end of phase: the last 10% of its per-environment budget, as HalfCheetah's. The ablation
+# trains a fixed number of episodes per environment (its variants play very different env-steps), so its end of phase is
+# the last 10% of those episodes.
 CHALLENGE_END_OF_PHASE_STEPS = 250_000
+ABLATION_END_OF_PHASE_EPISODES = TRAINING_EPISODES_ENA[0] // 10
 ABLATION_AGENTS = [
 	"Random",
 	"ENA-NoSkill",
@@ -119,6 +126,9 @@ ABLATION_FAMILY = [
 	("ENA-Plasticity+HoF", "ENA-Combined"),
 	("ENA-HoF+EnvDetection", "ENA-Combined"),
 ]
+# Descriptive, outside the family: the archive organized by detection against no archive at all, without Plasticity
+# (with Plasticity it is ENA-Plasticity vs ENA-Combined, reported with every variant against ENA-Combined).
+ABLATION_DESCRIPTIVE = [("ENA-NoSkill", "ENA-HoF+EnvDetection")]
 # Adding the Hall of Fame, then detection, with and without Plasticity: what each costs in candidate evaluation.
 ABLATION_ARCHIVE_COST_PAIRS = [
 	("ENA-NoSkill", "ENA-HoF"),
@@ -134,6 +144,14 @@ DETECTION_SLUGS = {"unrecognized": "unrec", "changes": "changes", "first_change"
 DETECTION_COLUMNS = [("unrecognized", "Unrec. (\\%)"), ("changes", "Changes"), ("first_change", "First (ep.)"), ("niches", "Niches")]
 DETECTION_PHASES = [("train", "Training"), ("test", "Test")]
 CONTROLLER_ALTERNATIVES = ["ENA-Combined-QuadraticPlasticity", "ENA-Combined-FuzzyPlasticity"]
+# HalfCheetah's per-environment returns are thousands: printed as whole numbers.
+WHOLE_RETURN_STUDIES = ("cheetah",)
+# Each skill as the ablation table switches it on: (name, variant-row setting, its "off" value).
+ABLATION_SKILLS = (
+	("Plasticity", "plasticity_algorithm", "zero"),
+	("Hall of Fame", "hall_of_fame_driver", "none"),
+	("Detection", "recognizer_strategy", "none"),
+)
 STUDIES = {
 	"ablation": "cartpole_ena_ablation_outputs",
 	"compute": "cartpole_ena_compute_outputs",
@@ -151,11 +169,21 @@ BASELINE_SLUGS = {
 }
 
 
+def excitation_name(label: str) -> str:
+	"""An excitation's name as the paper prints it: a swept sine is a frequency sweep, since "chirp" names ENA's probe."""
+	return label.replace(" chirp", " sweep")
+
+
 def slug(metric: str) -> str:
 	"""Short key for a metric column name."""
 	if metric in METRIC_SLUGS:
 		return METRIC_SLUGS[metric]
 	return re.sub(r" Avg$", "", metric).replace(" ", "")
+
+
+def value_slug(study: str, metric: str) -> str:
+	"""The format slug of a study's metric: as slug(), except HalfCheetah's per-environment returns, printed whole."""
+	return "return" if study in WHOLE_RETURN_STUDIES and metric.endswith(" Avg") else slug(metric)
 
 
 def parse_training_times(outputs_path: str) -> dict:
@@ -193,8 +221,8 @@ def summary_entries(study: str, results: dict) -> dict:
 				if values.empty:
 					continue
 				key = f"{study}/{agent}/{phase_key}/{slug(metric)}"
-				entries[f"{key}/mean"] = format_value(values.mean(), slug(metric))
-				entries[f"{key}/std"] = format_value(values.std() if len(values) > 1 else float("nan"), slug(metric))
+				entries[f"{key}/mean"] = format_value(values.mean(), value_slug(study, metric))
+				entries[f"{key}/std"] = format_value(values.std() if len(values) > 1 else float("nan"), value_slug(study, metric))
 	entries[f"{study}/n"] = str(len(replicates))
 	return entries
 
@@ -211,7 +239,7 @@ def comparison_entries(
 	for metric in metrics:
 		values_a, values_b = _values(pooled_a, agent_a, metric), _values(pooled_b, agent_b, metric)
 		key = f"{study}/{agent_a}-vs-{agent_b}/{PHASE_KEYS[phase]}/{slug(metric)}"
-		entries.update(difference_entries(key, values_a, values_b, alpha, slug(metric)))
+		entries.update(difference_entries(key, values_a, values_b, alpha, value_slug(study, metric)))
 	return entries
 
 
@@ -375,8 +403,8 @@ def write_macros(entries: dict, path: str) -> None:
 
 
 # pylint: disable=too-many-arguments,too-many-positional-arguments
-def results_table(results: dict, phase: str, agents: list, columns: list, caption: str, label: str) -> str:
-	"""A LaTeX table: one row per agent; columns are (metric, header, show_std) with the mean (± std) over replicates."""
+def results_table(study: str, results: dict, phase: str, agents: list, columns: list, caption: str, label: str) -> str:
+	"""A LaTeX table of one study: one row per agent; columns are (metric, header, show_std) with the mean (± std) over replicates."""
 	pooled = _pooled(results, phase)
 	lines = [
 		"\\hline",
@@ -387,9 +415,9 @@ def results_table(results: dict, phase: str, agents: list, columns: list, captio
 		cells = []
 		for metric, _header, show_std in columns:
 			values = _values(pooled, agent, metric)
-			cell = format_value(values.mean(), slug(metric))
+			cell = format_value(values.mean(), value_slug(study, metric))
 			if show_std and len(values) > 1:
-				cell += f" $\\pm$ {format_value(values.std(), slug(metric))}"
+				cell += f" $\\pm$ {format_value(values.std(), value_slug(study, metric))}"
 			cells.append(cell)
 		lines.append(f"{agent} & " + " & ".join(cells) + " \\\\")
 	lines.append("\\hline")
@@ -483,7 +511,8 @@ def detection_ablation_entries(grid: pd.DataFrame, confirmation: pd.DataFrame, c
 	counts = grid.groupby(["excitation", "features"], sort=False)["passes"].sum()
 	others = counts[[not excitation.startswith("Wavelet train") for excitation, _features in counts.index]]
 	best_other = others.idxmax()
-	entries["detbench/bestother/excitation"], entries["detbench/bestother/features"] = best_other
+	excitation, entries["detbench/bestother/features"] = best_other
+	entries["detbench/bestother/excitation"] = excitation_name(excitation).lower()
 	entries["detbench/bestother/passes"] = str(int(others[best_other]))
 	entries["detbench/screened/passes"] = str(int(counts[SCREENED]))
 	entries["detbench/chosengrid/passes"] = str(int(counts[chosen]))
@@ -507,7 +536,7 @@ def chirp_ablation_table(grid: pd.DataFrame, chosen: tuple) -> str:
 	for excitation, row in table.iterrows():
 		cells = [f"{count}/{seeds}" for count in row]
 		cells = [f"\\textbf{{{cell}}}" if (excitation, column) == chosen else cell for cell, column in zip(cells, table.columns)]
-		lines.append(f"{excitation} & " + " & ".join(cells) + " \\\\")
+		lines.append(f"{excitation_name(excitation)} & " + " & ".join(cells) + " \\\\")
 	lines.append("\\hline")
 	return latex_table(
 		f"Chirp detector ablation on the HalfCheetah detection benchmark: benchmark seeds (of {seeds}) on which an excitation and "
@@ -536,7 +565,7 @@ def study_comparisons(results: dict) -> dict:
 	"""Return every pairwise comparison the paper cites."""
 	entries = {}
 	test_metrics = TEST_METRICS
-	pairs = [(variant, "ENA-Combined") for variant in ABLATION_AGENTS[:-1]] + ABLATION_FAMILY
+	pairs = [(variant, "ENA-Combined") for variant in ABLATION_AGENTS[:-1]] + ABLATION_FAMILY + ABLATION_DESCRIPTIVE
 	for variant_a, variant_b in pairs:
 		entries.update(
 			comparison_entries(
@@ -629,6 +658,7 @@ def collect_studies() -> tuple:
 		results[study] = collect_results(study_dir)
 		entries.update(summary_entries(study, results[study]))
 		entries.update(time_entries(study, study_dir))
+		entries.update(seed_entries(study, study_dir))
 	entries.update(episode_count_entries("challenge", os.path.join(APP_DIR, STUDIES["challenge"]), CHALLENGE_AGENTS))
 	entries.update(episode_count_entries("cheetah", os.path.join(APP_DIR, STUDIES["cheetah"]), CHEETAH_AGENTS))
 	entries.update(hardware_entries("cheetah", os.path.join(APP_DIR, STUDIES["cheetah"])))
@@ -682,6 +712,7 @@ def write_cheetah_outputs(results: dict, rows: pd.DataFrame, entries: dict) -> N
 	_write(
 		os.path.join(GENERATED_DIR, "table_cheetah_test.tex"),
 		results_table(
+			"cheetah",
 			results,
 			"Test",
 			CHEETAH_AGENTS,
@@ -725,6 +756,110 @@ def write_cheetah_outputs(results: dict, rows: pd.DataFrame, entries: dict) -> N
 	)
 
 
+def seed_entries(study: str, study_dir: str) -> dict:
+	"""The RNG seeds of a study's first and last replicate: exp_<k> runs experiment k - 1, seeded SEED_OFFSET + k - 1."""
+	numbers = [int(name.split("_")[1]) for name in get_experiment_directories(study_dir)]
+	return {f"seeds/{study}/first": str(SEED_OFFSET + min(numbers) - 1), f"seeds/{study}/last": str(SEED_OFFSET + max(numbers) - 1)}
+
+
+def variant_skills(variant: str) -> set:
+	"""The skills an ablation variant has switched on (Plasticity, Hall of Fame, Detection)."""
+	row = next(row for row in ABLATION_VARIANTS if row["name"] == variant)
+	return {name for name, setting, off in ABLATION_SKILLS if row[setting] != off}
+
+
+def comparison_table(entries: dict, rows: list, headers: list, caption: str, label: str) -> str:
+	"""A LaTeX table of planned comparisons: per (label, label, macro key) row, the difference, its interval, d and the Holm-adjusted p."""
+	head = [*headers, "Difference", f"{CI_LEVEL * 100:g}\\% CI", "$d$", "Holm"]
+	lines = ["\\hline", " & ".join(f"\\textbf{{{header}}}" for header in head) + " \\\\", "\\hline"]
+	for first, second, key in rows:
+		interval = f"{entries[f'{key}/ci/low']} to {entries[f'{key}/ci/high']}"
+		lines.append(" & ".join([first, second, entries[f"{key}/diff"], interval, entries[f"{key}/d"], entries[f"{key}/pholm"]]) + " \\\\")
+	lines.append("\\hline")
+	return latex_table(caption, label, f"|l|l|{'c|' * 4}", lines, fit="column")
+
+
+def ablation_family_table(entries: dict) -> str:
+	"""The ablation's planned comparisons as a table: which skill each adds, and to which variant."""
+	rows = [
+		(", ".join(sorted(variant_skills(with_b) - variant_skills(base))), base, f"ablation/{base}-vs-{with_b}/test/rel")
+		for base, with_b in ABLATION_FAMILY
+	]
+	caption = (
+		f"Skill ablation: the {len(ABLATION_FAMILY)} planned comparisons of test reliability (difference in points), "
+		f"one Holm family ({entries['ablation/n']} replicates)"
+	)
+	return comparison_table(entries, rows, ["Skill added", "To"], caption, "tab:ablation_family")
+
+
+def controller_table(entries: dict) -> str:
+	"""The Plasticity-controller comparisons with the linear ramp as a table: per alternative, reliability and candidate steps."""
+	metrics = (("Reliability (points)", "test/rel"), ("Candidate steps", "compute/candsteps"))
+	rows = [
+		(alternative.removeprefix("ENA-Combined-").removesuffix("Plasticity"), name, f"controller/ENA-Combined-vs-{alternative}/{path}")
+		for alternative in CONTROLLER_ALTERNATIVES
+		for name, path in metrics
+	]
+	caption = f"Each Plasticity controller against the linear ramp ({entries['controller/n']} replicates); each metric is one Holm family"
+	return comparison_table(entries, rows, ["Controller", "Metric"], caption, "tab:controller")
+
+
+def recognition_entries(study: str, agent: str, train_envs: list) -> dict:
+	"""Replicates that mostly recognize each test environment as each training environment's niche (or none), and mostly play its gladiators."""
+	study_dir = os.path.join(APP_DIR, STUDIES[study])
+	frames = [majority_recognition(os.path.join(study_dir, exp_dir), agent) for exp_dir in get_experiment_directories(study_dir)]
+	key = f"{study}/{agent}"
+	entries = {f"{key}/recog/distinct": str(sum(bool(frame["distinct"].iloc[0]) for frame in frames))}
+	for env, at_env in pd.concat(frames, ignore_index=True).groupby("env_id", sort=False):
+		entries.update(
+			{f"{key}/recog/{env}/{label}": str(int((at_env["recognized"] == label).sum())) for label in [*train_envs, "unrecognized", "other"]}
+		)
+		entries.update({f"{key}/played/{env}/{label}": str(int((at_env["played"] == label).sum())) for label in train_envs})
+	return entries
+
+
+def detection_total_entries(study: str, detection: pd.DataFrame) -> dict:
+	"""Mean confirmed changes per replicate in each phase (training, test), summed over the phase's environments."""
+	changes = detection[detection["metric"] == "changes"].groupby(["agent", "phase", "exp"])["value"].sum()
+	return {
+		f"{study}/{agent}/detect/{phase}/changes/total": format_value(total, "detect")
+		for (agent, phase), total in changes.groupby(["agent", "phase"]).mean().items()
+	}
+
+
+def detection_outputs() -> tuple:
+	"""Recognition numbers (macros) and tables of the ablation's and HalfCheetah's environment detection, and the recognition counts."""
+	entries, tables = {}, {}
+	for study, label, caption in (
+		("ablation", "tab:detection", "Environment recognition per phase in the skill ablation"),
+		("cheetah", "tab:cheetah_detection", "Environment recognition per phase by ENA-Combined's chirp on HalfCheetah"),
+	):
+		detection = study_detection(os.path.join(APP_DIR, STUDIES[study]))
+		summary = summarize_detection(detection)
+		entries.update({**detection_entries(study, summary), **detection_total_entries(study, detection)})
+		caption += (
+			f" ({detection['exp'].nunique()} replicates): unrecognized episodes, confirmed changes, episodes into the phase of the first one, "
+			"and Hall of Fame niches per training environment"
+		)
+		tables[f"table_{label.split(':')[1]}.tex"] = detection_table(
+			summary, [agent for agent in ABLATION_AGENTS if agent in set(summary["agent"])], caption, label
+		)
+	for study, train_envs in (("ablation", CARTPOLE_TRAIN_ENVS), ("challenge", CARTPOLE_TRAIN_ENVS), ("cheetah", CHEETAH_TRAIN_ENVS)):
+		entries.update(recognition_entries(study, "ENA-Combined", train_envs))
+	return entries, tables
+
+
+def ablation_retention() -> tuple:
+	"""The ablation variants' end of phase, test return, retention and forgetting per training environment (descriptive), and its table."""
+	agents, left_behind = ABLATION_AGENTS[1:], CARTPOLE_TRAIN_ENVS[:-1]
+	rows = retention_rows(os.path.join(APP_DIR, STUDIES["ablation"]), agents, CARTPOLE_TRAIN_ENVS, last_episodes=ABLATION_END_OF_PHASE_EPISODES)
+	caption = (
+		f"Skill ablation: return at the end of each training phase (its last {ABLATION_END_OF_PHASE_EPISODES} episodes) and at test, "
+		f"retention and absolute forgetting (end $-$ test) of the environments left behind ({rows['Exp'].nunique()} replicates)"
+	)
+	return retention_entries("ablation", rows, left_behind), retention_table(rows, left_behind, agents, None, caption, "tab:ablation_retention")
+
+
 def main() -> None:
 	"""Collect every study, then write the macros, tables and figures."""
 	results, entries = collect_studies()
@@ -732,8 +867,8 @@ def main() -> None:
 	entries.update(config_entries())
 	entries.update(sac_discrete_entries(os.path.join(SACD_DIR, "summary.csv")))
 	entries.update({"stats/alpha": f"{ALPHA:g}", "stats/power": f"{POWER * 100:g}", "stats/ci": f"{CI_LEVEL * 100:g}"})
-	detection = summarize_detection(study_detection(os.path.join(APP_DIR, STUDIES["ablation"])))
-	entries.update(detection_entries("ablation", detection))
+	detection, tables = detection_outputs()
+	entries.update(detection)
 	grid, confirmation = pd.read_csv(os.path.join(DETECTION_ABLATION_DIR, "grid.csv")), pd.read_csv(
 		os.path.join(DETECTION_ABLATION_DIR, "confirmation.csv")
 	)
@@ -743,89 +878,74 @@ def main() -> None:
 	entries.update(cartpole_check_entries(pd.read_csv(os.path.join(DETECTION_ABLATION_DIR, "cartpole.csv"))))
 	retention, rows = forgetting_entries()
 	entries.update(retention)
+	ablation_forgetting, tables["table_ablation_retention.tex"] = ablation_retention()
+	entries.update(ablation_forgetting)
 
+	test_columns = [(f"{env} Avg", env.split("-", maxsplit=1)[0], False) for env in CARTPOLE_ENVS] + [("Reliability (%)", "Rel. (\\%)", True)]
+	adapt_columns = [(f"{env}:steps", env.split("-", maxsplit=1)[0], True) for env in CARTPOLE_TRAIN_ENVS]
+	tables.update(
+		{
+			"table_chirp_ablation.tex": chirp_ablation_table(grid, chosen),
+			"table_ablation_family.tex": ablation_family_table(entries),
+			"table_controller.tex": controller_table(entries),
+			"table_ablation_test.tex": results_table(
+				"ablation",
+				results["ablation"],
+				"Test",
+				ABLATION_AGENTS,
+				test_columns,
+				f"Skill ablation, frozen test: mean return per environment and reliability ({entries['ablation/n']} replicates)",
+				"tab:ablation_test",
+			),
+			"table_challenge_test.tex": results_table(
+				"challenge",
+				results["challenge"],
+				"Test",
+				CHALLENGE_AGENTS,
+				test_columns,
+				f"CartPole comparison, frozen test ({entries['challenge/n']} replicates)",
+				"tab:challenge_test",
+			),
+			"table_challenge_adapt.tex": results_table(
+				"challenge",
+				results["challenge"],
+				"Adaptation",
+				CHALLENGE_AGENTS,
+				adapt_columns,
+				f"CartPole comparison: training steps to first solve per environment ({entries['challenge/n']} replicates)",
+				"tab:challenge_adapt",
+			),
+			"table_selection_test.tex": results_table(
+				"selection",
+				results["selection"],
+				"Test",
+				[SELECTION_REFERENCE] + SELECTION_AGENTS,
+				test_columns,
+				f"Selection ablation, frozen test: ENA-Combined (Bayesian policy reuse) and the same agents with simpler test-time selection "
+				f"({entries['selection/n']} replicates)",
+				"tab:selection_test",
+			),
+			"table_cartpole_envs.tex": environment_table(
+				cartpole_rows(make_training_worlds(), make_unseen_worlds()),
+				["Environment", "$g$ (m/s$^2$)", "$m_p$ (kg)", "$\\ell$ (m)", "Seen in training"],
+				"CartPole Environments",
+				"tab:cartpole_worlds",
+			),
+			"table_cheetah_envs.tex": environment_table(
+				cheetah_rows(),
+				["Environment", "$g$ (m/s$^2$)", "Friction", "Wind (m/s)", "Air (kg/m$^3$)", "Seen"],
+				"HalfCheetah Environments",
+				"tab:cheetah_worlds",
+			),
+		}
+	)
 	os.makedirs(GENERATED_DIR, exist_ok=True)
 	write_macros(entries, os.path.join(GENERATED_DIR, "results.tex"))
-	_write(os.path.join(GENERATED_DIR, "table_chirp_ablation.tex"), chirp_ablation_table(grid, chosen))
-	test_columns = [(f"{env} Avg", env.split("-", maxsplit=1)[0], False) for env in CARTPOLE_ENVS] + [("Reliability (%)", "Rel. (\\%)", True)]
-	_write(
-		os.path.join(GENERATED_DIR, "table_ablation_test.tex"),
-		results_table(
-			results["ablation"],
-			"Test",
-			ABLATION_AGENTS,
-			test_columns,
-			f"Skill ablation, frozen test: mean return per environment and reliability ({entries['ablation/n']} replicates)",
-			"tab:ablation_test",
-		),
-	)
-	_write(
-		os.path.join(GENERATED_DIR, "table_challenge_test.tex"),
-		results_table(
-			results["challenge"],
-			"Test",
-			CHALLENGE_AGENTS,
-			test_columns,
-			f"CartPole comparison, frozen test ({entries['challenge/n']} replicates)",
-			"tab:challenge_test",
-		),
-	)
-	adapt_columns = [(f"{env}:steps", env.split("-", maxsplit=1)[0], True) for env in CARTPOLE_TRAIN_ENVS]
-	_write(
-		os.path.join(GENERATED_DIR, "table_challenge_adapt.tex"),
-		results_table(
-			results["challenge"],
-			"Adaptation",
-			CHALLENGE_AGENTS,
-			adapt_columns,
-			f"CartPole comparison: training steps to first solve per environment ({entries['challenge/n']} replicates)",
-			"tab:challenge_adapt",
-		),
-	)
-	_write(
-		os.path.join(GENERATED_DIR, "table_selection_test.tex"),
-		results_table(
-			results["selection"],
-			"Test",
-			[SELECTION_REFERENCE] + SELECTION_AGENTS,
-			test_columns,
-			f"Selection ablation, frozen test: ENA-Combined (Bayesian policy reuse) and the same agents with simpler test-time selection "
-			f"({entries['selection/n']} replicates)",
-			"tab:selection_test",
-		),
-	)
-	_write(
-		os.path.join(GENERATED_DIR, "table_detection.tex"),
-		detection_table(
-			detection,
-			[agent for agent in ABLATION_AGENTS if agent in set(detection["agent"])],
-			f"Environment recognition per phase in the skill ablation ({entries['ablation/n']} replicates): unrecognized episodes, "
-			"confirmed changes, episodes into the phase of the first one, and Hall of Fame niches per training environment",
-			"tab:detection",
-		),
-	)
-	_write(
-		os.path.join(GENERATED_DIR, "table_cartpole_envs.tex"),
-		environment_table(
-			cartpole_rows(make_training_worlds(), make_unseen_worlds()),
-			["Environment", "$g$ (m/s$^2$)", "$m_p$ (kg)", "$\\ell$ (m)", "Seen in training"],
-			"CartPole Environments",
-			"tab:cartpole_worlds",
-		),
-	)
-	_write(
-		os.path.join(GENERATED_DIR, "table_cheetah_envs.tex"),
-		environment_table(
-			cheetah_rows(),
-			["Environment", "$g$ (m/s$^2$)", "Friction", "Wind (m/s)", "Seen"],
-			"HalfCheetah Environments",
-			"tab:cheetah_worlds",
-		),
-	)
-	images_dir = IMAGES_DIR
-	reliability_figure(results["ablation"], ABLATION_AGENTS[1:], os.path.join(images_dir, "ablation_reliability.pdf"))
-	reliability_figure(results["challenge"], CHALLENGE_AGENTS, os.path.join(images_dir, "challenge_reliability.pdf"))
-	plot_study_curves(os.path.join(APP_DIR, STUDIES["challenge"]), "testing", CHALLENGE_AGENTS, os.path.join(images_dir, "challenge_test_curves.pdf"))
+	for name, table in tables.items():
+		_write(os.path.join(GENERATED_DIR, name), table)
+	reliability_figure(results["ablation"], ABLATION_AGENTS[1:], os.path.join(IMAGES_DIR, "ablation_reliability.pdf"))
+	reliability_figure(results["challenge"], CHALLENGE_AGENTS, os.path.join(IMAGES_DIR, "challenge_reliability.pdf"))
+	plot_study_curves(os.path.join(APP_DIR, STUDIES["challenge"]), "testing", CHALLENGE_AGENTS, os.path.join(IMAGES_DIR, "challenge_test_curves.pdf"))
 	write_cheetah_outputs(results["cheetah"], rows, entries)
 	print(f"Wrote {len(entries)} numbers and the tables to {GENERATED_DIR}")
 

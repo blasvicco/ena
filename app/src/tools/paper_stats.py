@@ -12,17 +12,23 @@ import numpy as np
 from scipy import optimize, stats
 
 # Statistical conventions, stated in the paper from these same constants (stats/* macros).
-
-
-# Statistical conventions, stated in the paper from these same constants (stats/* macros).
 ALPHA = 0.05
 POWER = 0.8
 CI_LEVEL = 0.95
 
 
-# Metrics shown as whole numbers with thousands separators; everything else to one decimal.
-# Metrics printed as whole numbers with thousands separators: step counts, and absolute forgetting (in return units).
-COUNT_METRICS = ("steps", "Steps", "candsteps", "forgetting")
+# Metrics printed as whole numbers with thousands separators: step counts, and returns and absolute forgetting in
+# HalfCheetah's return units (thousands, where a decimal adds nothing); everything else to one decimal.
+COUNT_METRICS = ("steps", "Steps", "candsteps", "forgetting", "return")
+# A true minus sign in text and in math mode alike (a bare "-" prints as a hyphen in text).
+MINUS = "\\ensuremath{-}"
+
+
+def signed(text: str) -> str:
+	"""Print a formatted number's leading minus as a true minus sign (and none on a value that rounds to zero)."""
+	if not text.startswith("-"):
+		return text
+	return MINUS + text[1:] if text.strip("-0.,") else text[1:]
 
 
 def format_value(value: float, metric_slug: str) -> str:
@@ -30,8 +36,8 @@ def format_value(value: float, metric_slug: str) -> str:
 	if value is None or (isinstance(value, float) and math.isnan(value)):
 		return "n/a"
 	if any(marker in metric_slug for marker in COUNT_METRICS):
-		return f"{value:,.0f}"
-	return f"{value:.1f}"
+		return signed(f"{value:,.0f}")
+	return signed(f"{value:.1f}")
 
 
 def format_p(p_value: float) -> str:
@@ -84,7 +90,7 @@ def welch_ci(sample_a: np.ndarray | list, sample_b: np.ndarray | list, level: fl
 
 
 def cohens_d(sample_a: np.ndarray | list, sample_b: np.ndarray | list) -> float:
-	"""Effect size of b over a: difference of means over the average of the two sample standard deviations."""
+	"""Effect size of b over a: difference of means over the root mean square of the two sample standard deviations."""
 	sample_a, sample_b = np.asarray(sample_a, dtype=float), np.asarray(sample_b, dtype=float)
 	if len(sample_a) < 2 or len(sample_b) < 2:
 		return float("nan")  # no spread from one replicate
@@ -142,6 +148,6 @@ def difference_entries(key: str, values_a: np.ndarray | list, values_b: np.ndarr
 		f"{key}/diff": ("+" if difference >= 0 else "") + format_value(difference, metric_slug),
 		f"{key}/ci/low": format_value(low, metric_slug),
 		f"{key}/ci/high": format_value(high, metric_slug),
-		f"{key}/d": "n/a" if math.isnan(effect) else f"{effect:.2f}",
+		f"{key}/d": "n/a" if math.isnan(effect) else signed(f"{effect:.2f}"),
 		f"{key}/nreq": "n/a" if needed is None else f"{needed:,}",
 	}

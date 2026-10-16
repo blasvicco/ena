@@ -96,6 +96,28 @@ def study_detection(study_dir: str) -> pd.DataFrame:
 	return pd.DataFrame(rows, columns=["agent", "exp", "phase", "env_id", "metric", "value"])
 
 
+def _majority(values: pd.Series) -> object:
+	"""The most frequent value of a series (None if it is empty)."""
+	return None if values.empty else values.mode().iloc[0]
+
+
+def majority_recognition(exp_dir: str, agent: str) -> pd.DataFrame:
+	"""Per test environment of one replicate: the training environment whose niche is mostly recognized there, and the gladiator label mostly played."""
+	# Each training environment's niche is the one the detector recognizes most often while training there; a test
+	# environment is "recognized as" the training environment of its most frequent niche ("unrecognized": mostly -1;
+	# "other": a niche no training environment owns). distinct: every training environment has its own niche.
+	training = pd.read_csv(os.path.join(exp_dir, f"live_training_{agent}.csv"))
+	testing = pd.read_csv(os.path.join(exp_dir, f"live_testing_{agent}.csv"))
+	niche_of = {env: _majority(phase["detected_env_id"][phase["detected_env_id"] >= 0]) for env, phase in training.groupby("env_id", sort=False)}
+	env_of = {niche: env for env, niche in niche_of.items() if niche is not None}
+	rows = []
+	for env, phase in testing.groupby("env_id", sort=False):
+		niche = _majority(phase["detected_env_id"])
+		recognized = "unrecognized" if niche == -1 else env_of.get(niche, "other")
+		rows.append({"env_id": env, "recognized": recognized, "played": _majority(phase["gladiator_env"]), "distinct": len(env_of) == len(niche_of)})
+	return pd.DataFrame(rows)
+
+
 def summarize(detection: pd.DataFrame) -> pd.DataFrame:
 	"""Mean, std and replicate count of each (agent, phase, env_id, metric); NaN values (no change) are not counted."""
 	keys = ["agent", "phase", "env_id", "metric"]

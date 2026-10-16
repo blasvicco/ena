@@ -38,6 +38,15 @@ from tools.early_stopping import StoppingRule
 NUM_EXPERIMENTS = 50
 # SAC-Discrete target entropy, as a share of the maximum log|A| (see build_agent and tools/sac_discrete_entropy_check.py).
 SAC_DISCRETE_TARGET_ENTROPY = 0.5
+# Each baseline's settings that differ from its class defaults (the paper reads both through tools/paper_config.py).
+# PPO: constant learning rate (Stable-Baselines3's PPO default), so in a non-stationary stream it keeps learning at
+# full rate in every environment and isn't told when training will end.
+# SAC-Discrete: target entropy 0.5 x log|A| instead of the paper's 0.98. With CartPole's 2 actions, 0.98 is almost the
+# maximum entropy, the policy can't reach it, and the temperature alpha grows without bound and play collapses to
+# random; 0.89, CleanRL's choice, diverges the same way; 0.5 stays bounded (measured by tools/sac_discrete_entropy_check.py).
+DQN_SETTINGS = {}
+PPO_SETTINGS = {"entropy_coef": 0.01, "anneal_lr": False}
+SAC_DISCRETE_SETTINGS = {"target_entropy_ratio": SAC_DISCRETE_TARGET_ENTROPY}
 # Anchored to this file's own location (one level up from src/), not the caller's cwd.
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cartpole_challenge_outputs")
 ENA_NAME = "ENA-Combined"
@@ -118,17 +127,11 @@ def build_agent(name: str, max_agent_threads: int) -> AAgent:
 	if name == ENA_NAME:
 		return build_ena_agent(next(row for row in ABLATION_VARIANTS if row["name"] == ENA_NAME), max_agent_threads)
 	if name == "DQN":
-		agent = DQNAgent(brain=mlp_brain, make_env=make_env)
+		agent = DQNAgent(brain=mlp_brain, make_env=make_env, **DQN_SETTINGS)
 	elif name == "PPO":
-		# Constant learning rate (Stable-Baselines3's PPO default): in a non-stationary stream PPO keeps
-		# learning at full rate in every environment and isn't told when training will end.
-		agent = PPOAgent(brain=ppo_actor_brain, critic_brain=ppo_critic_brain, make_env=make_env, entropy_coef=0.01, anneal_lr=False)
+		agent = PPOAgent(brain=ppo_actor_brain, critic_brain=ppo_critic_brain, make_env=make_env, **PPO_SETTINGS)
 	elif name == "SAC-Discrete":
-		# Target entropy 0.5 x log|A| instead of the paper's 0.98: with CartPole's 2 actions, 0.98 is almost
-		# the maximum entropy, the policy can't reach it, and the temperature alpha grows without bound
-		# and play collapses to random; 0.89, CleanRL's choice, diverges the same way; 0.5 stays bounded
-		# (measured by tools/sac_discrete_entropy_check.py).
-		agent = SACDiscreteAgent(brain=mlp_brain, make_env=make_env, target_entropy_ratio=SAC_DISCRETE_TARGET_ENTROPY)
+		agent = SACDiscreteAgent(brain=mlp_brain, make_env=make_env, **SAC_DISCRETE_SETTINGS)
 	elif name == "Random":
 		agent = RandomAgent(brain=None, make_env=make_env)
 	else:

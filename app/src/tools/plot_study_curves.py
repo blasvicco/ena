@@ -132,7 +132,7 @@ def plot(
 		half_step, text_offset = (bin_steps / 2, 0.005 * (matrix.index.max() - matrix.index.min())) if by_steps else (0.5, 4)
 		axis.fill_between(summary.index, summary["low"], summary["high"], color=SERIES_COLOR, alpha=0.18, linewidth=0, label="Middle 50% of runs")
 		axis.plot(summary.index, summary["mean"], color=SERIES_COLOR, linewidth=2, label="Mean over runs")
-		axis.axhline(mastery_score, color=GUIDE_COLOR, linestyle=":", linewidth=1, label=f"Mastery ({mastery_score:.0f})")
+		axis.axhline(mastery_score, color=GUIDE_COLOR, linestyle=":", linewidth=1, label=f"Threshold ({mastery_score:.0f})")
 		for index, (start, env_name) in enumerate(phase_boundaries(matrix.attrs["env_ids"])):
 			if index:
 				axis.axvline(start - half_step, color=GUIDE_COLOR, linestyle="--", linewidth=1)

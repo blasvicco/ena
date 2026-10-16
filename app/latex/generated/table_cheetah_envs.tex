@@ -3,17 +3,20 @@
 \caption{HalfCheetah Environments}
 \begin{center}
 \footnotesize
-\begin{tabular}{|l|c|c|c|c|}
+\setlength{\tabcolsep}{3pt}
+\begin{adjustbox}{max width=\columnwidth}
+\begin{tabular}{|l|c|c|c|c|c|}
 \hline
-\textbf{Environment} & \textbf{$g$ (m/s$^2$)} & \textbf{Friction} & \textbf{Wind (m/s)} & \textbf{Seen} \\
+\textbf{Environment} & \textbf{$g$ (m/s$^2$)} & \textbf{Friction} & \textbf{Wind (m/s)} & \textbf{Air (kg/m$^3$)} & \textbf{Seen} \\
 \hline
-Earth-Standard & 9.8 & 0.4 & -5 & yes \\
-Heavy-Rough & 14.7 & 1 & 0 & yes \\
-Mars-Slippery & 3.7 & 0.2 & 0 & yes \\
-Ice-Floor & 9.8 & 0.05 & 0 & no \\
-High-Wind & 9.8 & 0.4 & -20 & no \\
+Earth-Standard & 9.8 & 0.4 & \ensuremath{-}5 & 1.2 & yes \\
+Heavy-Rough & 14.7 & 1 & 0 & 0 & yes \\
+Mars-Slippery & 3.7 & 0.2 & 0 & 0 & yes \\
+Ice-Floor & 9.8 & 0.05 & 0 & 0 & no \\
+High-Wind & 9.8 & 0.4 & \ensuremath{-}20 & 1.2 & no \\
 \hline
 \end{tabular}
+\end{adjustbox}
 \label{tab:cheetah_worlds}
 \end{center}
 \end{table}

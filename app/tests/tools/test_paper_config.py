@@ -10,10 +10,24 @@ import pytest
 from helpers import step
 import cartpole_challenge
 import cartpole_ena_ablation
-from tools.paper_config import _number, cartpole_rows, cheetah_rows, config_entries, environment_table, chirp_entries
+from agents import SACDiscreteAgent
+from tools.paper_config import _number, agent_settings, cartpole_rows, cheetah_rows, config_entries, environment_table, chirp_entries
+from tools.paper_stats import MINUS
 
 
-@pytest.mark.parametrize("value, expected", [(2_500_000, "2,500,000"), (475.0, "475"), (0.05, "0.05"), (2.5, "2.5"), (3.0, "3")])
+@pytest.mark.parametrize(
+	"value, expected",
+	[
+		(2_500_000, "2,500,000"),
+		(475.0, "475"),
+		(0.05, "0.05"),
+		(2.5, "2.5"),
+		(3.0, "3"),
+		(-20.0, f"{MINUS}20"),
+		(3e-4, "$3\\times10^{-4}$"),
+		(2.0633e-5, "$2.0633\\times10^{-5}$"),
+	],
+)
 def test_number_prints_integers_with_separators_and_decimals_short(value, expected) -> None:
 	"""Settings read the way the paper writes them."""
 	with step("Act/Assert: formatted value."):
@@ -33,6 +47,11 @@ def test_config_entries_read_the_settings_the_studies_use() -> None:
 		assert entries["cfg/ena/detect/gammaexp"] == "8"
 		assert entries["cfg/ena/bpr/mix"] == "0.95"
 		assert (entries["cfg/ena/fuzzy/trendrecent"], entries["cfg/ena/fuzzy/trendbefore"], entries["cfg/ena/fuzzy/trendmin"]) == ("5", "45", "20")
+		assert entries["cfg/ena/brain"] == "4 $\\times$ 2 ReLU" and entries["cfg/cheetahena/brain"] == "32 $\\times$ 16 tanh"
+		assert entries["cfg/challenge/mlpnet"] == "64 $\\times$ 64 ReLU" and entries["cfg/challenge/pponet"] == "64 $\\times$ 64 tanh"
+		assert entries["cfg/ppo/entropycoef"] == "0.01" and entries["cfg/ppo/anneallr"] == "no"
+		assert entries["cfg/sacdiscrete/targetentropyratio"] == f"{cartpole_challenge.SAC_DISCRETE_TARGET_ENTROPY:g}"
+		assert entries["cfg/cheetahena/olympicsinterval"] == "200,000"
 		assert all(value for value in entries.values())
 
 
@@ -50,13 +69,14 @@ def test_cartpole_rows_list_training_worlds_as_seen_and_test_only_worlds_as_unse
 
 
 def test_cheetah_rows_come_from_the_study_worlds() -> None:
-	"""Three training worlds then the two never-trained ones, wind's head component included."""
+	"""Three training worlds then the two never-trained ones, wind's head component and air density included."""
 	with step("Act: build the rows."):
 		rows = cheetah_rows()
 
-	with step("Assert: five rows; High-Wind blows at -20 m/s and is unseen."):
+	with step("Assert: five rows; High-Wind blows at -20 m/s through air and is unseen; Ice-Floor has no air."):
 		assert len(rows) == 5
-		assert rows[-1][0] == "High-Wind" and rows[-1][3] == "-20" and rows[-1][4] == "no"
+		assert rows[-1][0] == "High-Wind" and rows[-1][3] == f"{MINUS}20" and rows[-1][4] == "1.2" and rows[-1][5] == "no"
+		assert rows[3][0] == "Ice-Floor" and rows[3][3:5] == ["0", "0"]
 
 
 def test_environment_table_has_a_header_one_row_per_environment_and_the_label() -> None:
@@ -87,3 +107,14 @@ def test_chirp_entries_read_the_halfcheetah_detector_and_benchmark() -> None:
 		assert (entries["cfg/detbench/seeds"], entries["cfg/detbench/selectionseeds"], entries["cfg/detbench/confirmseeds"]) == ("30", "5", "30")
 		assert (entries["cfg/detbench/seedfirst"], entries["cfg/detbench/seedlast"]) == ("5", "34")
 		assert (entries["cfg/detbench/confirmfirst"], entries["cfg/detbench/confirmlast"]) == ("35", "64")
+
+
+def test_agent_settings_read_the_class_defaults_and_the_study_overrides() -> None:
+	"""Every keyword setting of the class, the study's override winning; keys without underscores, flags as yes/no."""
+	with step("Act: SAC-Discrete's settings with one override."):
+		entries = agent_settings("sacd", SACDiscreteAgent, {"target_entropy_ratio": 0.5})
+
+	with step("Assert: the override, a class default, and no key with an underscore."):
+		assert entries["cfg/sacd/targetentropyratio"] == "0.5"
+		assert entries["cfg/sacd/batchsize"] == "64" and entries["cfg/sacd/learningstarts"] == "1,000"
+		assert not any("_" in key for key in entries)
