@@ -539,8 +539,7 @@ def chirp_ablation_table(grid: pd.DataFrame, chosen: tuple) -> str:
 		lines.append(f"{excitation_name(excitation)} & " + " & ".join(cells) + " \\\\")
 	lines.append("\\hline")
 	return latex_table(
-		f"Chirp detector ablation on the HalfCheetah detection benchmark: benchmark seeds (of {seeds}) on which an excitation and "
-		"response features catch both switches, confirm no false change and give each environment its own niche",
+		f"Chirp Detector Ablation ({seeds} Seeds)",
 		"tab:chirp_ablation",
 		f"|l|{'c|' * len(table.columns)}",
 		lines,
@@ -717,7 +716,7 @@ def write_cheetah_outputs(results: dict, rows: pd.DataFrame, entries: dict) -> N
 			"Test",
 			CHEETAH_AGENTS,
 			cheetah_columns,
-			f"HalfCheetah comparison, frozen test: mean return per environment ({entries['cheetah/n']} replicates)",
+			f"HalfCheetah Comparison: Frozen Test ({entries['cheetah/n']} Replicates)",
 			"tab:cheetah_test",
 		),
 	)
@@ -729,9 +728,7 @@ def write_cheetah_outputs(results: dict, rows: pd.DataFrame, entries: dict) -> N
 			CHEETAH_LEFT_BEHIND,
 			CHEETAH_AGENTS,
 			minutes,
-			f"HalfCheetah comparison: end-of-phase and test return, retention and absolute forgetting (end $-$ test) of the "
-			f"environments left behind, and "
-			f"wall-clock training time ({entries['cheetah/n']} replicates)",
+			f"HalfCheetah Comparison: Retention of the Environments Left Behind ({entries['cheetah/n']} Replicates)",
 			"tab:cheetah_retention",
 		),
 	)
@@ -785,10 +782,7 @@ def ablation_family_table(entries: dict) -> str:
 		(", ".join(sorted(variant_skills(with_b) - variant_skills(base))), base, f"ablation/{base}-vs-{with_b}/test/rel")
 		for base, with_b in ABLATION_FAMILY
 	]
-	caption = (
-		f"Skill ablation: the {len(ABLATION_FAMILY)} planned comparisons of test reliability (difference in points), "
-		f"one Holm family ({entries['ablation/n']} replicates)"
-	)
+	caption = f"Skill Ablation: Planned Comparisons ({entries['ablation/n']} Replicates)"
 	return comparison_table(entries, rows, ["Skill added", "To"], caption, "tab:ablation_family")
 
 
@@ -800,7 +794,7 @@ def controller_table(entries: dict) -> str:
 		for alternative in CONTROLLER_ALTERNATIVES
 		for name, path in metrics
 	]
-	caption = f"Each Plasticity controller against the linear ramp ({entries['controller/n']} replicates); each metric is one Holm family"
+	caption = f"Plasticity Controllers Against the Linear Ramp ({entries['controller/n']} Replicates)"
 	return comparison_table(entries, rows, ["Controller", "Metric"], caption, "tab:controller")
 
 
@@ -831,16 +825,13 @@ def detection_outputs() -> tuple:
 	"""Recognition numbers (macros) and tables of the ablation's and HalfCheetah's environment detection, and the recognition counts."""
 	entries, tables = {}, {}
 	for study, label, caption in (
-		("ablation", "tab:detection", "Environment recognition per phase in the skill ablation"),
-		("cheetah", "tab:cheetah_detection", "Environment recognition per phase by ENA-Combined's chirp on HalfCheetah"),
+		("ablation", "tab:detection", "Environment Recognition in the Skill Ablation"),
+		("cheetah", "tab:cheetah_detection", "Environment Recognition on HalfCheetah"),
 	):
 		detection = study_detection(os.path.join(APP_DIR, STUDIES[study]))
 		summary = summarize_detection(detection)
 		entries.update({**detection_entries(study, summary), **detection_total_entries(study, detection)})
-		caption += (
-			f" ({detection['exp'].nunique()} replicates): unrecognized episodes, confirmed changes, episodes into the phase of the first one, "
-			"and Hall of Fame niches per training environment"
-		)
+		caption += f" ({detection['exp'].nunique()} Replicates)"
 		tables[f"table_{label.split(':')[1]}.tex"] = detection_table(
 			summary, [agent for agent in ABLATION_AGENTS if agent in set(summary["agent"])], caption, label
 		)
@@ -853,10 +844,7 @@ def ablation_retention() -> tuple:
 	"""The ablation variants' end of phase, test return, retention and forgetting per training environment (descriptive), and its table."""
 	agents, left_behind = ABLATION_AGENTS[1:], CARTPOLE_TRAIN_ENVS[:-1]
 	rows = retention_rows(os.path.join(APP_DIR, STUDIES["ablation"]), agents, CARTPOLE_TRAIN_ENVS, last_episodes=ABLATION_END_OF_PHASE_EPISODES)
-	caption = (
-		f"Skill ablation: return at the end of each training phase (its last {ABLATION_END_OF_PHASE_EPISODES} episodes) and at test, "
-		f"retention and absolute forgetting (end $-$ test) of the environments left behind ({rows['Exp'].nunique()} replicates)"
-	)
+	caption = f"Skill Ablation: Retention of the Environments Left Behind ({rows['Exp'].nunique()} Replicates)"
 	return retention_entries("ablation", rows, left_behind), retention_table(rows, left_behind, agents, None, caption, "tab:ablation_retention")
 
 
@@ -894,7 +882,7 @@ def main() -> None:
 				"Test",
 				ABLATION_AGENTS,
 				test_columns,
-				f"Skill ablation, frozen test: mean return per environment and reliability ({entries['ablation/n']} replicates)",
+				f"Skill Ablation: Frozen Test ({entries['ablation/n']} Replicates)",
 				"tab:ablation_test",
 			),
 			"table_challenge_test.tex": results_table(
@@ -903,7 +891,7 @@ def main() -> None:
 				"Test",
 				CHALLENGE_AGENTS,
 				test_columns,
-				f"CartPole comparison, frozen test ({entries['challenge/n']} replicates)",
+				f"CartPole Comparison: Frozen Test ({entries['challenge/n']} Replicates)",
 				"tab:challenge_test",
 			),
 			"table_challenge_adapt.tex": results_table(
@@ -912,7 +900,7 @@ def main() -> None:
 				"Adaptation",
 				CHALLENGE_AGENTS,
 				adapt_columns,
-				f"CartPole comparison: training steps to first solve per environment ({entries['challenge/n']} replicates)",
+				f"CartPole Comparison: Training Steps to First Solve ({entries['challenge/n']} Replicates)",
 				"tab:challenge_adapt",
 			),
 			"table_selection_test.tex": results_table(
@@ -921,8 +909,7 @@ def main() -> None:
 				"Test",
 				[SELECTION_REFERENCE] + SELECTION_AGENTS,
 				test_columns,
-				f"Selection ablation, frozen test: ENA-Combined (Bayesian policy reuse) and the same agents with simpler test-time selection "
-				f"({entries['selection/n']} replicates)",
+				f"Selection Ablation: Frozen Test ({entries['selection/n']} Replicates)",
 				"tab:selection_test",
 			),
 			"table_cartpole_envs.tex": environment_table(

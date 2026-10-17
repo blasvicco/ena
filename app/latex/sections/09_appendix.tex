@@ -12,13 +12,16 @@ ENA reads two constants from each task's Gymnasium registration: the episode tim
 
 \subsection{Environment detection}
 \label{sec:appendix_detection}
-The detector's input is the sequence of transitions $(s_t, a_t, s_{t+1})$: the observation before acting, the action taken, and the observation after. This is exactly what the agent sees. The detector does not read the reward, the physical parameters or the environment's name. A change of physics changes how the observed velocities evolve, so the current niche's dynamics model~\eqref{eq:dynamics} predicts the new transitions worse. In the ablation, changes between the training environments are detected almost immediately and almost without error (Table~\ref{tab:detection}). Recognition is weaker in three cases:
+The detector's input is the sequence of transitions $(s_t, a_t, s_{t+1})$: the observation before acting, the action taken, and the observation after. This is exactly what the agent sees. The detector does not read the reward, the physical parameters or the environment's name. A change of physics changes how the observed velocities evolve, so the current niche's dynamics model~\eqref{eq:dynamics} predicts the new transitions worse. In the ablation, changes between the training environments are detected almost immediately and almost without error (Table~\ref{tab:detection}).
+
+At test, the detector is frozen and creates no niches. Physics close to a known niche are recognized as that niche. The detector does not need to name an environment, only to find the closest physics it knows. Neptune's physics, for instance, are recognized as Earth's in \Res{ablation/ENA-Combined/recog/Neptune/Earth-Standard} of the \Res{ablation/n} replicates. When no niche explains the transitions within the margin $m$, the episode is left unrecognized, and no niche is assigned. The selection~\eqref{eq:bpr} still weighs every niche by how well its dynamics model explains the episode, so it falls back on the niches whose models explain the episode best.
+
+Recognition is weaker in two cases:
 \begin{itemize}
-\item \textit{Physics never seen in training.} At test, the detector is frozen and creates no niches. When no niche explains the transitions within the margin $m$, the episode is left unrecognized, and no niche is assigned. The selection~\eqref{eq:bpr} still weighs every niche by how well its dynamics model explains the episode, so it falls back on the niches whose models explain the episode best. Physics close to a known niche can be recognized as that niche. Neptune's physics, for instance, are recognized as Earth's in \Res{ablation/ENA-Combined/recog/Neptune/Earth-Standard} of the \Res{ablation/n} replicates.
 \item \textit{False alarms.} In a test phase, every confirmed change except the first one after a switch is a false alarm. In physics near the margin $m$, the detector can alternate between recognizing a niche and leaving the physics unrecognized. Each confirmation resets the selection's belief to uniform.
 \item \textit{Fragmentation.} In some replicates, one training environment is split over two niches.
 \end{itemize}
-Table~\ref{tab:detection} gives these numbers for the two ablation variants with environment detection. Every phase except the run's first follows a real switch. At most one confirmed change per phase is therefore a detection, and the rest are false alarms. The first training phase, Mars, starts with no niche at all. The detector is also reset when the test begins, so the test's Mars phase starts without a current niche, like the run's first. The Brown-dwarf phase is mostly left unrecognized. After it, the detector recognizes Earth by identification, without confirming a change, and Earth shows zero confirmed changes at test.
+Table~\ref{tab:detection} gives these numbers for the two ablation variants with environment detection. For each phase, it lists the share of unrecognized episodes, the confirmed changes and the episode of the first one. For each training environment, it lists the Hall of Fame niches. Every phase except the run's first follows a real switch. At most one confirmed change per phase is therefore a detection, and the rest are false alarms. The first training phase, Mars, starts with no niche at all. The detector is also reset when the test begins, so the test's Mars phase starts without a current niche, like the run's first. The Brown-dwarf phase is mostly left unrecognized. After it, the detector recognizes Earth by identification, without confirming a change, and Earth shows zero confirmed changes at test.
 
 \input{generated/table_detection}
 
@@ -37,8 +40,12 @@ The first-solve checks (Section~\ref{sec:forgetting_protocol}) run on a separate
 
 All settings are read directly from the code the studies ran, by \texttt{src/tools/paper\_config.py}. Each value is an agent's class default, unless its study script overrides it. The values here therefore cannot drift from the code.
 
+Table~\ref{tab:hparams_ena_cartpole} gives the settings of ENA-Combined, as built by \texttt{cartpole\_ena\_ablation.py}. All six ablation variants share them, with the relevant skills switched on or off. Table~\ref{tab:hparams_ena_cheetah} lists only the settings that differ on HalfCheetah, set in \texttt{half\_cheetah.py}.
+
+On HalfCheetah, PPO and SAC take the settings of RL Baselines3 Zoo~\cite{raffin2020rlzoo} (Table~\ref{tab:hparams_cheetah_baselines}). Both have a separate actor and critic. PPO normalizes observations, and scales rewards by the standard deviation of the return. Two settings deviate from the zoo. PPO's learning rate is not annealed, because annealing it to zero would freeze PPO in its last environment. SAC applies its gradient steps in groups of \Res{cfg/cheetahsac/gradientsteps} every \Res{cfg/cheetahsac/updatefrequency} environment steps, for speed, which keeps the zoo's ratio of one per step.
+
 \begin{table}[htbp]
-\caption{ENA hyperparameters (CartPole studies). These are the settings of ENA-Combined as built by \texttt{cartpole\_ena\_ablation.py}; all six ablation variants share them, with the relevant skills switched on or off.}
+\caption{ENA Hyperparameters (CartPole)}
 \begin{center}\footnotesize
 \begin{adjustbox}{max width=\columnwidth}
 \begin{tabular}{|l|r|l|r|}
@@ -70,7 +77,7 @@ BPR prior strength & \Res{cfg/ena/bpr/prior} & BPR prior own / other niche & \Re
 \end{table}
 
 \begin{table}[htbp]
-\caption{ENA hyperparameters that differ from the CartPole settings (\texttt{half\_cheetah.py}); all other ENA settings are as in Table~\ref{tab:hparams_ena_cartpole}.}
+\caption{ENA Hyperparameters That Differ on HalfCheetah}
 \begin{center}\footnotesize
 \begin{adjustbox}{max width=\columnwidth}
 \begin{tabular}{|l|r|l|r|}
@@ -94,7 +101,7 @@ Chirp confirm margin & \Res{cfg/cheetah/chirp/margin} & & \\
 \end{table}
 
 \begin{table}[htbp]
-\caption{DQN hyperparameters (CartPole comparison). Network: \Res{cfg/challenge/mlpnet} MLP.}
+\caption{DQN Hyperparameters (CartPole)}
 \begin{center}\footnotesize
 \begin{adjustbox}{max width=\columnwidth}
 \begin{tabular}{|l|r|l|r|}
@@ -105,7 +112,7 @@ Learning rate & \Res{cfg/dqn/learningrate} & Discount $\gamma$ & \Res{cfg/dqn/ga
 Batch size & \Res{cfg/dqn/batchsize} & Replay buffer & \Res{cfg/dqn/buffersize} \\
 $\varepsilon$ start / end & \Res{cfg/dqn/epsilonstart} / \Res{cfg/dqn/epsilonend} & $\varepsilon$ decay steps & \Res{cfg/dqn/epsilondecaysteps} \\
 Target network update (steps) & \Res{cfg/dqn/targetupdatefreq} & Learning starts (steps) & \Res{cfg/dqn/learningstarts} \\
-Update every (steps) & \Res{cfg/dqn/trainfreq} & & \\
+Update every (steps) & \Res{cfg/dqn/trainfreq} & Network & \Res{cfg/challenge/mlpnet} \\
 \hline
 \end{tabular}
 \end{adjustbox}
@@ -114,7 +121,7 @@ Update every (steps) & \Res{cfg/dqn/trainfreq} & & \\
 \end{table}
 
 \begin{table}[htbp]
-\caption{PPO hyperparameters (CartPole comparison). Networks: separate \Res{cfg/challenge/pponet} actor and critic with orthogonal initialization; no observation or reward normalization.}
+\caption{PPO Hyperparameters (CartPole)}
 \begin{center}\footnotesize
 \begin{adjustbox}{max width=\columnwidth}
 \begin{tabular}{|l|r|l|r|}
@@ -126,7 +133,8 @@ Steps per update & \Res{cfg/ppo/nsteps} & Batch size & \Res{cfg/ppo/batchsize} \
 Epochs per update & \Res{cfg/ppo/nepochs} & Discount $\gamma$ & \Res{cfg/ppo/gamma} \\
 GAE $\lambda$ & \Res{cfg/ppo/gaelambda} & Clip ratio & \Res{cfg/ppo/clipratio} \\
 Entropy coefficient & \Res{cfg/ppo/entropycoef} & Value coefficient & \Res{cfg/ppo/valuecoef} \\
-Max grad norm & \Res{cfg/ppo/maxgradnorm} & & \\
+Max grad norm & \Res{cfg/ppo/maxgradnorm} & Actor / critic & \Res{cfg/challenge/pponet} \\
+Initialization & orthogonal & Normalization & none \\
 \hline
 \end{tabular}
 \end{adjustbox}
@@ -135,7 +143,7 @@ Max grad norm & \Res{cfg/ppo/maxgradnorm} & & \\
 \end{table}
 
 \begin{table}[htbp]
-\caption{SAC-Discrete hyperparameters (CartPole comparison). Networks: \Res{cfg/challenge/mlpnet} MLPs for the actor and the twin critics.}
+\caption{SAC-Discrete Hyperparameters (CartPole)}
 \begin{center}\footnotesize
 \begin{adjustbox}{max width=\columnwidth}
 \begin{tabular}{|l|r|l|r|}
@@ -146,6 +154,7 @@ Learning rate & \Res{cfg/sacdiscrete/learningrate} & Discount $\gamma$ & \Res{cf
 Batch size & \Res{cfg/sacdiscrete/batchsize} & Replay buffer & \Res{cfg/sacdiscrete/buffercapacity} \\
 Learning starts (steps) & \Res{cfg/sacdiscrete/learningstarts} & Update every (steps) & \Res{cfg/sacdiscrete/trainfreq} \\
 Target update $\tau$ & \Res{cfg/sacdiscrete/tau} & Target entropy & \Res{cfg/sacdiscrete/targetentropyratio}\,$\times\,\log|\mathcal{A}|$ \\
+Actor / twin critics & \Res{cfg/challenge/mlpnet} & & \\
 \hline
 \end{tabular}
 \end{adjustbox}
@@ -154,13 +163,14 @@ Target update $\tau$ & \Res{cfg/sacdiscrete/tau} & Target entropy & \Res{cfg/sac
 \end{table}
 
 \begin{table}[htbp]
-\caption{PPO and SAC hyperparameters (HalfCheetah comparison), from RL Baselines3 Zoo~\cite{raffin2020rlzoo}. Networks: \Res{cfg/cheetah/baselinenet} MLPs, separate actor and critic for both. PPO normalizes observations and scales rewards by the standard deviation of the return; the temperature of SAC is tuned automatically toward an entropy of $-\dim\mathcal{A}$. Deviations from the zoo, both forced by the non-stationary stream or the shared runner: PPO's learning rate is not annealed, and SAC applies its gradient steps in groups every \Res{cfg/cheetahsac/updatefrequency} environment steps, at the zoo's ratio of one per step.}
+\caption{PPO and SAC Hyperparameters (HalfCheetah)}
 \begin{center}\footnotesize
 \begin{adjustbox}{max width=\columnwidth}
 \begin{tabular}{|l|r|r|}
 \hline
 \textbf{Parameter} & \textbf{PPO} & \textbf{SAC} \\
 \hline
+Actor / critic & \Res{cfg/cheetah/baselinenet} & \Res{cfg/cheetah/baselinenet} \\
 Learning rate & \Res{cfg/cheetahppo/learningrate} & \Res{cfg/cheetahsac/learningrate} \\
 Discount $\gamma$ & \Res{cfg/cheetahppo/gamma} & \Res{cfg/cheetahsac/gamma} \\
 Batch size & \Res{cfg/cheetahppo/batchsize} & \Res{cfg/cheetahsac/batchsize} \\
