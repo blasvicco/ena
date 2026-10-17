@@ -9,6 +9,10 @@
 #         <study>/<agent>/<phase>/<metric>/mean|std   phase: train, test, compute, adapt
 #         <study>/<agent>/time/min/mean|std           wall-clock training time, minutes
 #         <study>/<A>-vs-<B>/<phase>/<metric>/p|diff  Welch's t-test p-value and mean(B) - mean(A)
+#         challenge/<agent>/adapt/<env>:steps/q1|median|q3|unsolved  steps to first solve: quartiles, replicates never solving
+#         challenge/<B>-vs-ENA-Combined/adapt/<env>:steps/p  Mann-Whitney U test p-value on steps to first solve
+#         <study>/<agent>/test/trainrel/mean|std      CartPole: test reliability on the training environments alone
+#         cheetah/archived/ENA-Combined/...|n         retention keys against the gladiators' end-of-phase episodes only
 #         <study>/<agent>/end|retention/<env>/mean|std  end of phase (last 10% of the phase), retention (%)
 #         <study>/<agent>/retention/left/mean|std     retention over the environments left behind
 #         <study>/<B>-vs-<agent>/retention/left/p|pholm|diff|ci/low|ci/high|d|nreq
@@ -27,6 +31,7 @@
 #         python src/tools/paper_results.py
 
 # General imports
+import functools
 import math
 import os
 import re
@@ -40,16 +45,25 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # App imports
 # pylint: disable=wrong-import-position
-from cartpole_ena_ablation import ABLATION_VARIANTS, SEED_OFFSET, TRAINING_EPISODES_ENA, make_training_worlds, make_unseen_worlds
+from cartpole_ena_ablation import (
+	ABLATION_VARIANTS,
+	SEED_OFFSET,
+	SUCCESS_THRESHOLD,
+	TRAINING_EPISODES_ENA,
+	make_training_worlds,
+	make_unseen_worlds,
+)
 from cartpole_ena_compute import REFERENCES as COMPUTE_REFERENCES
 from half_cheetah import SOLVED_SCORE as CHEETAH_SOLVED, Y_LIM as CHEETAH_Y_LIM, build_ena_agent as build_cheetah_ena
 from tools.aggregate_metrics import collect_results
+from tools.cartpole_results import TRAINING_RELIABILITY, add_training_reliability, first_solve_entries
 from tools.replicates import get_experiment_directories
 from tools.cheetah_results import (
 	CHEETAH_AGENTS,
 	CHEETAH_ENVS,
 	CHEETAH_LEFT_BEHIND,
 	CHEETAH_TRAIN_ENVS,
+	archived_reference_entries,
 	forgetting_comparisons,
 	hardware_entries,
 	retention_comparisons,
@@ -72,6 +86,9 @@ from tools.paper_stats import (
 	format_value,
 	holm,
 	mcnemar_p,
+	mean_cell,
+	mean_std_cell,
+	median_iqr_cell,
 	p_macro,
 	welch_p,
 )
@@ -79,7 +96,9 @@ from tools.paper_config import cartpole_rows, cheetah_rows, config_entries, envi
 from tools.sac_discrete_entropy_check import OUTPUT_DIR as SACD_DIR
 from tools.selection_results import (
 	SELECTION_AGENTS,
+	SELECTION_DESCRIPTIVE,
 	SELECTION_FAMILY,
+	SELECTION_NO_ARCHIVE,
 	SELECTION_REFERENCE,
 	paired_count_entries,
 	played_entries,
@@ -92,6 +111,7 @@ IMAGES_DIR = os.path.join(APP_DIR, "latex", "images")
 PHASE_KEYS = {"Training": "train", "Test": "test", "Compute Cost": "compute", "Adaptation": "adapt"}
 METRIC_SLUGS = {
 	"Reliability (%)": "rel",
+	TRAINING_RELIABILITY: "trainrel",
 	"Stability Gap (↓)": "gap",
 	"Efficiency (Score/s)": "eff",
 	"Total Candidate Env-Steps": "candsteps",
@@ -404,21 +424,15 @@ def write_macros(entries: dict, path: str) -> None:
 
 # pylint: disable=too-many-arguments,too-many-positional-arguments
 def results_table(study: str, results: dict, phase: str, agents: list, columns: list, caption: str, label: str) -> str:
-	"""A LaTeX table of one study: one row per agent; columns are (metric, header, show_std) with the mean (± std) over replicates."""
+	"""A LaTeX table of one study: one row per agent; columns are (metric, header, cell style from paper_stats) over replicates."""
 	pooled = _pooled(results, phase)
 	lines = [
 		"\\hline",
-		"\\textbf{Agent} & " + " & ".join(f"\\textbf{{{header}}}" for _metric, header, _std in columns) + " \\\\",
+		"\\textbf{Agent} & " + " & ".join(f"\\textbf{{{header}}}" for _metric, header, _cell in columns) + " \\\\",
 		"\\hline",
 	]
 	for agent in agents:
-		cells = []
-		for metric, _header, show_std in columns:
-			values = _values(pooled, agent, metric)
-			cell = format_value(values.mean(), value_slug(study, metric))
-			if show_std and len(values) > 1:
-				cell += f" $\\pm$ {format_value(values.std(), value_slug(study, metric))}"
-			cells.append(cell)
+		cells = [cell(_values(pooled, agent, metric), value_slug(study, metric)) for metric, _header, cell in columns]
 		lines.append(f"{agent} & " + " & ".join(cells) + " \\\\")
 	lines.append("\\hline")
 	return latex_table(caption, label, f"|l|{'c|' * len(columns)}", lines, fit="column")
@@ -589,15 +603,22 @@ def study_comparisons(results: dict) -> dict:
 	entries.update(candidate_share_entries("challenge", results["challenge"], "ENA-Combined"))
 	# ENA-Combined against each baseline on test reliability: one Holm family.
 	entries.update(family_entries("challenge", results["challenge"], [(baseline, "ENA-Combined") for baseline in CHALLENGE_AGENTS[:-1]]))
-	adapt_metrics = [f"{env}:steps" for env in CARTPOLE_TRAIN_ENVS] + ["Train-Env-Steps"]
 	for baseline in CHALLENGE_AGENTS[:-1]:
-		for phase, metrics in (("Test", test_metrics), ("Adaptation", adapt_metrics)):
-			family = len(CHALLENGE_AGENTS) - 1 if phase == "Test" else 1
-			entries.update(
-				comparison_entries(
-					"challenge", results["challenge"], baseline, results["challenge"], "ENA-Combined", phase, metrics, alpha=ALPHA / family
-				)
+		entries.update(
+			comparison_entries(
+				"challenge",
+				results["challenge"],
+				baseline,
+				results["challenge"],
+				"ENA-Combined",
+				"Test",
+				test_metrics,
+				alpha=ALPHA / (len(CHALLENGE_AGENTS) - 1),
 			)
+		)
+	# Steps to first solve are heavy-tailed: medians and quartiles, and a rank test of ENA-Combined against each baseline.
+	adaptation = functools.partial(_values, _pooled(results["challenge"], "Adaptation"))
+	entries.update(first_solve_entries("challenge", adaptation, CHALLENGE_AGENTS, CARTPOLE_TRAIN_ENVS))
 	# ENA-Combined against each baseline on the test return per environment: a family of the two baselines.
 	for baseline in CHEETAH_AGENTS[:-1]:
 		entries.update(
@@ -636,7 +657,8 @@ def study_comparisons(results: dict) -> dict:
 def selection_comparisons(results: dict) -> dict:
 	"""Report the selection study's planned family, its per-environment differences and paired replicate counts."""
 	# The selection study's planned family (Holm over 2) on test reliability, per-environment differences (descriptive)
-	# and, per pair, how many replicates the second driver is lower or higher in.
+	# and, per pair, how many replicates the second driver is lower or higher in; then, exploratory, each simpler driver
+	# against no archive at all.
 	entries = family_entries("selection", results, SELECTION_FAMILY)
 	pooled = _pooled(results, "Test")
 	for agent_a, agent_b in SELECTION_FAMILY:
@@ -646,6 +668,8 @@ def selection_comparisons(results: dict) -> dict:
 			for agent in (agent_a, agent_b)
 		]
 		entries.update(paired_count_entries(f"selection/{agent_a}-vs-{agent_b}/test/rel", *by_replicate))
+	for agent_a, agent_b in SELECTION_DESCRIPTIVE:
+		entries.update(comparison_entries("selection", results, agent_a, results, agent_b, "Test", ["Reliability (%)"]))
 	return entries
 
 
@@ -655,6 +679,8 @@ def collect_studies() -> tuple:
 	for study, directory in STUDIES.items():
 		study_dir = os.path.join(APP_DIR, directory)
 		results[study] = collect_results(study_dir)
+		if study != "cheetah":
+			add_training_reliability(results[study], study_dir, CARTPOLE_TRAIN_ENVS, SUCCESS_THRESHOLD)
 		entries.update(summary_entries(study, results[study]))
 		entries.update(time_entries(study, study_dir))
 		entries.update(seed_entries(study, study_dir))
@@ -668,8 +694,9 @@ def collect_studies() -> tuple:
 		compute_ratio_entries(results["compute"], "ENA-Combined-PlasticityFull", COMPUTE_REFERENCES["linear_ramp"], COMPUTE_REFERENCES["zero"])
 	)
 	entries.update(compute_rank_entries(results["compute"], "ENA-Combined-PlasticityFull", results["ablation"], COMPUTE_REFERENCES["linear_ramp"]))
-	# The BPR reference is the ablation's ENA-Combined of the same replicates (identical training, only the test differs).
-	results["selection"] = with_reference_rows(results["selection"], results["ablation"], [SELECTION_REFERENCE])
+	# The BPR reference is the ablation's ENA-Combined of the same replicates (identical training, only the test differs);
+	# the no-archive reference, its ENA-Plasticity.
+	results["selection"] = with_reference_rows(results["selection"], results["ablation"], [SELECTION_REFERENCE, SELECTION_NO_ARCHIVE])
 	entries.update(summary_entries("selection", results["selection"]))
 	selection_dir, ablation_dir = os.path.join(APP_DIR, STUDIES["selection"]), os.path.join(APP_DIR, STUDIES["ablation"])
 	entries.update(training_identity_entries(selection_dir, ablation_dir))
@@ -694,12 +721,13 @@ def challenge_forgetting_entries() -> dict:
 
 
 def cheetah_retention_entries(rows: pd.DataFrame) -> dict:
-	"""HalfCheetah's retention and absolute forgetting per agent, and ENA-Combined against each baseline on both."""
+	"""HalfCheetah's retention and absolute forgetting per agent, ENA-Combined against each baseline on both, and ENA's archived reference."""
 	baselines = CHEETAH_AGENTS[:-1]
 	return {
 		**retention_entries("cheetah", rows, CHEETAH_LEFT_BEHIND),
 		**retention_comparisons("cheetah", rows, CHEETAH_LEFT_BEHIND, "ENA-Combined", baselines),
 		**forgetting_comparisons("cheetah", rows, CHEETAH_LEFT_BEHIND, "ENA-Combined", baselines),
+		**archived_reference_entries("cheetah", os.path.join(APP_DIR, STUDIES["cheetah"]), "ENA-Combined"),
 	}
 
 
@@ -707,7 +735,7 @@ def write_cheetah_outputs(results: dict, rows: pd.DataFrame, entries: dict) -> N
 	"""Write HalfCheetah's tables and figures."""
 	# HalfCheetah's tables (test return per environment; retention and training time) and figures (retention; training
 	# curves by env-steps; test curves).
-	cheetah_columns = [(f"{env} Avg", env.split("-", maxsplit=1)[0], True) for env in CHEETAH_ENVS]
+	cheetah_columns = [(f"{env} Avg", env.split("-", maxsplit=1)[0], mean_std_cell) for env in CHEETAH_ENVS]
 	_write(
 		os.path.join(GENERATED_DIR, "table_cheetah_test.tex"),
 		results_table(
@@ -869,8 +897,9 @@ def main() -> None:
 	ablation_forgetting, tables["table_ablation_retention.tex"] = ablation_retention()
 	entries.update(ablation_forgetting)
 
-	test_columns = [(f"{env} Avg", env.split("-", maxsplit=1)[0], False) for env in CARTPOLE_ENVS] + [("Reliability (%)", "Rel. (\\%)", True)]
-	adapt_columns = [(f"{env}:steps", env.split("-", maxsplit=1)[0], True) for env in CARTPOLE_TRAIN_ENVS]
+	test_columns = [(f"{env} Avg", env.split("-", maxsplit=1)[0], mean_cell) for env in CARTPOLE_ENVS]
+	test_columns += [("Reliability (%)", "Rel. (\\%)", mean_std_cell), (TRAINING_RELIABILITY, "Train rel. (\\%)", mean_cell)]
+	adapt_columns = [(f"{env}:steps", env.split("-", maxsplit=1)[0], median_iqr_cell) for env in CARTPOLE_TRAIN_ENVS]
 	tables.update(
 		{
 			"table_chirp_ablation.tex": chirp_ablation_table(grid, chosen),
@@ -900,7 +929,7 @@ def main() -> None:
 				"Adaptation",
 				CHALLENGE_AGENTS,
 				adapt_columns,
-				f"CartPole Comparison: Training Steps to First Solve ({entries['challenge/n']} Replicates)",
+				f"CartPole Comparison: Training Steps to First Solve, Median (IQR) ({entries['challenge/n']} Replicates)",
 				"tab:challenge_adapt",
 			),
 			"table_selection_test.tex": results_table(

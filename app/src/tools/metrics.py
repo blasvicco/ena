@@ -19,6 +19,11 @@ STABILITY_WINDOW = 20
 WINDOW_STEPS = 50_000  # per-run training curves on the step axis: moving window in env-steps (5% of a 1M phase)
 
 
+def reliability(scores: pd.Series, success_threshold: float) -> float:
+	"""Return the percentage of episodes whose return reaches the success threshold."""
+	return 100 * float((scores >= success_threshold).mean())
+
+
 def _qualitative_colors(count: int) -> list:
 	"""Return count visually distinct colors, scaling past any fixed palette size."""
 	cmap = plt.get_cmap("tab20" if count > 10 else "tab10")
@@ -71,9 +76,7 @@ def calculate_paper_metrics(
 		switches = dataframe[dataframe["env_id"].ne(dataframe["env_id"].shift())].index.tolist()
 
 		# 1. Reliability Metric: % of episodes above mastery threshold
-		total_episodes = len(dataframe)
-		successes = len(dataframe[dataframe["score"] >= success_threshold])
-		reliability = (successes / total_episodes) * 100
+		success_rate = reliability(dataframe["score"], success_threshold)
 
 		# 2. Performance per Environment (Dynamic for any number of worlds)
 		env_results = {}
@@ -96,7 +99,7 @@ def calculate_paper_metrics(
 		results = {
 			"Agent": name,
 			**{key: f"{value:.2f}" for key, value in env_results.items()},
-			"Reliability (%)": f"{reliability:.1f}%",
+			"Reliability (%)": f"{success_rate:.1f}%",
 			"Stability Gap (↓)": f"{stability_gap:.2f}",
 			"Efficiency (Score/s)": f"{efficiency:.2f}",
 		}

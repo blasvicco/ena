@@ -17,6 +17,10 @@ SELECTION_REFERENCE = "ENA-Combined"
 SELECTION_AGENTS = ["ENA-Combined-NicheMatch", "ENA-Combined-BestTrust"]
 # The planned family (Holm over 2): Q1 BPR vs. detector-only retrieval; Q2 detector-only vs. highest-trust retrieval.
 SELECTION_FAMILY = [(SELECTION_REFERENCE, SELECTION_AGENTS[0]), (SELECTION_AGENTS[0], SELECTION_AGENTS[1])]
+# Exploratory, outside the family: the archive with each simpler driver against no archive at all, the ablation's
+# ENA-Plasticity of the same replicates (same seeds).
+SELECTION_NO_ARCHIVE = "ENA-Plasticity"
+SELECTION_DESCRIPTIVE = [(SELECTION_NO_ARCHIVE, agent) for agent in SELECTION_AGENTS]
 
 
 def training_identity_entries(study_dir: str, reference_dir: str) -> dict:

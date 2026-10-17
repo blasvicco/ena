@@ -12,6 +12,7 @@ import pytest
 # App imports
 from helpers import step
 from tools.cheetah_results import (
+	archived_reference_entries,
 	end_of_phase,
 	forgetting_comparisons,
 	hardware_entries,
@@ -274,3 +275,42 @@ def test_the_analysis_follows_the_study_s_worlds_and_order() -> None:
 		assert CHEETAH_TRAIN_ENVS == [world.unwrapped.name for world in training]
 		assert CHEETAH_ENVS == [world.unwrapped.name for world in test]
 		assert CHEETAH_LEFT_BEHIND == ["Earth-Standard", "Heavy-Rough"]
+
+
+def _ena_replicate(exp_dir, training: dict, tests: dict) -> None:
+	"""Write one replicate's ENA-Combined episodes: training as (score, played by a gladiator) per environment, and test scores."""
+	exp_dir.mkdir(parents=True, exist_ok=True)
+	rows, steps = [], 0
+	for env, episodes in training.items():
+		for score, is_gladiator in episodes:
+			steps += 50_000
+			rows.append({"env_id": env, "env_steps": steps, "score": score, "is_gladiator": is_gladiator})
+	pd.DataFrame(rows).to_csv(exp_dir / "live_training_ENA-Combined.csv", index=False)
+	pd.DataFrame([{"env_id": env, "score": score} for env, score in tests.items()]).to_csv(exp_dir / "live_testing_ENA-Combined.csv", index=False)
+
+
+def test_archived_reference_averages_the_gladiators_end_of_phase_episodes_over_the_replicates_that_have_them(tmp_path) -> None:
+	"""ENA's archived reference keeps the end-of-phase window but only the gladiators' episodes; a replicate without one is left out."""
+	with step("Arrange: exp_1 has gladiator episodes at the end of both phases left behind; exp_2 has none at the end of Earth's."):
+		_ena_replicate(
+			tmp_path / "exp_1",
+			{"Earth-Standard": [(0, True), (1000, False), (2000, True)], "Heavy-Rough": [(500, False), (1000, True)]},
+			{"Earth-Standard": 2000, "Heavy-Rough": 1000},
+		)
+		_ena_replicate(
+			tmp_path / "exp_2",
+			{"Earth-Standard": [(3000, True), (1000, False), (1000, False)], "Heavy-Rough": [(1000, True)]},
+			{"Earth-Standard": 1000, "Heavy-Rough": 1000},
+		)
+
+	with step("Act: the entries and the plain rows."):
+		entries = archived_reference_entries("cheetah", str(tmp_path), "ENA-Combined")
+		plain = retention_rows(str(tmp_path), ["ENA-Combined"], ["Earth-Standard"]).set_index("Exp")
+
+	with step("Assert: exp_1's Earth end of phase is its gladiator episode in the last 100k (2000), not the mean with the other (1500)."):
+		assert plain.loc["exp_1", "end"] == 1500.0
+		assert entries["cheetah/archived/ENA-Combined/end/Earth-Standard/mean"] == "2,000"
+		assert entries["cheetah/archived/ENA-Combined/retention/left/mean"] == "100.0"
+
+	with step("Assert: only exp_1 counts, since exp_2 has no gladiator episode at the end of Earth's phase."):
+		assert entries["cheetah/archived/n"] == "1"

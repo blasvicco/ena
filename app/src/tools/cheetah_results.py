@@ -2,8 +2,8 @@
 """HalfCheetah's paper results: end of phase, test return, retention and absolute forgetting, comparisons, hardware."""
 # HalfCheetah's results for the paper: per replicate, the end of each training phase (the training return over its last
 # 100k env-steps; the CartPole ablation's, over its last episodes), the test return there, and the retention and absolute
-# forgetting of the environments left behind; ENA against each baseline on both; the hardware the wall-clock times were
-# measured on; its table and figure.
+# forgetting of the environments left behind; ENA's retention against its gladiators' episodes only; ENA against each
+# baseline on both; the hardware the wall-clock times were measured on; its table and figure.
 # paper_results.py writes them.
 
 # General imports
@@ -39,19 +39,30 @@ def end_of_phase(training: pd.DataFrame, env: str, last_steps: int = END_OF_PHAS
 	return float(phase.loc[phase["env_steps"] > phase["env_steps"].max() - last_steps, "score"].mean())
 
 
+# pylint: disable=too-many-arguments
 def retention_rows(
-	study_dir: str, agents: list, train_envs: list, last_steps: int = END_OF_PHASE_STEPS, last_episodes: int | None = None
+	study_dir: str,
+	agents: list,
+	train_envs: list,
+	last_steps: int = END_OF_PHASE_STEPS,
+	last_episodes: int | None = None,
+	*,
+	archived_only: bool = False,
 ) -> pd.DataFrame:
 	"""Tabulate, per replicate, agent and training environment, the end of phase, test return, retention and drop."""
 	# Per replicate, agent and training environment: the end of its phase (end_of_phase over its last `last_steps`
 	# env-steps or `last_episodes` episodes, from the training episodes), the mean test return there, retention = test /
 	# end (%, none when the phase ended at or below zero: nothing learned to retain) and the drop, end - test. Any study
 	# whose replicates log the same live_training/live_testing CSVs can use it (the CartPole challenge and ablation do).
+	# archived_only (ENA) keeps the same window but averages only the episodes a gladiator played (is_gladiator); a
+	# window without one has no end of phase.
 	rows = []
 	for exp_dir in get_experiment_directories(study_dir):
 		for agent in agents:
 			training = pd.read_csv(os.path.join(study_dir, exp_dir, f"live_training_{agent}.csv"))
 			testing = pd.read_csv(os.path.join(study_dir, exp_dir, f"live_testing_{agent}.csv"))
+			if archived_only:
+				training["score"] = training["score"].where(training["is_gladiator"].astype(bool))
 			for env in train_envs:
 				end = end_of_phase(training, env, last_steps, last_episodes)
 				test = testing.loc[testing["env_id"] == env, "score"].mean()
@@ -90,6 +101,17 @@ def retention_entries(study: str, rows: pd.DataFrame, left_behind: list) -> dict
 		entries[f"{study}/{agent}/forgetting/left/mean"] = format_value(values.mean(), "return")
 		entries[f"{study}/{agent}/forgetting/left/std"] = format_value(values.std() if len(values) > 1 else float("nan"), "return")
 	return entries
+
+
+def archived_reference_entries(study: str, study_dir: str, agent: str) -> dict:
+	"""ENA's left-behind retention against its gladiators' end-of-phase episodes, over the replicates that have them."""
+	# The end of phase averages every training episode, including those in which ENA plays a specialist outside the Hall
+	# of Fame, such as the epsilon-greedy picks, while the test plays gladiators only. This reference keeps the episodes a
+	# gladiator played, over the replicates in which one played at the end of every phase left behind. Keys as
+	# retention_entries', under <study>/archived, and <study>/archived/n.
+	rows = retention_rows(study_dir, [agent], CHEETAH_LEFT_BEHIND, archived_only=True)
+	rows = rows[rows.groupby("Exp")["end"].transform("count") == len(CHEETAH_LEFT_BEHIND)]
+	return {**retention_entries(f"{study}/archived", rows, CHEETAH_LEFT_BEHIND), f"{study}/archived/n": str(rows["Exp"].nunique())}
 
 
 def retention_comparisons(study: str, rows: pd.DataFrame, left_behind: list, agent: str, baselines: list) -> dict:

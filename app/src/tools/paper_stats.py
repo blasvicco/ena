@@ -1,14 +1,16 @@
 #!/usr/bin/env python
 """The paper's statistical tests and number formatting, shared by every results generator."""
 # The paper's statistical tests and number formatting, shared by every results generator (paper_results.py and its
-# per-domain modules): Welch's t-test with its interval and effect size, power analysis, Holm's correction, exact tests
-# for pass rates, and how values and p-values are printed.
+# per-domain modules): Welch's t-test with its interval and effect size, the Mann-Whitney U test for heavy-tailed
+# metrics, power analysis, Holm's correction, exact tests for pass rates, and how values, p-values and table cells are
+# printed.
 
 # General imports
 import math
 
 # Libs imports
 import numpy as np
+import pandas as pd
 from scipy import optimize, stats
 
 # Statistical conventions, stated in the paper from these same constants (stats/* macros).
@@ -53,6 +55,29 @@ def p_macro(p_value: float) -> str:
 	return f"$p{p_text}$" if p_text.startswith("<") else f"$p={p_text}$"
 
 
+def quartiles(values: pd.Series) -> tuple:
+	"""The first quartile, median and third quartile of the values."""
+	return tuple(float(value) for value in values.quantile([0.25, 0.5, 0.75]))
+
+
+# A results table's cell styles: each prints one agent's per-replicate values of one metric.
+def mean_cell(values: pd.Series, metric_slug: str) -> str:
+	"""A table cell: the mean over replicates."""
+	return format_value(values.mean(), metric_slug)
+
+
+def mean_std_cell(values: pd.Series, metric_slug: str) -> str:
+	"""A table cell: the mean over replicates, with the standard deviation when there are several."""
+	spread = f" $\\pm$ {format_value(values.std(), metric_slug)}" if len(values) > 1 else ""
+	return mean_cell(values, metric_slug) + spread
+
+
+def median_iqr_cell(values: pd.Series, metric_slug: str) -> str:
+	"""A table cell: the median over replicates, with the interquartile range in parentheses on the line below."""
+	low, median, high = (format_value(value, metric_slug) for value in quartiles(values))
+	return f"\\begin{{tabular}}{{@{{}}c@{{}}}}{median}\\\\({low}--{high})\\end{{tabular}}"
+
+
 def clopper_pearson(passes: int, trials: int, level: float = CI_LEVEL) -> tuple:
 	"""Exact (Clopper-Pearson) two-sided confidence interval of a pass rate."""
 	tail = (1.0 - level) / 2.0
@@ -78,6 +103,16 @@ def welch_p(sample_a: np.ndarray | list, sample_b: np.ndarray | list) -> float:
 	if np.std(sample_a) == 0 and np.std(sample_b) == 0:
 		return 1.0 if np.mean(sample_a) == np.mean(sample_b) else 0.0
 	return float(stats.ttest_ind(sample_a, sample_b, equal_var=False).pvalue)
+
+
+def mann_whitney_p(sample_a: np.ndarray | list, sample_b: np.ndarray | list) -> float:
+	"""Two-sided Mann-Whitney U test p-value; 1.0 when every value is the same, NaN when either sample is empty."""
+	sample_a, sample_b = np.asarray(sample_a, dtype=float), np.asarray(sample_b, dtype=float)
+	if len(sample_a) == 0 or len(sample_b) == 0:
+		return float("nan")
+	if np.unique(np.concatenate([sample_a, sample_b])).size == 1:
+		return 1.0
+	return float(stats.mannwhitneyu(sample_a, sample_b, alternative="two-sided").pvalue)
 
 
 def welch_ci(sample_a: np.ndarray | list, sample_b: np.ndarray | list, level: float = CI_LEVEL) -> tuple:

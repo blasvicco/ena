@@ -11,12 +11,15 @@ import pytest
 from helpers import step
 from tools.paper_stats import (
 	ALPHA,
+	MINUS,
 	clopper_pearson,
 	cohens_d,
 	detectable_d,
 	format_p,
 	holm,
 	mcnemar_p,
+	mean_cell,
+	mean_std_cell,
 	replicates_for_power,
 	welch_ci,
 	welch_p,
@@ -169,7 +172,7 @@ def test_results_table_has_one_row_per_agent_with_mean_and_std() -> None:
 		)
 
 	with step("Act: build the table."):
-		columns = [("Mars-Light Avg", "Mars-Light", False), ("Reliability (%)", "Reliability (\\%)", True)]
+		columns = [("Mars-Light Avg", "Mars-Light", mean_cell), ("Reliability (%)", "Reliability (\\%)", mean_std_cell)]
 		table = results_table("ablation", results, "Test", ["ENA-Combined"], columns, caption="Test", label="tab:test")
 
 	with step("Assert: header, the row, the label, and a width cap so it never overflows the column."):
@@ -571,9 +574,10 @@ def test_cartpole_check_entries_count_the_seeds_passing() -> None:
 
 
 def test_selection_comparisons_give_the_planned_family_and_paired_counts() -> None:
-	"""Q1 (ENA-Combined vs. NicheMatch) and Q2 (NicheMatch vs. BestTrust): Holm over 2, and per pair the replicates lower/higher."""
-	with step("Arrange: 4 replicates; NicheMatch below ENA-Combined in 3 of them, BestTrust level with NicheMatch."):
+	"""Q1 (ENA-Combined vs. NicheMatch) and Q2 (NicheMatch vs. BestTrust): Holm over 2, per pair the replicates lower/higher; each vs. no archive."""
+	with step("Arrange: 4 replicates; NicheMatch below ENA-Combined in 3 of them, BestTrust level with NicheMatch, ENA-Plasticity 10 above both."):
 		reliability = {
+			"ENA-Plasticity": [60.0, 65.0, 55.0, 80.0],
 			"ENA-Combined": [90.0, 85.0, 80.0, 60.0],
 			"ENA-Combined-NicheMatch": [50.0, 55.0, 45.0, 70.0],
 			"ENA-Combined-BestTrust": [50.0, 55.0, 45.0, 70.0],
@@ -598,6 +602,11 @@ def test_selection_comparisons_give_the_planned_family_and_paired_counts() -> No
 		assert (entries[f"{first}/lower"], entries[f"{first}/higher"], entries[f"{first}/pairs"]) == ("3", "1", "4")
 		second = "selection/ENA-Combined-NicheMatch-vs-ENA-Combined-BestTrust/test/rel"
 		assert (entries[f"{second}/lower"], entries[f"{second}/higher"], entries[f"{second}/pairs"]) == ("0", "0", "4")
+
+	with step("Assert: each simpler driver against no archive (exploratory, uncorrected): 10 points below."):
+		for driver in ("ENA-Combined-NicheMatch", "ENA-Combined-BestTrust"):
+			assert entries[f"selection/ENA-Plasticity-vs-{driver}/test/rel/diff"] == f"{MINUS}10.0"
+			assert f"selection/ENA-Plasticity-vs-{driver}/test/rel/p" in entries
 
 
 @pytest.mark.parametrize(
