@@ -2,7 +2,7 @@
 # Mirror a study's output directory to object storage every few minutes, so a lost machine loses no finished replicate.
 #
 # Usage (on the cloud host, outside the container, with the AWS CLI configured):
-#   nohup hub/cloud/sync_results.sh app/half_cheetah_outputs s3://<bucket>/half_cheetah_outputs 120 > sync.log 2>&1 &
+#   nohup hub/cloud/sync_results.sh app/outputs/half_cheetah_outputs s3://<bucket>/half_cheetah_outputs 120 > sync.log 2>&1 &
 #
 # Upload-only and never deletes anything remote. Run it once more by hand after the study ends.
 # Other providers: replace the aws line with `gsutil -m rsync -r "$SRC" "$DST"` or `rclone copy "$SRC" "$DST"`.

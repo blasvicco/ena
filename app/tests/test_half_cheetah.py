@@ -195,7 +195,7 @@ def test_baselines_use_a_constant_lr_and_the_standard_target_entropy() -> None:
 
 
 def test_parse_args_defaults() -> None:
-	"""No flags: all agents (no Random floor) into half_cheetah_outputs. There is one protocol, a fixed step budget, so no --protocol flag."""
+	"""No flags: all agents (no Random floor) into outputs/half_cheetah_outputs. There is one protocol, a fixed step budget, so no --protocol flag."""
 	with step("Act: parse defaults and overrides."):
 		args = half_cheetah.parse_challenge_args([])
 		overridden = half_cheetah.parse_challenge_args(["--workers", "5", "--num-experiments", "10"])
@@ -204,7 +204,7 @@ def test_parse_args_defaults() -> None:
 		assert args.variants == ["ENA-Combined", "PPO", "SAC"]
 		assert args.include_random is False
 		assert args.num_experiments == half_cheetah.NUM_EXPERIMENTS
-		assert args.output_dir.endswith("half_cheetah_outputs")
+		assert args.output_dir.endswith(os.path.join("outputs", "half_cheetah_outputs"))
 		assert (overridden.workers, overridden.num_experiments) == (5, 10)
 
 	with step("Assert: --protocol is not an option."):

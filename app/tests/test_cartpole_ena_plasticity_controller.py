@@ -1,5 +1,8 @@
 """Tests for cartpole_ena_plasticity_controller.py — ENA-Combined with each alternative Plasticity controller."""
 
+# General imports
+import os
+
 # App imports
 from helpers import step
 import cartpole_ena_plasticity_controller
@@ -45,4 +48,4 @@ def test_defaults_are_30_replicates_without_random_into_their_own_directory() ->
 		assert args.variants == ["ENA-Combined-QuadraticPlasticity", "ENA-Combined-FuzzyPlasticity"]
 		assert args.num_experiments == 30
 		assert args.include_random is False
-		assert args.output_dir.endswith("cartpole_ena_plasticity_controller_outputs")
+		assert args.output_dir.endswith(os.path.join("outputs", "cartpole_ena_plasticity_controller_outputs"))

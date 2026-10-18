@@ -106,6 +106,7 @@ from tools.selection_results import (
 )
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+OUTPUTS_DIR = os.path.join(APP_DIR, "outputs")  # every study's exp_* replicates
 GENERATED_DIR = os.path.join(APP_DIR, "latex", "generated")
 IMAGES_DIR = os.path.join(APP_DIR, "latex", "images")
 PHASE_KEYS = {"Training": "train", "Test": "test", "Compute Cost": "compute", "Adaptation": "adapt"}
@@ -180,7 +181,7 @@ STUDIES = {
 	"challenge": "cartpole_challenge_outputs",
 	"cheetah": "half_cheetah_outputs",
 }
-DETECTION_ABLATION_DIR = os.path.join(APP_DIR, "detection_ablation_outputs")  # tools/detection_ablation.py
+DETECTION_ABLATION_DIR = os.path.join(OUTPUTS_DIR, "detection_ablation_outputs")  # tools/detection_ablation.py
 # detection_ablation.BASELINES label -> macro slug.
 BASELINE_SLUGS = {
 	"Transition model, changing behavior": "transition",
@@ -677,16 +678,16 @@ def collect_studies() -> tuple:
 	"""Return every study's parsed results and its per-study macros: ({study: results}, entries)."""
 	results, entries = {}, {}
 	for study, directory in STUDIES.items():
-		study_dir = os.path.join(APP_DIR, directory)
+		study_dir = os.path.join(OUTPUTS_DIR, directory)
 		results[study] = collect_results(study_dir)
 		if study != "cheetah":
 			add_training_reliability(results[study], study_dir, CARTPOLE_TRAIN_ENVS, SUCCESS_THRESHOLD)
 		entries.update(summary_entries(study, results[study]))
 		entries.update(time_entries(study, study_dir))
 		entries.update(seed_entries(study, study_dir))
-	entries.update(episode_count_entries("challenge", os.path.join(APP_DIR, STUDIES["challenge"]), CHALLENGE_AGENTS))
-	entries.update(episode_count_entries("cheetah", os.path.join(APP_DIR, STUDIES["cheetah"]), CHEETAH_AGENTS))
-	entries.update(hardware_entries("cheetah", os.path.join(APP_DIR, STUDIES["cheetah"])))
+	entries.update(episode_count_entries("challenge", os.path.join(OUTPUTS_DIR, STUDIES["challenge"]), CHALLENGE_AGENTS))
+	entries.update(episode_count_entries("cheetah", os.path.join(OUTPUTS_DIR, STUDIES["cheetah"]), CHEETAH_AGENTS))
+	entries.update(hardware_entries("cheetah", os.path.join(OUTPUTS_DIR, STUDIES["cheetah"])))
 	# The compute study runs full search only; zero and the ramp are the ablation's runs of the same replicates.
 	results["compute"] = with_reference_rows(results["compute"], results["ablation"], list(COMPUTE_REFERENCES.values()))
 	entries.update(summary_entries("compute", results["compute"]))
@@ -698,7 +699,7 @@ def collect_studies() -> tuple:
 	# the no-archive reference, its ENA-Plasticity.
 	results["selection"] = with_reference_rows(results["selection"], results["ablation"], [SELECTION_REFERENCE, SELECTION_NO_ARCHIVE])
 	entries.update(summary_entries("selection", results["selection"]))
-	selection_dir, ablation_dir = os.path.join(APP_DIR, STUDIES["selection"]), os.path.join(APP_DIR, STUDIES["ablation"])
+	selection_dir, ablation_dir = os.path.join(OUTPUTS_DIR, STUDIES["selection"]), os.path.join(OUTPUTS_DIR, STUDIES["ablation"])
 	entries.update(training_identity_entries(selection_dir, ablation_dir))
 	entries.update(played_entries(selection_dir, ablation_dir))
 	return results, entries
@@ -708,7 +709,7 @@ def forgetting_entries() -> tuple:
 	"""Compute retention and absolute forgetting (HalfCheetah, the CartPole challenge), and HalfCheetah's retention rows."""
 	# They read each replicate's training and test episodes, not the outputs.txt tables; the rows feed HalfCheetah's
 	# table and figure.
-	rows = retention_rows(os.path.join(APP_DIR, STUDIES["cheetah"]), CHEETAH_AGENTS, CHEETAH_TRAIN_ENVS)
+	rows = retention_rows(os.path.join(OUTPUTS_DIR, STUDIES["cheetah"]), CHEETAH_AGENTS, CHEETAH_TRAIN_ENVS)
 	return {**cheetah_retention_entries(rows), **challenge_forgetting_entries()}, rows
 
 
@@ -716,7 +717,7 @@ def challenge_forgetting_entries() -> dict:
 	"""Compute how much each CartPole challenge agent forgets its training environments (descriptive)."""
 	# How much each CartPole challenge agent forgets the environments it trained on: end of phase, retention and absolute
 	# forgetting, descriptive only (the challenge's planned tests are on reliability).
-	rows = retention_rows(os.path.join(APP_DIR, STUDIES["challenge"]), CHALLENGE_AGENTS, CARTPOLE_TRAIN_ENVS, CHALLENGE_END_OF_PHASE_STEPS)
+	rows = retention_rows(os.path.join(OUTPUTS_DIR, STUDIES["challenge"]), CHALLENGE_AGENTS, CARTPOLE_TRAIN_ENVS, CHALLENGE_END_OF_PHASE_STEPS)
 	return retention_entries("challenge", rows, CARTPOLE_TRAIN_ENVS[:-1])
 
 
@@ -727,7 +728,7 @@ def cheetah_retention_entries(rows: pd.DataFrame) -> dict:
 		**retention_entries("cheetah", rows, CHEETAH_LEFT_BEHIND),
 		**retention_comparisons("cheetah", rows, CHEETAH_LEFT_BEHIND, "ENA-Combined", baselines),
 		**forgetting_comparisons("cheetah", rows, CHEETAH_LEFT_BEHIND, "ENA-Combined", baselines),
-		**archived_reference_entries("cheetah", os.path.join(APP_DIR, STUDIES["cheetah"]), "ENA-Combined"),
+		**archived_reference_entries("cheetah", os.path.join(OUTPUTS_DIR, STUDIES["cheetah"]), "ENA-Combined"),
 	}
 
 
@@ -763,7 +764,7 @@ def write_cheetah_outputs(results: dict, rows: pd.DataFrame, entries: dict) -> N
 	retention_figure(rows, CHEETAH_LEFT_BEHIND, CHEETAH_AGENTS, os.path.join(IMAGES_DIR, "cheetah_retention.pdf"))
 	# Training at a step budget: replicates play different numbers of episodes, so the curves are binned by env-steps.
 	plot_study_curves(
-		os.path.join(APP_DIR, STUDIES["cheetah"]),
+		os.path.join(OUTPUTS_DIR, STUDIES["cheetah"]),
 		"training",
 		CHEETAH_AGENTS,
 		os.path.join(IMAGES_DIR, "cheetah_training_curves.pdf"),
@@ -772,7 +773,7 @@ def write_cheetah_outputs(results: dict, rows: pd.DataFrame, entries: dict) -> N
 		x_axis="env_steps",
 	)
 	plot_study_curves(
-		os.path.join(APP_DIR, STUDIES["cheetah"]),
+		os.path.join(OUTPUTS_DIR, STUDIES["cheetah"]),
 		"testing",
 		CHEETAH_AGENTS,
 		os.path.join(IMAGES_DIR, "cheetah_test_curves.pdf"),
@@ -828,7 +829,7 @@ def controller_table(entries: dict) -> str:
 
 def recognition_entries(study: str, agent: str, train_envs: list) -> dict:
 	"""Replicates that mostly recognize each test environment as each training environment's niche (or none), and mostly play its gladiators."""
-	study_dir = os.path.join(APP_DIR, STUDIES[study])
+	study_dir = os.path.join(OUTPUTS_DIR, STUDIES[study])
 	frames = [majority_recognition(os.path.join(study_dir, exp_dir), agent) for exp_dir in get_experiment_directories(study_dir)]
 	key = f"{study}/{agent}"
 	entries = {f"{key}/recog/distinct": str(sum(bool(frame["distinct"].iloc[0]) for frame in frames))}
@@ -856,7 +857,7 @@ def detection_outputs() -> tuple:
 		("ablation", "tab:detection", "Environment Recognition in the Skill Ablation"),
 		("cheetah", "tab:cheetah_detection", "Environment Recognition on HalfCheetah"),
 	):
-		detection = study_detection(os.path.join(APP_DIR, STUDIES[study]))
+		detection = study_detection(os.path.join(OUTPUTS_DIR, STUDIES[study]))
 		summary = summarize_detection(detection)
 		entries.update({**detection_entries(study, summary), **detection_total_entries(study, detection)})
 		caption += f" ({detection['exp'].nunique()} Replicates)"
@@ -871,7 +872,7 @@ def detection_outputs() -> tuple:
 def ablation_retention() -> tuple:
 	"""The ablation variants' end of phase, test return, retention and forgetting per training environment (descriptive), and its table."""
 	agents, left_behind = ABLATION_AGENTS[1:], CARTPOLE_TRAIN_ENVS[:-1]
-	rows = retention_rows(os.path.join(APP_DIR, STUDIES["ablation"]), agents, CARTPOLE_TRAIN_ENVS, last_episodes=ABLATION_END_OF_PHASE_EPISODES)
+	rows = retention_rows(os.path.join(OUTPUTS_DIR, STUDIES["ablation"]), agents, CARTPOLE_TRAIN_ENVS, last_episodes=ABLATION_END_OF_PHASE_EPISODES)
 	caption = f"Skill Ablation: Retention of the Environments Left Behind ({rows['Exp'].nunique()} Replicates)"
 	return retention_entries("ablation", rows, left_behind), retention_table(rows, left_behind, agents, None, caption, "tab:ablation_retention")
 
@@ -961,7 +962,9 @@ def main() -> None:
 		_write(os.path.join(GENERATED_DIR, name), table)
 	reliability_figure(results["ablation"], ABLATION_AGENTS[1:], os.path.join(IMAGES_DIR, "ablation_reliability.pdf"))
 	reliability_figure(results["challenge"], CHALLENGE_AGENTS, os.path.join(IMAGES_DIR, "challenge_reliability.pdf"))
-	plot_study_curves(os.path.join(APP_DIR, STUDIES["challenge"]), "testing", CHALLENGE_AGENTS, os.path.join(IMAGES_DIR, "challenge_test_curves.pdf"))
+	plot_study_curves(
+		os.path.join(OUTPUTS_DIR, STUDIES["challenge"]), "testing", CHALLENGE_AGENTS, os.path.join(IMAGES_DIR, "challenge_test_curves.pdf")
+	)
 	write_cheetah_outputs(results["cheetah"], rows, entries)
 	print(f"Wrote {len(entries)} numbers and the tables to {GENERATED_DIR}")
 

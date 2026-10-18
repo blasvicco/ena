@@ -10,7 +10,7 @@
 #   - cartpole.csv: CartPole's detector on CartPole's benchmark, confirmation seeds (the benchmark's sanity check).
 # tools/paper_results.py turns them into the paper's table and macros.
 #
-#         python src/tools/detection_ablation.py --output-dir detection_ablation_outputs --workers 4
+#         python src/tools/detection_ablation.py --output-dir outputs/detection_ablation_outputs --workers 4
 
 # General imports
 import argparse

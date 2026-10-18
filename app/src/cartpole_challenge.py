@@ -48,7 +48,7 @@ DQN_SETTINGS = {}
 PPO_SETTINGS = {"entropy_coef": 0.01, "anneal_lr": False}
 SAC_DISCRETE_SETTINGS = {"target_entropy_ratio": SAC_DISCRETE_TARGET_ENTROPY}
 # Anchored to this file's own location (one level up from src/), not the caller's cwd.
-OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cartpole_challenge_outputs")
+OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "outputs", "cartpole_challenge_outputs")
 ENA_NAME = "ENA-Combined"
 
 # Two protocols, selected with --protocol:

@@ -29,7 +29,7 @@ All `aws`/`cdk` commands run in the toolbox: `docker compose up -d ena_infra`, t
 | Push the image (host) | `infra/scripts/push-image.sh` | builds `hub/cloud/Dockerfile` for arm64, tags it with the commit; refuses uncommitted image inputs unless `--allow-dirty` |
 | Launch | `bash /home/scripts/launch.sh 1-20` | one machine each, tagged `Name=exp_k`, `Project=ena-experiment`; running or complete replicates are skipped |
 | Follow | `bash /home/scripts/status.sh` | machines, and each replicate's last status line (`run.log`) |
-| Download | `bash /home/scripts/download.sh` | into `app/half_cheetah_outputs/`, then `python src/tools/paper_results.py` in the experiment container |
+| Download | `bash /home/scripts/download.sh` | into `app/outputs/half_cheetah_outputs/`, then `python src/tools/paper_results.py` in the experiment container |
 | Terminate stragglers | `bash /home/scripts/terminate.sh` | before destroy |
 | Destroy everything | `npm run cdk -- destroy ena-experiment` | deletes the bucket (and its objects) and the repository |
 

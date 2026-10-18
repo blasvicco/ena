@@ -37,7 +37,7 @@ SEEDS = 3
 LOG_EVERY = 2_000
 PROBE_STATES = 256
 # Anchored to this file's own location (app/src/tools/ -> app/), not the caller's cwd.
-OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "sac_discrete_entropy_outputs")
+OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "outputs", "sac_discrete_entropy_outputs")
 
 
 def probe_value(agent: SACDiscreteAgent) -> float:
