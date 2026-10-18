@@ -1,5 +1,8 @@
 """Tests for cartpole_ena_compute.py — full search effort, against the ablation's runs of the other two levels."""
 
+# General imports
+import os
+
 # App imports
 from helpers import step
 import cartpole_ena_compute
@@ -46,4 +49,4 @@ def test_defaults_are_one_replicate_without_random_into_its_own_directory() -> N
 		assert args.variants == ["ENA-Combined-PlasticityFull"]
 		assert args.num_experiments == 1
 		assert args.include_random is False
-		assert args.output_dir.endswith("cartpole_ena_compute_outputs")
+		assert args.output_dir.endswith(os.path.join("outputs", "cartpole_ena_compute_outputs"))

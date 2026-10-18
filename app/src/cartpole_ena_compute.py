@@ -25,7 +25,7 @@ COMPUTE_VARIANTS = [{**_COMBINED, "name": "ENA-Combined-PlasticityFull", "plasti
 REFERENCES = {"zero": "ENA-HoF+EnvDetection", "linear_ramp": "ENA-Combined"}
 NUM_EXPERIMENTS = 1
 # Anchored to this file's own location (one level up from src/), not the caller's cwd.
-OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cartpole_ena_compute_outputs")
+OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "outputs", "cartpole_ena_compute_outputs")
 
 
 if __name__ == "__main__":

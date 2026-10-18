@@ -1,5 +1,8 @@
 """Tests for cartpole_challenge.py — ENA vs. DQN/PPO/SAC-Discrete under equal env-step budgets."""
 
+# General imports
+import os
+
 # Libs imports
 import numpy as np
 import pytest
@@ -86,7 +89,7 @@ def test_defaults_run_ena_and_the_three_baselines_without_random_for_50_replicat
 		assert args.variants == ["ENA-Combined", "DQN", "PPO", "SAC-Discrete"]
 		assert args.include_random is False
 		assert args.num_experiments == 50
-		assert args.output_dir.endswith("cartpole_challenge_outputs")
+		assert args.output_dir.endswith(os.path.join("outputs", "cartpole_challenge_outputs"))
 
 
 def test_fixed_budget_protocol_trains_everyone_to_the_same_budget_without_stopping(monkeypatch, tmp_path) -> None:

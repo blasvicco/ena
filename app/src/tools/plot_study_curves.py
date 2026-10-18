@@ -27,7 +27,9 @@ import numpy as np  # pylint: disable=wrong-import-position
 import pandas as pd  # pylint: disable=wrong-import-position
 
 # Anchored to this file's own location (app/src/tools/ -> app/), not the caller's cwd.
-DEFAULT_OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "cartpole_ena_ablation_outputs")
+DEFAULT_OUTPUT_DIR = os.path.join(
+	os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "outputs", "cartpole_ena_ablation_outputs"
+)
 MASTERY_SCORE = 475.0
 Y_LIM = (-10, 560)
 SMOOTHING_WINDOW = 10

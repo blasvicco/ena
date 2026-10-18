@@ -28,5 +28,5 @@ The HalfCheetah study runs in AWS from `infra/` (AWS CDK in TypeScript, run from
 
 ## Things to leave alone
 
-- Generated experiment output directories (`*_outputs*/`, `crash.log`, `niches_*.txt`) are run artifacts, not source — don't hand-edit them. They're already covered by `.gitignore` (`*outputs`).
+- Generated experiment output directories (`app/outputs/<study>_outputs/`, with their `crash.log`, `niches_*.txt`) are run artifacts, not source — don't hand-edit them. They're already covered by `.gitignore` (`*outputs`).
 - Don't commit local-only working files that aren't already tracked in git (e.g. scratch PDFs, personal notes) unless the user explicitly asks you to.

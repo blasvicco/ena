@@ -51,7 +51,7 @@ GPUS = tf.config.list_physical_devices("GPU")
 TESTING_EPISODES = [200, 200, 200, 200, 200]
 TRAINING_EPISODES_ENA = [500, 500, 500]
 # Anchored to this file's own location (one level up from src/), not the caller's cwd.
-OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cartpole_ena_ablation_outputs")
+OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "outputs", "cartpole_ena_ablation_outputs")
 # Per-experiment seed = SEED_OFFSET + experiment index (Python, NumPy and TensorFlow RNGs).
 SEED_OFFSET = 1000
 INCLUDE_RANDOM_FLOOR = True

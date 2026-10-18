@@ -25,7 +25,9 @@ PHASES = ["Training", "Compute Cost", "Adaptation", "Test"]
 SUMMARY_HEADERS = ["Reliability (%)", "Stability Gap (↓)", "Efficiency (Score/s)"]
 # Anchored to this file's own location (app/src/tools/ -> app/), not the caller's cwd, so the
 # default target is found regardless of where this script is invoked from.
-DEFAULT_OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "cartpole_ena_ablation_outputs")
+DEFAULT_OUTPUT_DIR = os.path.join(
+	os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "outputs", "cartpole_ena_ablation_outputs"
+)
 
 
 # pylint: disable=too-many-locals
