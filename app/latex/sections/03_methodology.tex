@@ -73,7 +73,7 @@ f(R) =
 \begin{equation}
 \rho(R) = \mathrm{clip}\!\left(\frac{R - R_{\min}}{P_{\Res{cfg/ena/signal/percentile}}(H) - R_{\min}},\, 0,\, 1\right).
 \end{equation}
-A return at or above the \Res{cfg/ena/signal/percentile}th percentile gives the minimum signal, $\Res{cfg/ena/signal/min}$. Below it, the signal grows linearly, up to $1$ at the worst return observed. We call $f$ the \textit{linear ramp}.
+A return at or above the \Res{cfg/ena/signal/percentile}th percentile gives the minimum signal, $\Res{cfg/ena/signal/min}$. Below it, the signal grows linearly, up to $1$ at the worst return observed. The function $f$ is termed the \textit{linear ramp}.
 
 \subsubsection{Trust}
 The acting specialist's Trust is an exponential average, whose rate is the failure signal $D=f(R)$:
@@ -99,7 +99,7 @@ Here $s_{\min} = \Res{cfg/ena/smin}$, and $s_{\max}$ is the full CartPole episod
 
 \subsubsection{Plasticity controllers}
 \label{sec:controllers}
-A Plasticity controller maps the return of an episode to $\mathcal{P}$. Trust always uses the linear ramp~\eqref{eq:ramp} as its rate, so only the Plasticity controller changes. We use five controllers:
+A Plasticity controller maps the return of an episode to $\mathcal{P}$. Trust always uses the linear ramp~\eqref{eq:ramp} as its rate, so only the Plasticity controller changes. Five controllers are defined:
 \begin{itemize}
 \item \textit{Linear ramp}, ENA's controller: $\mathcal{P} = f(R)$~\eqref{eq:ramp}.
 \item \textit{Zero}: $\mathcal{P} = 0$ in every episode. This is the minimum search: $k=\Res{cfg/ena/search/mincandidates}$ candidates for $s_{\min}$ steps each, and the lowest mutation noise. The ablation uses it to switch Plasticity off.
@@ -122,16 +122,16 @@ A mutant perturbs each weight of its parent with probability $p_m$, by Gaussian 
 \subsection{Hall of Fame}
 The Hall of Fame stores frozen copies of proven specialists, the \textit{gladiators}. It holds at most $K$ gladiators per \textit{niche}, a niche being a set of physics recognized by environment detection (Section~\ref{sec:detection}). The evolutionary step never replaces a gladiator. After each training episode, the acting specialist is considered for induction, in five steps:
 \begin{enumerate}
-\item \textit{Gate.} Its Trust must stand out from the population, $z = (T - \mu_T)/\max(\sigma_T, \Res{cfg/ena/hof/gatefloor}) \ge \Res{cfg/ena/hof/gatez}\,(1 - \Res{cfg/ena/hof/gaterelief}\,\mathcal{P})$, or reach $T \ge \Res{cfg/ena/hof/gatetrust}$. High Plasticity lowers the bar while the agent is still searching.
+\item \textit{Gate.} Its Trust must stand out from the population, $z = (T - \mu_T)/\max(\sigma_T, \Res{cfg/ena/hof/gatefloor}) \ge \Res{cfg/ena/hof/gatez}\,(1 - \Res{cfg/ena/hof/gaterelief}\,\mathcal{P})$, or reach $T \ge \Res{cfg/ena/hof/gatetrust}$. High Plasticity lowers the induction threshold during active search.
 \item \textit{Niche.} Environment detection resolves which niche the episode was played in.
-\item \textit{Cloning, not relabeling.} When a gladiator also succeeds in a different niche, it is cloned into that niche. The original keeps its home niche.
+\item \textit{Cloning, not relabeling.} When a gladiator also succeeds in a different niche, it is cloned into that niche. The original retains its home niche assignment.
 \item \textit{Diversity.} A candidate may be a near-copy of a gladiator of the same niche, with a cosine similarity of weights above $\Res{cfg/ena/hof/similarity}$. It then replaces that twin only if its Trust is higher. Weight similarity is a cheap but imperfect proxy for behavioral similarity. It catches near-copies, such as a mutant and its parent. Two networks can still behave alike with different weights, for instance with permuted hidden units.
 \item \textit{Capacity.} A candidate fills a free slot of its niche, or replaces the niche's weakest gladiator if it is better.
 \end{enumerate}
-This design separates what must be kept from what must keep changing.
+This design decouples policy preservation from ongoing adaptation:
 \begin{itemize}
 \item \textit{Retention.} A gladiator is a frozen copy, and the Trust stored with it at induction does not decay. Only a candidate of its own niche with strictly higher Trust can displace it. Gladiators of other niches can never evict it, however long its own physics stay away. Gladiators in the population are also exempt from the evolutionary replacement and from the Trust blend.
-\item \textit{Within-niche improvement.} Within a niche, the archive keeps improving. A better candidate takes a free slot or the weakest gladiator's place, and high Plasticity lowers the gate. Success in a new niche creates a clone there, instead of moving the original.
+\item \textit{Within-niche improvement.} Within a niche, the archive continues to improve. A better candidate takes a free slot or the weakest gladiator's place, and high Plasticity lowers the gate. Success in a new niche creates a clone there, instead of moving the original.
 \end{itemize}
 On HalfCheetah, returns vary widely with initial conditions. Admission on a single episode then risks keeping specialists that were merely lucky. There, ENA uses an \textit{Olympic} variant of the Hall of Fame. Every \Res{cfg/cheetahena/olympicsinterval} environment steps, all gladiators of the current niche replay \Res{cfg/cheetahena/olympicsepisodes} full episodes on shared seeds, an \textit{Olympiad}. A gladiator is evicted if its mean Olympic return, normalized like Trust, falls below the reference Trust. The others are confirmed, with that mean return. Each niche holds \Res{cfg/cheetahena/olympicsqualifierseats} extra seats for gladiators that have not competed yet. Only confirmed gladiators are deployed at test.
 
@@ -139,21 +139,21 @@ Before testing, gladiators are re-injected into the population, round-robin acro
 
 \subsection{Environment Detection}
 \label{sec:detection}
-We follow the context-detection idea of da Silva et al.~\cite{dasilva2006dealing}. Each niche $j$ owns a model of the environment's dynamics, and a niche is recognized by how well its model predicts the transitions the agent actually experiences. Our models are linear-Gaussian:
+The context-detection idea of da Silva et al.~\cite{dasilva2006dealing} is followed. Each niche $j$ owns a model of the environment's dynamics, and a niche is recognized by how well its model predicts the transitions the agent actually experiences. The models are linear-Gaussian:
 \begin{equation}
 s_{t+1} - s_t = W_j^{\top}[s_t, a_t, 1] + \varepsilon_t, \qquad \varepsilon_t \sim \mathcal{N}\!\left(0, \mathrm{diag}(\sigma_j^2)\right).
 \label{eq:dynamics}
 \end{equation}
-They are fitted in closed form, by ridge least squares on accumulated sufficient statistics, so the detector is gradient-free as well. We condition on the action so that the evidence does not depend on which specialist is playing, as long as the model fits the states that specialist visits. Every real transition of every episode is evidence.
+They are fitted in closed form, by ridge least squares on accumulated sufficient statistics, so the detector is gradient-free as well. The action is conditioned upon so that the evidence does not depend on which specialist is playing, as long as the model fits the states that specialist visits. Every real transition of every episode is evidence.
 
 \subsubsection{Detection}
 The detector monitors the standardized residuals of the current niche's model. Their variance is widened by a tolerance $\tau^2$ ($\tau = \Res{cfg/ena/detect/tau}$), which absorbs the linear model's own error on nonlinear physics. The monitor is the Predictive-Mixture CuSum (PM-CuSum) of Halme, Poor and Koivunen~\cite{halme2026sequential}, a recent successor of Page's CUSUM~\cite{page1954continuous}. With $q = \mathcal{N}(0, I)$ the pre-change distribution of the residuals $z_t$,
 \begin{equation}
 S_t = \max(S_{t-1}, 0) + \log \frac{\hat{p}_t(z_t)}{q(z_t)},
 \end{equation}
-where $\hat{p}_t$ is a Fixed-Share~\cite{herbster1998tracking} mixture of Gaussian predictors, fitted on sliding windows of $2, 4, \dots$ recent residuals. An alarm is raised when $S_t > \log\gamma$. Here $\gamma$ is a target average run length to a false alarm, which we set to $10^{\Res{cfg/ena/detect/gammaexp}}$ steps. For an exact pre-change distribution, Halme et al. show that this threshold keeps the average run length above $\gamma$. Here, the pre-change distribution is an online-fitted linear-Gaussian approximation of nonlinear dynamics, so $\log\gamma$ is only a decision threshold. We set $\tau$ and $\gamma$ on preliminary CartPole runs, before the study, so that an unchanged environment raised no alarm. Table~\ref{tab:detection} reports the false alarms of the study itself.
+where $\hat{p}_t$ is a Fixed-Share~\cite{herbster1998tracking} mixture of Gaussian predictors, fitted on sliding windows of $2, 4, \dots$ recent residuals. An alarm is raised when $S_t > \log\gamma$. Here $\gamma$ is a target average run length to a false alarm, set to $10^{\Res{cfg/ena/detect/gammaexp}}$ steps. For an exact pre-change distribution, Halme et al. show that this threshold keeps the average run length above $\gamma$. Here, the pre-change distribution is an online-fitted linear-Gaussian approximation of nonlinear dynamics, so $\log\gamma$ is only a decision threshold. The values of $\tau$ and $\gamma$ were set on preliminary CartPole runs, before the study, so that an unchanged environment raised no alarm. Table~\ref{tab:detection} reports the false alarms of the study itself.
 
-We depart from the Gaussian example of~\cite{halme2026sequential} in one respect. Each window also estimates a variance, and that variance is one-sided: it is never below the pre-change variance. Our rationale is that a wrong dynamics model can change the spread of the residuals, not only their mean, and should fit worse than the right one, not better.
+A departure from the Gaussian example of~\cite{halme2026sequential} is made in one respect. Each window also estimates a variance, and that variance is one-sided: it is never below the pre-change variance. The rationale is that a wrong dynamics model can change the spread of the residuals, not only their mean, and should fit worse than the right one, not better.
 
 \subsubsection{Identification}
 The recent transitions, up to \Res{cfg/ena/detect/recent}, are matched to the niche $j^{*}$ with the highest mean per-step log-likelihood. They are recognized as $j^{*}$ if it explains them within a margin of $m = \Res{cfg/ena/detect/margin}$ nats per step of a model fitted on those same transitions. Otherwise, the physics are new, and a niche is created. Only niches fitted on at least \Res{cfg/ena/detect/minsamples} transitions take part.
@@ -166,13 +166,13 @@ A niche is assigned only when a specialist is considered for the Hall of Fame (s
 
 \subsubsection{Chirp detection (HalfCheetah)}
 \label{sec:chirp}
-On HalfCheetah, the transition models misfire. On the detection benchmark of Section~\ref{sec:detection_benchmark}, they confirm many more changes, and create many more niches, than there are environments. This happens even when a single fixed gait is played throughout. It happens more often still when the gait changes, as it does in a learning population (another gait, a flip, standing still). We did not isolate the cause. Two plausible ones are that a linear model fits the contact-rich dynamics of a running body poorly, and that its evidence is the acting specialist's own transitions.
+On HalfCheetah, the transition models misfire. On the detection benchmark of Section~\ref{sec:detection_benchmark}, they confirm many more changes, and create many more niches, than there are environments. This happens even when a single fixed gait is played throughout. It happens more often still when the gait changes, as it does in a learning population (another gait, a flip, standing still). The cause was not isolated. Two plausible ones are that a linear model fits the contact-rich dynamics of a running body poorly, and that its evidence is the acting specialist's own transitions.
 
 On HalfCheetah, ENA plays a \textit{chirp} instead: a fixed probing sequence of actions, as in system identification with a known input signal~\cite{ljung1999system}. At every episode end, ENA resets the environment and plays the same \Res{cfg/cheetah/chirp/steps}-step action sequence, whatever any specialist would do. It then compares the observations this produces across niches. Probing an environment to infer its dynamics has also been learned in RL~\cite{zhou2019environment}. ENA's chirp is fixed, so its response cannot depend on the agent.
 
 \textit{What is played.} The excitation is a multiresolution wavelet train. The \Res{cfg/cheetah/chirp/excitationwavelet} wavelet is played at dyadic scales, from a segment of half the chirp down to the finest. The aim is to excite both the slow and the fast responses of the body.
 
-\textit{What is measured.} The response is the observations minus the chirp's starting observation. Each observation channel is decomposed into a \Res{cfg/cheetah/chirp/featurewavelet} \Res{cfg/cheetah/chirp/transform} tree of depth \Res{cfg/cheetah/chirp/level}~\cite{coifman1992entropy}. Like the discrete wavelet transform~\cite{mallat1989theory}, the tree is dyadic and non-overlapping, but it splits every band. This gives \Res{cfg/cheetah/chirp/bands} frequency bands of equal width, and one log-energy is kept per band. Wavelet features of a system's response to a known excitation are a standard signature of a change of physics, in structural damage detection and machine fault diagnosis~\cite{kijewski2003wavelet,peng2004application}. We compute the transforms with PyWavelets~\cite{lee2019pywavelets}. The excitation and the features were chosen by the ablation of Section~\ref{sec:detection_benchmark}, in the three HalfCheetah training environments. ENA's other HalfCheetah settings were chosen on tuning seeds disjoint from the study's replicates.
+\textit{What is measured.} The response is the observations minus the chirp's starting observation. Each observation channel is decomposed into a \Res{cfg/cheetah/chirp/featurewavelet} \Res{cfg/cheetah/chirp/transform} tree of depth \Res{cfg/cheetah/chirp/level}~\cite{coifman1992entropy}. Like the discrete wavelet transform~\cite{mallat1989theory}, the tree is dyadic and non-overlapping, but it splits every band. This gives \Res{cfg/cheetah/chirp/bands} frequency bands of equal width, and one log-energy is kept per band. Wavelet features of a system's response to a known excitation are a standard signature of a change of physics, in structural damage detection and machine fault diagnosis~\cite{kijewski2003wavelet,peng2004application}. The transforms are computed with PyWavelets~\cite{lee2019pywavelets}. The excitation and the features were chosen by the ablation of Section~\ref{sec:detection_benchmark}, in the three HalfCheetah training environments. ENA's other HalfCheetah settings were chosen on tuning seeds disjoint from the study's replicates.
 
 \textit{How niches are compared.} Each niche $j$ keeps the mean $\mu_j$ of its $n_j$ chirps' feature vectors. The per-feature variance $\sigma^2$ is pooled over niches, on the assumption that it comes mainly from the environment's reset noise. The mean $\bar{f}$ of the last $w = \Res{cfg/cheetah/chirp/window}$ chirps is tested against the current niche with
 \begin{equation}
@@ -185,16 +185,16 @@ The chirp costs \Res{cfg/cheetah/chirp/steps} steps per episode, \Res{cfg/cheeta
 
 \subsection{Specialist Selection}
 \label{sec:selection}
-At test, the weights are frozen and $\mathcal{P}=0$. The only adaptation left is the choice of which gladiator acts. We make this choice with Bayesian Policy Reuse (BPR)~\cite{rosman2016bayesian}. BPR combines two kinds of evidence in one posterior: the dynamics evidence $L_j$ and the observed utility $u$. The niches play the role of BPR's types, and every gladiator is a policy. The agent keeps a belief $\beta$ over niches, and plays the gladiator of highest expected utility, $\sum_{j}\beta(j)\,\mu_{j\pi}$. Here $u = R/R_{\text{solved}}$ is the return relative to the one at which the environment counts as solved, so solving reads as $u = 1$. $\mu_{j\pi}$ is the mean utility of policy $\pi$ in niche $j$. After each episode, the belief is updated:
+At test, the weights are frozen and $\mathcal{P}=0$. The only adaptation left is the choice of which gladiator acts. This choice is made with Bayesian Policy Reuse (BPR)~\cite{rosman2016bayesian}. BPR combines two kinds of evidence in one posterior: the dynamics evidence $L_j$ and the observed utility $u$. The niches play the role of BPR's types, and every gladiator is a policy. The agent keeps a belief $\beta$ over niches, and plays the gladiator of highest expected utility, $\sum_{j}\beta(j)\,\mu_{j\pi}$. Here $u = R/R_{\text{solved}}$ is the return relative to the one at which the environment counts as solved, so solving reads as $u = 1$. $\mu_{j\pi}$ is the mean utility of policy $\pi$ in niche $j$. After each episode, the belief is updated:
 \begin{equation}
 \beta'(j) \propto \beta(j)\; \mathcal{N}\!\left(u;\, \mu_{j\pi}, \Res{cfg/ena/bpr/noise}^2\right)\; e^{L_j}.
 \label{eq:bpr}
 \end{equation}
 $L_j$ is the log-likelihood of the episode's transitions under niche $j$'s dynamics model~\eqref{eq:dynamics}. It is summed over the episode, with the variance widened by $\tau^2$ as in detection. On HalfCheetah, it is the chirp's log-likelihood (Section~\ref{sec:chirp}). The return term is bounded by the range of the utilities, while $L_j$ grows with the number of transitions in the episode. When the niches' models differ, the dynamics can therefore dominate the belief over niches. The returns also update the performance model $\mu_{j\pi}$, which decides which gladiator of a niche plays.
 
-Two changes adapt BPR to our setting.
+Two changes adapt BPR to this setting.
 \begin{itemize}
-\item BPR builds its performance model offline, by playing every policy in every type. Ours is learned online. Its prior is a utility of $\Res{cfg/ena/bpr/ownprior}$ for a gladiator in its own niche and $\Res{cfg/ena/bpr/crossprior}$ elsewhere, worth \Res{cfg/ena/bpr/prior} observation. Every observed utility then updates it, weighted by the posterior. On HalfCheetah, the solved return is out of reach. There, a gladiator's own-niche prior is its mean Olympic return relative to $R_{\text{solved}}$, and its prior elsewhere is $\Res{cfg/ena/bpr/crossprior}$ times that.
+\item BPR builds its performance model offline, by playing every policy in every type. The model used here is learned online. Its prior is a utility of $\Res{cfg/ena/bpr/ownprior}$ for a gladiator in its own niche and $\Res{cfg/ena/bpr/crossprior}$ elsewhere, worth \Res{cfg/ena/bpr/prior} observation. Every observed utility then updates it, weighted by the posterior. On HalfCheetah, the solved return is out of reach. There, a gladiator's own-niche prior is its mean Olympic return relative to $R_{\text{solved}}$, and its prior elsewhere is $\Res{cfg/ena/bpr/crossprior}$ times that.
 \item BPR assumes one fixed type per trial. To follow a changing environment, a Fixed-Share step~\cite{herbster1998tracking} mixes back a uniform share after each update: $\beta \leftarrow \Res{cfg/ena/bpr/mix}\,\beta' + \Res{cfg/ena/bpr/switch}/|\mathcal{J}|$. A confirmed change of physics also resets the belief to uniform.
 \end{itemize}
 At test, the belief starts uniform when the test begins. It is reset to uniform only when the detector confirms a change of physics. As in training, the test environments follow one another unannounced. Three quantities still adapt at test: the belief, the selection's performance model, and the detector's alarms. The weights, Plasticity ($\mathcal{P}=0$) and the detector's models stay fixed. A confirmed change still resets the input statistics. This matters only for a specialist outside the archive, because a gladiator keeps the statistics it was archived with.
