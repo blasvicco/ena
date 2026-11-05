@@ -16,7 +16,7 @@ import pandas as pd
 from tools.replicates import get_experiment_directories
 from tools.paper_config import latex_table
 from tools.paper_figures import replicate_box_figure
-from tools.paper_stats import ALPHA, difference_entries, format_value, holm, p_macro, welch_p
+from tools.paper_stats import ALPHA, difference_entries, format_value, holm_family, p_macro, welch_agreement_entries
 
 
 # HalfCheetah: the test sequence, the training environments (in order) and the agents, ENA last.
@@ -116,10 +116,10 @@ def archived_reference_entries(study: str, study_dir: str, agent: str) -> dict:
 
 def retention_comparisons(study: str, rows: pd.DataFrame, left_behind: list, agent: str, baselines: list) -> dict:
 	"""Compare the agent with each baseline on left-behind retention, as one Holm family over the baselines."""
-	# agent vs each baseline on the left-behind retention, one Holm family over the baselines: Welch p (raw and
-	# Holm-adjusted), difference agent - baseline with its interval, effect size d, and replicates per agent for 80% power
-	# at the family's most stringent level.
-	per_replicate = _left_behind(rows, left_behind)
+	# agent vs each baseline on the left-behind retention, one Holm family over the baselines, paired by replicate: paired p
+	# (raw and Holm-adjusted), the mean of agent - baseline with its interval, effect size d_z, and the paired replicates
+	# needed for 80% power at the family's most stringent level.
+	per_replicate = _left_behind(rows, left_behind).set_index("Exp")
 	values = {name: per_replicate.loc[per_replicate["Agent"] == name, "retention"] for name in [agent, *baselines]}
 	return _holm_comparisons(study, values, agent, baselines, "retention")
 
@@ -128,24 +128,27 @@ def forgetting_comparisons(study: str, rows: pd.DataFrame, left_behind: list, ag
 	"""Compare the agent with each baseline on left-behind absolute forgetting, as its own Holm family."""
 	# agent vs each baseline on the left-behind absolute forgetting (end - test, in return units), its own Holm family
 	# over the baselines, with the same entries as retention_comparisons.
-	per_replicate = _left_behind(rows, left_behind, "drop")
+	per_replicate = _left_behind(rows, left_behind, "drop").set_index("Exp")
 	values = {name: per_replicate.loc[per_replicate["Agent"] == name, "drop"] for name in [agent, *baselines]}
 	return _holm_comparisons(study, values, agent, baselines, "forgetting")
 
 
 def _holm_comparisons(study: str, values: dict, agent: str, baselines: list, metric: str) -> dict:
 	"""Compare the agent with each baseline on per-replicate values, as one Holm family over the baselines."""
-	# agent vs each baseline on {name: per-replicate values}, one Holm family over the baselines, under
-	# <study>/<baseline>-vs-<agent>/<metric>/left.
+	# agent vs each baseline on {name: per-replicate values indexed by Exp}, one Holm family over the baselines (paired by
+	# replicate), under <study>/<baseline>-vs-<agent>/<metric>/left, with how many decisions Welch's unpaired test keeps
+	# under <study>/<metric>/welch.
 	entries, tested = {}, []
 	for baseline in baselines:
 		key = f"{study}/{baseline}-vs-{agent}/{metric}/left"
 		if values[baseline].empty or values[agent].empty:
 			continue
-		tested.append((key, welch_p(values[baseline], values[agent])))
+		tested.append((key, (values[baseline], values[agent])))
 		entries.update(difference_entries(key, values[baseline], values[agent], ALPHA / len(baselines), metric))
-	for (key, _p_value), adjusted in zip(tested, holm([p_value for _key, p_value in tested], family_size=len(baselines))):
-		entries[f"{key}/pholm"] = p_macro(adjusted)
+	adjusted, agree = holm_family([samples for _key, samples in tested], family_size=len(baselines))
+	for (key, _samples), p_value in zip(tested, adjusted):
+		entries[f"{key}/pholm"] = p_macro(p_value)
+	entries.update(welch_agreement_entries(f"{study}/{metric}", agree, len(tested)))
 	return entries
 
 

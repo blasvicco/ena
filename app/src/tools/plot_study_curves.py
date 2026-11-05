@@ -31,6 +31,7 @@ DEFAULT_OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirnam
 MASTERY_SCORE = 475.0
 Y_LIM = (-10, 560)
 SMOOTHING_WINDOW = 10
+BAND_QUANTILES = (0.25, 0.75)  # the band: the middle half of replicates
 BIN_STEPS = 10_000  # env-steps per bin on the step axis
 SERIES_COLOR = "#2a78d6"
 TEXT_PRIMARY = "#0b0b0b"
@@ -79,7 +80,9 @@ def summarize(matrix: pd.DataFrame, window: int = SMOOTHING_WINDOW) -> pd.DataFr
 	"""Return the mean and interquartile range across replicates per row, smoothed within each phase."""
 	# Mean and 25th/75th percentiles across replicates per row, each smoothed over `window` rows within each phase
 	# (attrs["env_ids"]; a switch restarts the smoothing).
-	summary = pd.DataFrame({"mean": matrix.mean(axis=1), "low": matrix.quantile(0.25, axis=1), "high": matrix.quantile(0.75, axis=1)})
+	summary = pd.DataFrame(
+		{"mean": matrix.mean(axis=1), "low": matrix.quantile(BAND_QUANTILES[0], axis=1), "high": matrix.quantile(BAND_QUANTILES[1], axis=1)}
+	)
 	env_ids = matrix.attrs["env_ids"].reindex(summary.index)
 	phases = env_ids.ne(env_ids.shift()).cumsum()
 	return summary.groupby(phases, group_keys=False).apply(lambda part: part.rolling(window=window, min_periods=1, center=True).mean())

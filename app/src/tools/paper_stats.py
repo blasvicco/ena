@@ -1,12 +1,14 @@
 #!/usr/bin/env python
 """The paper's statistical tests and number formatting, shared by every results generator."""
 # The paper's statistical tests and number formatting, shared by every results generator (paper_results.py and its
-# per-domain modules): Welch's t-test with its interval and effect size, the Mann-Whitney U test for heavy-tailed
-# metrics, power analysis, Holm's correction, exact tests for pass rates, and how values, p-values and table cells are
-# printed.
+# per-domain modules). Every agent of a replicate starts from the same seed, so two agents are compared over the
+# replicates both have, paired by replicate: the paired t-test with its interval and effect size d_z, the Wilcoxon
+# signed-rank test for heavy-tailed metrics, power analysis, Holm's correction (and how many of a family's decisions
+# Welch's unpaired test keeps), exact tests for pass rates, and how values, p-values and table cells are printed.
 
 # General imports
 import math
+from typing import Callable
 
 # Libs imports
 import numpy as np
@@ -95,8 +97,49 @@ def mcnemar_p(passes_a: np.ndarray | list, passes_b: np.ndarray | list) -> float
 	return float(stats.binomtest(min(only_a, only_b), only_a + only_b, 0.5).pvalue)
 
 
-def welch_p(sample_a: np.ndarray | list, sample_b: np.ndarray | list) -> float:
-	"""Two-sided Welch's t-test p-value; 1.0 for two identical constant samples, NaN when either has n < 2."""
+def paired_samples(sample_a: pd.Series | np.ndarray | list, sample_b: pd.Series | np.ndarray | list) -> tuple:
+	"""The two samples over the replicates both have, as float arrays: Series are matched by index (replicate), sequences by position."""
+	if isinstance(sample_a, pd.Series) and isinstance(sample_b, pd.Series):
+		pairs = pd.concat({"a": sample_a, "b": sample_b}, axis=1, join="inner").dropna()
+		return pairs["a"].to_numpy(dtype=float), pairs["b"].to_numpy(dtype=float)
+	sample_a, sample_b = np.asarray(sample_a, dtype=float), np.asarray(sample_b, dtype=float)
+	if len(sample_a) != len(sample_b):
+		raise ValueError("Paired samples need one value per replicate each.")
+	return sample_a, sample_b
+
+
+def paired_p(sample_a: pd.Series | np.ndarray | list, sample_b: pd.Series | np.ndarray | list) -> float:
+	"""Two-sided paired t-test p-value over the shared replicates; 1.0 or 0.0 for constant differences, NaN for fewer than 2 pairs."""
+	sample_a, sample_b = paired_samples(sample_a, sample_b)
+	if len(sample_a) < 2:
+		return float("nan")
+	differences = sample_b - sample_a
+	if np.std(differences) == 0:
+		return 1.0 if differences.mean() == 0 else 0.0
+	return float(stats.ttest_rel(sample_b, sample_a).pvalue)
+
+
+def paired_ci(sample_a: pd.Series | np.ndarray | list, sample_b: pd.Series | np.ndarray | list, level: float = CI_LEVEL) -> tuple:
+	"""Confidence interval of the mean of b - a over the shared replicates; (NaN, NaN) for fewer than 2 pairs or constant differences."""
+	sample_a, sample_b = paired_samples(sample_a, sample_b)
+	if len(sample_a) < 2 or np.std(sample_b - sample_a) == 0:
+		return float("nan"), float("nan")
+	interval = stats.ttest_rel(sample_b, sample_a).confidence_interval(level)
+	return float(interval.low), float(interval.high)
+
+
+def cohens_dz(sample_a: pd.Series | np.ndarray | list, sample_b: pd.Series | np.ndarray | list) -> float:
+	"""Paired effect size d_z of b over a: the mean of b - a over its standard deviation (NaN for fewer than 2 pairs or no spread)."""
+	sample_a, sample_b = paired_samples(sample_a, sample_b)
+	if len(sample_a) < 2:
+		return float("nan")
+	differences = sample_b - sample_a
+	spread = differences.std(ddof=1)
+	return float(differences.mean() / spread) if spread > 0 else float("nan")
+
+
+def welch_p(sample_a: pd.Series | np.ndarray | list, sample_b: pd.Series | np.ndarray | list) -> float:
+	"""Two-sided Welch's (unpaired) t-test p-value; 1.0 for two identical constant samples, NaN when either has n < 2."""
 	sample_a, sample_b = np.asarray(sample_a, dtype=float), np.asarray(sample_b, dtype=float)
 	if len(sample_a) < 2 or len(sample_b) < 2:
 		return float("nan")
@@ -105,42 +148,30 @@ def welch_p(sample_a: np.ndarray | list, sample_b: np.ndarray | list) -> float:
 	return float(stats.ttest_ind(sample_a, sample_b, equal_var=False).pvalue)
 
 
-def mann_whitney_p(sample_a: np.ndarray | list, sample_b: np.ndarray | list) -> float:
-	"""Two-sided Mann-Whitney U test p-value; 1.0 when every value is the same, NaN when either sample is empty."""
-	sample_a, sample_b = np.asarray(sample_a, dtype=float), np.asarray(sample_b, dtype=float)
-	if len(sample_a) == 0 or len(sample_b) == 0:
+def wilcoxon_p(sample_a: pd.Series | np.ndarray | list, sample_b: pd.Series | np.ndarray | list) -> float:
+	"""Two-sided Wilcoxon signed-rank p-value over the shared replicates; 1.0 when every difference is zero, NaN without pairs."""
+	sample_a, sample_b = paired_samples(sample_a, sample_b)
+	if len(sample_a) == 0:
 		return float("nan")
-	if np.unique(np.concatenate([sample_a, sample_b])).size == 1:
+	if not np.any(sample_b - sample_a):
 		return 1.0
-	return float(stats.mannwhitneyu(sample_a, sample_b, alternative="two-sided").pvalue)
-
-
-def welch_ci(sample_a: np.ndarray | list, sample_b: np.ndarray | list, level: float = CI_LEVEL) -> tuple:
-	"""Welch confidence interval of mean(b) - mean(a); (NaN, NaN) when either sample has n < 2 or both are constant."""
-	sample_a, sample_b = np.asarray(sample_a, dtype=float), np.asarray(sample_b, dtype=float)
-	if len(sample_a) < 2 or len(sample_b) < 2 or (np.std(sample_a) == 0 and np.std(sample_b) == 0):
-		return float("nan"), float("nan")
-	interval = stats.ttest_ind(sample_b, sample_a, equal_var=False).confidence_interval(level)
-	return float(interval.low), float(interval.high)
-
-
-def cohens_d(sample_a: np.ndarray | list, sample_b: np.ndarray | list) -> float:
-	"""Effect size of b over a: difference of means over the root mean square of the two sample standard deviations."""
-	sample_a, sample_b = np.asarray(sample_a, dtype=float), np.asarray(sample_b, dtype=float)
-	if len(sample_a) < 2 or len(sample_b) < 2:
-		return float("nan")  # no spread from one replicate
-	spread = math.sqrt((sample_a.var(ddof=1) + sample_b.var(ddof=1)) / 2)
-	return float((sample_b.mean() - sample_a.mean()) / spread) if spread > 0 else float("nan")
+	return float(stats.wilcoxon(sample_b, sample_a).pvalue)
 
 
 def _power(effect: float, replicates: int, alpha: float) -> float:
-	"""Power of a two-sided two-sample t-test with `replicates` per group at effect size `effect`."""
+	"""Power of a two-sided paired t-test over `replicates` pairs at paired effect size `effect` (d_z)."""
+	freedom = replicates - 1
+	return float(stats.nct.sf(stats.t.ppf(1 - alpha / 2, freedom), freedom, abs(effect) * math.sqrt(replicates)))
+
+
+def _power_independent(effect: float, replicates: int, alpha: float) -> float:
+	"""Power of a two-sided two-sample t-test with `replicates` per group at effect size `effect` (the pre-run power analysis)."""
 	freedom = 2 * replicates - 2
 	return float(stats.nct.sf(stats.t.ppf(1 - alpha / 2, freedom), freedom, abs(effect) * math.sqrt(replicates / 2)))
 
 
 def replicates_for_power(effect: float, alpha: float, power: float = POWER, limit: int = 100_000) -> int | None:
-	"""Smallest replicates per group reaching `power` at effect size `effect` (None for no effect)."""
+	"""Smallest number of paired replicates reaching `power` at paired effect size `effect` (None for no effect)."""
 	if not effect or math.isnan(effect):
 		return None
 	low, high = 2, 2
@@ -154,9 +185,19 @@ def replicates_for_power(effect: float, alpha: float, power: float = POWER, limi
 	return low
 
 
+def _detectable(power_of: Callable[[float, int, float], float], replicates: int, alpha: float, power: float) -> float:
+	"""Smallest effect size a power function reaches `power` for at `replicates` and `alpha`."""
+	return float(optimize.brentq(lambda effect: power_of(effect, replicates, alpha) - power, 1e-3, 20.0))
+
+
 def detectable_d(replicates: int, alpha: float, power: float = POWER) -> float:
-	"""Smallest effect size a two-sided two-sample t-test detects with `power` at `replicates` per group."""
-	return float(optimize.brentq(lambda effect: _power(effect, replicates, alpha) - power, 1e-3, 20.0))
+	"""Smallest paired effect size d_z a two-sided paired t-test detects with `power` over `replicates` pairs."""
+	return _detectable(_power, replicates, alpha, power)
+
+
+def planned_detectable_d(replicates: int, alpha: float, power: float = POWER) -> float:
+	"""Smallest effect size d the pre-run power analysis (two independent groups of `replicates`) detects with `power`."""
+	return _detectable(_power_independent, replicates, alpha, power)
 
 
 def holm(p_values: list, family_size: int = None) -> list:
@@ -169,17 +210,32 @@ def holm(p_values: list, family_size: int = None) -> list:
 	return adjusted
 
 
+def holm_family(comparisons: list, family_size: int = None) -> tuple:
+	"""Holm-adjusted paired p-values of a family of (sample a, sample b) comparisons, and how many keep their decision under Welch's test."""
+	paired = holm([paired_p(sample_a, sample_b) for sample_a, sample_b in comparisons], family_size)
+	unpaired = holm([welch_p(*paired_samples(sample_a, sample_b)) for sample_a, sample_b in comparisons], family_size)
+	return paired, sum((paired_value < ALPHA) == (unpaired_value < ALPHA) for paired_value, unpaired_value in zip(paired, unpaired))
+
+
+def welch_agreement_entries(family: str, agree: int, planned: int) -> dict:
+	"""A Holm family's count of decisions Welch's unpaired test keeps, and its number of comparisons."""
+	return {f"{family}/welch/agree": str(agree), f"{family}/welch/planned": str(planned)}
+
+
 # pylint: disable=too-many-arguments,too-many-positional-arguments
-def difference_entries(key: str, values_a: np.ndarray | list, values_b: np.ndarray | list, alpha: float, metric_slug: str) -> dict:
+def difference_entries(
+	key: str, values_a: pd.Series | np.ndarray | list, values_b: pd.Series | np.ndarray | list, alpha: float, metric_slug: str
+) -> dict:
 	"""b vs."""
-	# a under one macro key: Welch p, mean difference (b - a) with its interval, effect size d, and replicates per agent for 80% power at alpha.
-	values_a, values_b = np.asarray(values_a, dtype=float), np.asarray(values_b, dtype=float)
-	difference = values_b.mean() - values_a.mean()
-	low, high = welch_ci(values_a, values_b)
-	effect = cohens_d(values_a, values_b)
+	# a under one macro key, over the replicates both have: paired p, the mean of b - a with its interval, effect size d_z,
+	# and the paired replicates needed for 80% power at alpha.
+	values_a, values_b = paired_samples(values_a, values_b)
+	difference = (values_b - values_a).mean() if len(values_a) else float("nan")
+	low, high = paired_ci(values_a, values_b)
+	effect = cohens_dz(values_a, values_b)
 	needed = replicates_for_power(effect, alpha)
 	return {
-		f"{key}/p": p_macro(welch_p(values_a, values_b)),
+		f"{key}/p": p_macro(paired_p(values_a, values_b)),
 		f"{key}/diff": ("+" if difference >= 0 else "") + format_value(difference, metric_slug),
 		f"{key}/ci/low": format_value(low, metric_slug),
 		f"{key}/ci/high": format_value(high, metric_slug),

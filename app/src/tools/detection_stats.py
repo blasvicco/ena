@@ -55,14 +55,28 @@ def phase_detection(history: pd.DataFrame) -> list:
 	return phases
 
 
-def niches_per_env(niches_text: str) -> dict:
-	"""{environment: number of Hall of Fame niches labelled with it}, from a niches_<agent>.txt report."""
-	counts = {}
+def _niche_rows(niches_text: str) -> list:
+	"""(environment label, gladiators) per niche row of a niches_<agent>.txt report."""
+	rows = []
 	for line in niches_text.splitlines():
 		cells = [cell.strip() for cell in line.split("|")]
 		if len(cells) == 3 and cells[0].isdigit():
-			counts[cells[1]] = counts.get(cells[1], 0) + 1
+			rows.append((cells[1], int(cells[2])))
+	return rows
+
+
+def niches_per_env(niches_text: str) -> dict:
+	"""{environment: number of Hall of Fame niches labelled with it}, from a niches_<agent>.txt report."""
+	counts = {}
+	for env, _gladiators in _niche_rows(niches_text):
+		counts[env] = counts.get(env, 0) + 1
 	return counts
+
+
+def hall_of_fame_size(niches_text: str) -> tuple:
+	"""(gladiators, niches) the Hall of Fame holds at the end of training, from a niches_<agent>.txt report."""
+	rows = _niche_rows(niches_text)
+	return sum(gladiators for _env, gladiators in rows), len(rows)
 
 
 def replicate_detection(exp_dir: str, agent: str) -> list:

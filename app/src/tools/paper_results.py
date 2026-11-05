@@ -8,9 +8,9 @@
 #         <study>/n                                   replicates parsed
 #         <study>/<agent>/<phase>/<metric>/mean|std   phase: train, test, compute, adapt
 #         <study>/<agent>/time/min/mean|std           wall-clock training time, minutes
-#         <study>/<A>-vs-<B>/<phase>/<metric>/p|diff  Welch's t-test p-value and mean(B) - mean(A)
+#         <study>/<A>-vs-<B>/<phase>/<metric>/p|diff  paired t-test p-value and the mean of B - A over the shared replicates
 #         challenge/<agent>/adapt/<env>:steps/q1|median|q3|unsolved  steps to first solve: quartiles, replicates never solving
-#         challenge/<B>-vs-ENA-Combined/adapt/<env>:steps/p  Mann-Whitney U test p-value on steps to first solve
+#         challenge/<B>-vs-ENA-Combined/adapt/<env>:steps/p  Wilcoxon signed-rank p-value on steps to first solve
 #         <study>/<agent>/test/trainrel/mean|std      CartPole: test reliability on the training environments alone
 #         cheetah/archived/ENA-Combined/...|n         retention keys against the gladiators' end-of-phase episodes only
 #         <study>/<agent>/end|retention/<env>/mean|std  end of phase (last 10% of the phase), retention (%)
@@ -26,6 +26,10 @@
 #         selection/identity/identical|checked        selection study: training logs byte-identical to the ablation's ENA-Combined
 #         selection/<agent>/played/mean               selection study: distinct individuals played per test
 #         selection/<A>-vs-<B>/test/rel/lower|higher|pairs  replicates where B's reliability is lower / higher than A's
+#         selection/audit/phases|of|bpr|nm|excluded   test phases where BPR settles on another gladiator of niche match's niche
+#         ablation/<agent>/hof/gladiators|niches/mean|min|max  Hall of Fame size at the end of training
+#         <study>/mde|plannedmde                      detectable d_z (paired) and d (the pre-run, two-group power analysis)
+#         stats/welch/agree|planned                   Holm decisions Welch's unpaired test keeps, of every Holm family's comparisons
 #
 # Usage:
 #         python src/tools/paper_results.py
@@ -39,7 +43,6 @@ import sys
 
 # Libs imports
 import pandas as pd
-from scipy import stats
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -73,7 +76,7 @@ from tools.cheetah_results import (
 	retention_table,
 )
 from tools.detection_ablation import SCREENED, pass_table, study_labels
-from tools.detection_stats import majority_recognition, study_detection, summarize as summarize_detection
+from tools.detection_stats import hall_of_fame_size, majority_recognition, study_detection, summarize as summarize_detection
 from tools.plot_study_curves import plot as plot_study_curves
 from tools.paper_figures import replicate_box_figure
 from tools.paper_stats import (
@@ -85,14 +88,16 @@ from tools.paper_stats import (
 	detectable_d,
 	format_value,
 	holm,
+	holm_family,
 	mcnemar_p,
 	mean_cell,
 	mean_std_cell,
 	median_iqr_cell,
 	p_macro,
-	welch_p,
+	planned_detectable_d,
+	welch_agreement_entries,
 )
-from tools.paper_config import cartpole_rows, cheetah_rows, config_entries, environment_table, latex_table
+from tools.paper_config import APP_DIR, cartpole_rows, cheetah_rows, config_entries, environment_table, latex_table
 from tools.sac_discrete_entropy_check import OUTPUT_DIR as SACD_DIR
 from tools.selection_results import (
 	SELECTION_AGENTS,
@@ -103,9 +108,9 @@ from tools.selection_results import (
 	paired_count_entries,
 	played_entries,
 	training_identity_entries,
+	trust_audit_entries,
 )
 
-APP_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 GENERATED_DIR = os.path.join(APP_DIR, "latex", "generated")
 IMAGES_DIR = os.path.join(APP_DIR, "latex", "images")
 PHASE_KEYS = {"Training": "train", "Test": "test", "Compute Cost": "compute", "Adaptation": "adapt"}
@@ -223,8 +228,9 @@ def _pooled(results: dict, phase: str) -> pd.DataFrame:
 
 
 def _values(pooled: pd.DataFrame, agent: str, metric: str) -> pd.Series:
-	"""Return one agent's per-replicate values of one metric, numeric."""
-	return pd.to_numeric(pooled.loc[pooled["Agent"] == agent, metric].astype(str).str.replace(",", ""), errors="coerce").dropna()
+	"""Return one agent's per-replicate values of one metric, numeric, indexed by replicate (Exp)."""
+	rows = pooled.loc[pooled["Agent"] == agent].set_index("Exp")[metric]
+	return pd.to_numeric(rows.astype(str).str.replace(",", ""), errors="coerce").dropna()
 
 
 def summary_entries(study: str, results: dict) -> dict:
@@ -252,8 +258,8 @@ def comparison_entries(
 	study: str, results_a: dict, agent_a: str, results_b: dict, agent_b: str, phase: str, metrics: list, alpha: float = ALPHA
 ) -> dict:
 	"""agent_b vs."""
-	# agent_a on each metric (the agents may come from different studies): Welch p, mean difference (b - a) with its 95% interval, effect size d, and
-	# replicates per agent for 80% power at alpha.
+	# agent_a on each metric (the agents may come from different studies), paired by replicate: paired p, the mean of b - a
+	# with its 95% interval, effect size d_z, and the paired replicates needed for 80% power at alpha.
 	entries = {}
 	pooled_a, pooled_b = _pooled(results_a, phase), _pooled(results_b, phase)
 	for metric in metrics:
@@ -261,22 +267,6 @@ def comparison_entries(
 		key = f"{study}/{agent_a}-vs-{agent_b}/{PHASE_KEYS[phase]}/{slug(metric)}"
 		entries.update(difference_entries(key, values_a, values_b, alpha, value_slug(study, metric)))
 	return entries
-
-
-def paired_p(pooled_a: pd.DataFrame, agent_a: str, pooled_b: pd.DataFrame, agent_b: str, metric: str) -> tuple:
-	"""Paired t-test p-value of b vs. a over the replicates both have (matched by Exp), and the number of pairs."""
-	frames = []
-	for pooled, agent, column in ((pooled_a, agent_a, "a"), (pooled_b, agent_b, "b")):
-		rows = pooled.loc[pooled["Agent"] == agent, ["Exp", metric]].copy()
-		rows[column] = pd.to_numeric(rows[metric].astype(str).str.replace(",", ""), errors="coerce")
-		frames.append(rows[["Exp", column]].dropna())
-	pairs = frames[0].merge(frames[1], on="Exp")
-	if len(pairs) < 2:
-		return float("nan"), len(pairs)
-	differences = pairs["b"] - pairs["a"]
-	if differences.std() == 0:
-		return (1.0 if differences.mean() == 0 else 0.0), len(pairs)
-	return float(stats.ttest_rel(pairs["b"], pairs["a"]).pvalue), len(pairs)
 
 
 def with_reference_rows(study_results: dict, reference_results: dict, agents: list) -> dict:
@@ -341,44 +331,42 @@ def controller_verdict(outcomes: dict) -> str:
 
 
 def controller_entries(results_ref: dict, reference: str, results_alt: dict, alternatives: list) -> dict:
-	"""The controller study's family: Holm-adjusted Welch p per alternative and metric, paired p, detectable effect, verdict."""
+	"""The controller study's families: Holm-adjusted paired p per alternative and metric, detectable effects, Welch agreement, verdict."""
 	metrics = (("Test", "Reliability (%)", "rel"), ("Compute Cost", "Total Candidate Env-Steps", "candsteps"))
-	entries, outcomes = {}, {alternative: {} for alternative in alternatives}
+	entries, outcomes, agree = {}, {alternative: {} for alternative in alternatives}, 0
 	for phase, metric, metric_slug in metrics:
 		pooled_ref, pooled_alt = _pooled(results_ref, phase), _pooled(results_alt, phase)
-		tested = []
-		for alternative in alternatives:
-			values_ref, values_alt = _values(pooled_ref, reference, metric), _values(pooled_alt, alternative, metric)
+		samples = {alternative: (_values(pooled_ref, reference, metric), _values(pooled_alt, alternative, metric)) for alternative in alternatives}
+		adjusted, kept = holm_family(list(samples.values()), family_size=len(alternatives))
+		agree += kept
+		for (alternative, (values_ref, values_alt)), p_value in zip(samples.items(), adjusted):
 			key = f"controller/{reference}-vs-{alternative}/{PHASE_KEYS[phase]}/{metric_slug}"
-			tested.append((alternative, key, values_alt.mean() - values_ref.mean(), welch_p(values_ref, values_alt)))
-			entries[f"{key}/ppaired"] = p_macro(paired_p(pooled_ref, reference, pooled_alt, alternative, metric)[0])
+			entries[f"{key}/pholm"] = p_macro(p_value)
+			outcomes[alternative][metric_slug] = (values_alt.mean() - values_ref.mean(), p_value)
 			if metric_slug == "rel":
 				outcomes[alternative]["rel_mean"] = values_alt.mean()
-		for (alternative, key, difference, _p_value), adjusted in zip(tested, holm([row[3] for row in tested], family_size=len(alternatives))):
-			entries[f"{key}/pholm"] = p_macro(adjusted)
-			outcomes[alternative][metric_slug] = (difference, adjusted)
 	replicates = _pooled(results_alt, "Test")["Exp"].nunique()
 	entries["controller/family"] = str(len(alternatives))
 	entries["controller/mde"] = f"{detectable_d(replicates, ALPHA / len(alternatives)):.2f}"
+	entries["controller/plannedmde"] = f"{planned_detectable_d(replicates, ALPHA / len(alternatives)):.2f}"
 	entries["controller/verdict"] = controller_verdict(outcomes)
+	entries.update(welch_agreement_entries("controller", agree, len(alternatives) * len(metrics)))
 	return entries
 
 
 def family_entries(study: str, results: dict, pairs: list, metric: str = "Reliability (%)") -> dict:
-	"""Report a study's planned comparisons as one Holm family, with its size and detectable effect."""
-	# A study's planned comparisons as one family: Holm-adjusted Welch p per pair, the family size, and the
-	# smallest effect size the study's replicate count detects with 80% power at the family's most stringent level.
+	"""Report a study's planned comparisons as one Holm family, with its size, detectable effects and Welch agreement."""
+	# A study's planned comparisons as one family: Holm-adjusted paired p per pair, the family size, the smallest d_z the
+	# study's replicate count detects with 80% power at the family's most stringent level (and the smallest d of the
+	# pre-run power analysis, for two independent groups), and how many decisions Welch's unpaired test keeps.
 	pooled = _pooled(results, "Test")
-	tested = []
-	for agent_a, agent_b in pairs:
-		values_a, values_b = _values(pooled, agent_a, metric), _values(pooled, agent_b, metric)
-		tested.append((f"{study}/{agent_a}-vs-{agent_b}/test/{slug(metric)}", welch_p(values_a, values_b)))
-	entries = {}
-	for (key, _p_value), adjusted in zip(tested, holm([p_value for _key, p_value in tested], family_size=len(pairs))):
-		entries[f"{key}/pholm"] = p_macro(adjusted)
+	adjusted, agree = holm_family([(_values(pooled, agent_a, metric), _values(pooled, agent_b, metric)) for agent_a, agent_b in pairs], len(pairs))
+	entries = {f"{study}/{agent_a}-vs-{agent_b}/test/{slug(metric)}/pholm": p_macro(p_value) for (agent_a, agent_b), p_value in zip(pairs, adjusted)}
 	replicates = pooled["Exp"].nunique()
 	entries[f"{study}/family"] = str(len(pairs))
 	entries[f"{study}/mde"] = f"{detectable_d(replicates, ALPHA / len(pairs)):.2f}"
+	entries[f"{study}/plannedmde"] = f"{planned_detectable_d(replicates, ALPHA / len(pairs)):.2f}"
+	entries.update(welch_agreement_entries(study, agree, len(pairs)))
 	return entries
 
 
@@ -392,6 +380,30 @@ def episode_count_entries(study: str, study_dir: str, agents: list) -> dict:
 			counts += env_ids.groupby(env_ids.ne(env_ids.shift()).cumsum()).size().tolist()
 		entries[f"{study}/{agent}/episodes/perenv"] = f"{sum(counts) / len(counts):,.0f}"
 	return entries
+
+
+def archive_size_entries(study: str, study_dir: str, agents: list) -> dict:
+	"""Mean, min and max over the replicates of the gladiators and niches each agent's Hall of Fame holds at the end of training."""
+	entries = {}
+	for agent in agents:
+		sizes = []
+		for exp_dir in get_experiment_directories(study_dir):
+			with open(os.path.join(study_dir, exp_dir, f"niches_{agent}.txt"), encoding="utf-8") as report:
+				sizes.append(hall_of_fame_size(report.read()))
+		for column, values in zip(("gladiators", "niches"), (pd.Series(size) for size in zip(*sizes))):
+			key = f"{study}/{agent}/hof/{column}"
+			entries.update({f"{key}/mean": f"{values.mean():.1f}", f"{key}/min": str(values.min()), f"{key}/max": str(values.max())})
+	return entries
+
+
+def welch_total_entries(entries: dict) -> dict:
+	"""Sum every Holm family's Welch agreement (decisions Welch's unpaired test keeps) into stats/welch/agree and planned."""
+	return {
+		f"stats/welch/{part}": str(
+			sum(int(value) for key, value in entries.items() if key.endswith(f"/welch/{part}") and not key.startswith("stats/"))
+		)
+		for part in ("agree", "planned")
+	}
 
 
 def time_entries(study: str, study_dir: str) -> dict:
@@ -663,10 +675,7 @@ def selection_comparisons(results: dict) -> dict:
 	pooled = _pooled(results, "Test")
 	for agent_a, agent_b in SELECTION_FAMILY:
 		entries.update(comparison_entries("selection", results, agent_a, results, agent_b, "Test", TEST_METRICS, alpha=ALPHA / len(SELECTION_FAMILY)))
-		by_replicate = [
-			pd.to_numeric(pooled[pooled["Agent"] == agent].set_index("Exp")["Reliability (%)"].astype(str).str.replace(",", ""), errors="coerce")
-			for agent in (agent_a, agent_b)
-		]
+		by_replicate = [_values(pooled, agent, "Reliability (%)") for agent in (agent_a, agent_b)]
 		entries.update(paired_count_entries(f"selection/{agent_a}-vs-{agent_b}/test/rel", *by_replicate))
 	for agent_a, agent_b in SELECTION_DESCRIPTIVE:
 		entries.update(comparison_entries("selection", results, agent_a, results, agent_b, "Test", ["Reliability (%)"]))
@@ -701,6 +710,8 @@ def collect_studies() -> tuple:
 	selection_dir, ablation_dir = os.path.join(APP_DIR, STUDIES["selection"]), os.path.join(APP_DIR, STUDIES["ablation"])
 	entries.update(training_identity_entries(selection_dir, ablation_dir))
 	entries.update(played_entries(selection_dir, ablation_dir))
+	entries.update(trust_audit_entries(selection_dir, ablation_dir, CARTPOLE_TRAIN_ENVS, SUCCESS_THRESHOLD))
+	entries.update(archive_size_entries("ablation", ablation_dir, ["ENA-HoF", "ENA-HoF+EnvDetection", "ENA-Plasticity+HoF", "ENA-Combined"]))
 	return results, entries
 
 
@@ -794,8 +805,8 @@ def variant_skills(variant: str) -> set:
 
 
 def comparison_table(entries: dict, rows: list, headers: list, caption: str, label: str) -> str:
-	"""A LaTeX table of planned comparisons: per (label, label, macro key) row, the difference, its interval, d and the Holm-adjusted p."""
-	head = [*headers, "Difference", f"{CI_LEVEL * 100:g}\\% CI", "$d$", "Holm"]
+	"""A LaTeX table of planned comparisons: per (label, label, macro key) row, the paired difference, its interval, d_z and the Holm-adjusted p."""
+	head = [*headers, "Difference", f"{CI_LEVEL * 100:g}\\% CI", "$d_z$", "Holm"]
 	lines = ["\\hline", " & ".join(f"\\textbf{{{header}}}" for header in head) + " \\\\", "\\hline"]
 	for first, second, key in rows:
 		interval = f"{entries[f'{key}/ci/low']} to {entries[f'{key}/ci/high']}"
@@ -894,6 +905,7 @@ def main() -> None:
 	entries.update(cartpole_check_entries(pd.read_csv(os.path.join(DETECTION_ABLATION_DIR, "cartpole.csv"))))
 	retention, rows = forgetting_entries()
 	entries.update(retention)
+	entries.update(welch_total_entries(entries))
 	ablation_forgetting, tables["table_ablation_retention.tex"] = ablation_retention()
 	entries.update(ablation_forgetting)
 

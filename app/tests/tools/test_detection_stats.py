@@ -10,6 +10,7 @@ import pytest
 # App imports
 from helpers import step
 from tools.detection_stats import (
+	hall_of_fame_size,
 	majority_recognition,
 	niches_per_env,
 	phase_detection,
@@ -72,6 +73,13 @@ def test_niches_per_env_counts_the_hall_of_fames_niches_by_environment() -> None
 	"""Fragmentation: Mars spread over two niches, Earth one."""
 	with step("Act/Assert: counts from the niche report."):
 		assert niches_per_env(NICHES_TXT) == {"Mars-Light": 2, "Earth-Standard": 1}
+
+
+def test_hall_of_fame_size_counts_gladiators_and_niches() -> None:
+	"""The archive at the end of training: 5 + 5 + 4 gladiators in 3 niches; an empty report holds none."""
+	with step("Act/Assert: the sizes."):
+		assert hall_of_fame_size(NICHES_TXT) == (14, 3)
+		assert hall_of_fame_size("Niche ID | Env Name | Total Gladiators\nNo gladiators inducted.\n") == (0, 0)
 
 
 def test_replicate_detection_returns_one_row_per_phase_and_metric(tmp_path) -> None:

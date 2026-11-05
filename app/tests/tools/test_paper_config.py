@@ -52,6 +52,20 @@ def test_config_entries_read_the_settings_the_studies_use() -> None:
 		assert entries["cfg/ppo/entropycoef"] == "0.01" and entries["cfg/ppo/anneallr"] == "no"
 		assert entries["cfg/sacdiscrete/targetentropyratio"] == f"{cartpole_challenge.SAC_DISCRETE_TARGET_ENTROPY:g}"
 		assert entries["cfg/cheetahena/olympicsinterval"] == "200,000"
+		# The ramp's lowest signal (0.1) on a population of 100: 10 candidates, 10 + 0.1 * (500 - 10) or (200 - 10) steps.
+		assert (entries["cfg/ena/search/rampmincandidates"], entries["cfg/ena/search/rampminsteps"], entries["cfg/cheetah/rampminsteps"]) == (
+			"10",
+			"59",
+			"29",
+		)
+		assert entries["cfg/ena/detect/windows"] == "2, 4"
+		assert entries["cfg/plot/band"] == "50"
+		assert (entries["cfg/software/tensorflow"], entries["cfg/software/gymnasium"], entries["cfg/software/pywavelets"]) == (
+			"2.21.0",
+			"1.3.0",
+			"1.8.0",
+		)
+		assert entries["cfg/software/python"] == "3.11"
 		assert all(value for value in entries.values())
 
 

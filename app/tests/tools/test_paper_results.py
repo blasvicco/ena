@@ -13,20 +13,25 @@ from tools.paper_stats import (
 	ALPHA,
 	MINUS,
 	clopper_pearson,
-	cohens_d,
+	cohens_dz,
 	detectable_d,
 	format_p,
 	holm,
+	holm_family,
 	mcnemar_p,
 	mean_cell,
 	mean_std_cell,
+	paired_ci,
+	paired_p,
+	paired_samples,
+	planned_detectable_d,
 	replicates_for_power,
-	welch_ci,
 	welch_p,
 )
 from tools.paper_results import (
 	ABLATION_FAMILY,
 	ablation_family_table,
+	archive_size_entries,
 	comparison_table,
 	detection_total_entries,
 	seed_entries,
@@ -43,7 +48,6 @@ from tools.paper_results import (
 	compute_rank_entries,
 	controller_entries,
 	controller_verdict,
-	paired_p,
 	detection_entries,
 	detection_table,
 	parse_training_times,
@@ -53,6 +57,7 @@ from tools.paper_results import (
 	results_table,
 	selection_comparisons,
 	summary_entries,
+	welch_total_entries,
 	with_reference_rows,
 	write_macros,
 )
@@ -134,11 +139,11 @@ def test_summary_entries_give_mean_std_and_replicate_count() -> None:
 		assert entries["challenge/PPO/test/Mars-Light/mean"] == "495.0"
 
 
-def test_comparison_entries_give_welch_p_and_difference() -> None:
-	"""For each pair and metric: the p-value and the difference of means (b - a)."""
-	with step("Arrange: clearly different reliabilities."):
+def test_comparison_entries_give_paired_p_and_difference() -> None:
+	"""For each pair and metric: the paired p-value and the mean of the within-replicate differences (b - a)."""
+	with step("Arrange: clearly different reliabilities, the differences varying around 20."):
 		rows = [(f"exp_{index}", "ENA", {"Reliability (%)": 90.0 + index % 3}) for index in range(10)]
-		rows += [(f"exp_{index}", "PPO", {"Reliability (%)": 70.0 + index % 3}) for index in range(10)]
+		rows += [(f"exp_{index}", "PPO", {"Reliability (%)": 70.0 + (2 * index) % 3}) for index in range(10)]
 		results = _results(rows)
 
 	with step("Act: compare PPO -> ENA on reliability."):
@@ -234,28 +239,68 @@ def test_detection_table_has_one_row_per_agent_phase_and_environment() -> None:
 		assert "\\label{tab:detection}" in table
 
 
-def test_welch_ci_brackets_the_difference_of_means() -> None:
-	"""95% interval of mean(b) - mean(a): centred on the difference, excluding 0 for clearly separated samples."""
-	with step("Act: two samples 20 apart."):
-		low, high = welch_ci([70.0, 71.0, 72.0, 70.0, 71.0], [90.0, 91.0, 92.0, 90.0, 91.0])
+def test_paired_ci_brackets_the_mean_difference_as_scipy_does() -> None:
+	"""95% interval of the mean of b - a over the pairs: scipy's paired interval, around +20 and excluding 0."""
+	with step("Act: two samples about 20 apart, pair by pair."):
+		low, high = paired_ci([70.0, 71.0, 72.0, 70.0, 71.0], [90.0, 92.0, 91.0, 91.0, 90.0])
 
-	with step("Assert: the interval contains +20 and not 0."):
-		assert low < 20.0 < high
-		assert low > 0
-
-
-def test_cohens_d_is_the_difference_over_the_average_standard_deviation() -> None:
-	"""d = (mean b - mean a) / sqrt((var a + var b) / 2)."""
-	with step("Act/Assert: samples with SD 1 whose means differ by 2."):
-		assert cohens_d([0.0, 1.0, 2.0], [2.0, 3.0, 4.0]) == pytest.approx(2.0)
+	with step("Assert: scipy's interval, which contains +20 and not 0; no interval for constant differences."):
+		assert (low, high) == pytest.approx((18.7583, 21.2417), abs=1e-4)
+		assert all(math.isnan(bound) for bound in paired_ci([1.0, 2.0], [3.0, 4.0]))
 
 
-def test_power_helpers_match_the_power_analysis_that_fixed_the_replicate_count() -> None:
-	"""At n = 30, alpha 0.05/7 and power 0.8 the smallest detectable d is 0.94; and back."""
-	with step("Act/Assert: detectable effect at 30, and replicates needed for it."):
-		assert detectable_d(30, 0.05 / 7) == pytest.approx(0.94, abs=0.01)
-		assert replicates_for_power(0.94, 0.05 / 7) in (30, 31)
+def test_paired_tests_match_replicates_by_index_and_drop_unmatched_ones() -> None:
+	"""Replicate i of each agent is the same seeded run up to the agent's difference: compare within replicate."""
+	with step("Arrange: b = a + about 1 in every shared replicate (a's spread is huge), plus one unmatched replicate each."):
+		values_a = pd.Series([10.0, 50.0, 30.0, 90.0], index=["exp_1", "exp_2", "exp_3", "exp_4"])
+		values_b = pd.Series([0.0, 31.1, 11.2, 50.9], index=["exp_9", "exp_3", "exp_1", "exp_2"])
+
+	with step("Act/Assert: three pairs, matched by replicate whatever the order; a constant-ish gain is significant."):
+		sample_a, sample_b = paired_samples(values_a, values_b)
+		assert len(sample_a) == 3 and (sample_b - sample_a) == pytest.approx([1.2, 0.9, 1.1])
+		assert paired_p(values_a, values_b) < 0.01
+		assert welch_p(sample_a, sample_b) > 0.5  # unpaired, the same pairs hide the gain
+
+
+def test_paired_tests_handle_degenerate_samples() -> None:
+	"""Constant differences: p 1 for none, 0 for a constant gain; fewer than 2 pairs: NaN; sequences of unequal length: an error."""
+	with step("Act/Assert: the degenerate cases."):
+		assert paired_p([1.0, 2.0], [1.0, 2.0]) == 1.0
+		assert paired_p([1.0, 2.0], [3.0, 4.0]) == 0.0
+		assert math.isnan(paired_p([1.0], [2.0]))
+		with pytest.raises(ValueError):
+			paired_samples([1.0, 2.0], [1.0])
+
+
+def test_cohens_dz_is_the_mean_difference_over_its_standard_deviation() -> None:
+	"""d_z = mean(b - a) / sd(b - a)."""
+	with step("Act/Assert: differences 1 and 3 (mean 2, sd sqrt 2); no spread gives NaN."):
+		assert cohens_dz([0.0, 0.0], [1.0, 3.0]) == pytest.approx(math.sqrt(2))
+		assert math.isnan(cohens_dz([0.0, 1.0], [2.0, 3.0]))
+
+
+def test_power_helpers_give_the_paired_effect_and_the_pre_run_power_analysis() -> None:
+	"""At n = 30, alpha 0.05/7 and power 0.8: the pre-run, two-group analysis detects d = 0.94; the paired test d_z = 0.69."""
+	with step("Act/Assert: detectable effects at 30, and replicates needed for them."):
+		assert planned_detectable_d(30, 0.05 / 7) == pytest.approx(0.94, abs=0.01)
+		assert detectable_d(30, 0.05 / 7) == pytest.approx(0.69, abs=0.01)
+		assert replicates_for_power(detectable_d(30, 0.05 / 7), 0.05 / 7) == 30
 		assert replicates_for_power(0.0, 0.05) is None
+
+
+def test_holm_family_counts_the_decisions_welch_s_test_keeps() -> None:
+	"""A within-replicate gain hidden by the spread across replicates: paired significant, Welch not; a clear gap: both."""
+	with step("Arrange: one comparison only the paired test resolves, one both resolve."):
+		spread = pd.Series([10.0, 50.0, 30.0, 90.0, 70.0], index=[f"exp_{index}" for index in range(5)])
+		hidden = (spread, spread + pd.Series([1.0, 1.2, 0.9, 1.1, 1.0], index=spread.index))
+		clear = (spread, spread + 100 + pd.Series([1.0, -1.0, 2.0, 0.0, 1.0], index=spread.index))
+
+	with step("Act: the family."):
+		adjusted, agree = holm_family([hidden, clear])
+
+	with step("Assert: both significant paired; Welch keeps only the clear one."):
+		assert all(p_value < ALPHA for p_value in adjusted)
+		assert agree == 1
 
 
 def test_holm_adjusts_ordered_p_values_and_keeps_them_monotone() -> None:
@@ -269,7 +314,7 @@ def test_comparison_entries_also_give_the_interval_effect_size_and_replicates_ne
 	"""Each comparison carries what a reader needs to judge it: CI, d, and n for 80% power at the family's alpha."""
 	with step("Arrange: clearly different reliabilities."):
 		rows = [(f"exp_{index}", "ENA", {"Reliability (%)": 90.0 + index % 3}) for index in range(10)]
-		rows += [(f"exp_{index}", "PPO", {"Reliability (%)": 70.0 + index % 3}) for index in range(10)]
+		rows += [(f"exp_{index}", "PPO", {"Reliability (%)": 70.0 + (2 * index) % 3}) for index in range(10)]
 		results = _results(rows)
 
 	with step("Act: compare PPO -> ENA."):
@@ -294,22 +339,12 @@ def test_ablation_family_entries_give_holm_p_for_the_planned_comparisons_and_the
 	with step("Act: the family entries for two pairs."):
 		entries = family_entries("ablation", results, [("ENA-NoSkill", "ENA-HoF"), ("ENA-HoF", "ENA-NoSkill")])
 
-	with step("Assert: a Holm p per pair; the detectable d at n = 30 for a family of 2."):
+	with step("Assert: a Holm p per pair; the detectable d_z (and the pre-run d) at n = 30 for a family of 2; Welch agrees."):
 		assert entries["ablation/ENA-NoSkill-vs-ENA-HoF/test/rel/pholm"] == "$p=1.000$"
 		assert entries["ablation/mde"] == f"{detectable_d(30, 0.05 / 2):.2f}"
+		assert entries["ablation/plannedmde"] == f"{planned_detectable_d(30, 0.05 / 2):.2f}"
 		assert entries["ablation/family"] == "2"
-
-
-def test_paired_p_matches_replicates_by_experiment_and_drops_unmatched_ones() -> None:
-	"""Replicate i of each agent is the same seeded run up to the agent's difference: compare within replicate."""
-	with step("Arrange: b = a + 1 in every shared replicate (noisy a), plus one unmatched replicate."):
-		pooled_a = pd.DataFrame({"Agent": "A", "Exp": ["exp_1", "exp_2", "exp_3", "exp_4"], "Reliability (%)": [10.0, 50.0, 30.0, 90.0]})
-		pooled_b = pd.DataFrame({"Agent": "B", "Exp": ["exp_1", "exp_2", "exp_3", "exp_9"], "Reliability (%)": [11.2, 50.9, 31.1, 0.0]})
-
-	with step("Act/Assert: a constant within-replicate gain is significant although a's spread is huge; n = 3."):
-		p_value, pairs = paired_p(pooled_a, "A", pooled_b, "B", "Reliability (%)")
-		assert pairs == 3
-		assert p_value < 0.01
+		assert (entries["ablation/welch/agree"], entries["ablation/welch/planned"]) == ("2", "2")
 
 
 @pytest.mark.parametrize(
@@ -340,8 +375,8 @@ def test_controller_verdict_prefers_the_more_reliable_of_two_qualifying_alternat
 		assert controller_verdict(outcomes) == "B"
 
 
-def test_controller_entries_give_holm_and_paired_p_per_alternative_and_the_verdict() -> None:
-	"""Holm over the alternatives per metric, a paired p as robustness, and the generated verdict."""
+def test_controller_entries_give_holm_paired_p_per_alternative_and_the_verdict() -> None:
+	"""Holm over the alternatives per metric on paired p, Welch's agreement, and the generated verdict."""
 	with step("Arrange: 10 paired replicates; Alt is 10 points more reliable and cheaper."):
 		reference = _results([(f"exp_{index}", "Ref", {"Reliability (%)": 70.0 + index % 3}) for index in range(10)])
 		reference["Compute Cost"] = [
@@ -355,10 +390,10 @@ def test_controller_entries_give_holm_and_paired_p_per_alternative_and_the_verdi
 	with step("Act: build the entries for the single alternative."):
 		entries = controller_entries(reference, "Ref", alternative, ["Alt"])
 
-	with step("Assert: Holm and paired p for reliability, the family size, the verdict."):
+	with step("Assert: Holm p for reliability, the family size, Welch's agreement over both metrics, the verdict."):
 		assert entries["controller/Ref-vs-Alt/test/rel/pholm"] == "$p<0.001$"
-		assert entries["controller/Ref-vs-Alt/test/rel/ppaired"] == "$p<0.001$"
 		assert entries["controller/family"] == "1"
+		assert (entries["controller/welch/agree"], entries["controller/welch/planned"]) == ("2", "2")
 		assert entries["controller/verdict"] == "Alt"
 
 
@@ -637,14 +672,14 @@ def test_ablation_family_table_lists_every_planned_comparison_with_the_skill_it_
 
 
 def test_comparison_table_prints_the_difference_interval_effect_and_holm_p() -> None:
-	"""A generic planned-comparison row: two labels, then difference, interval, d and Holm-adjusted p."""
+	"""A generic planned-comparison row: two labels, then difference, interval, d_z and Holm-adjusted p."""
 	with step("Act: one row."):
 		entries = {"k/diff": "+6.0", "k/ci/low": "0.1", "k/ci/high": "12.6", "k/d": "0.48", "k/pholm": "$p=0.141$"}
 		table = comparison_table(entries, [("Quadratic", "Reliability", "k")], ["Controller", "Metric"], "Caption", "tab:x")
 
 	with step("Assert: the row and the headers."):
 		assert "Quadratic & Reliability & +6.0 & 0.1 to 12.6 & 0.48 & $p=0.141$ \\\\" in table
-		assert "\\textbf{Controller}" in table and "\\textbf{Holm}" in table
+		assert "\\textbf{Controller}" in table and "\\textbf{Holm}" in table and "\\textbf{$d_z$}" in table
 
 
 def test_seed_entries_give_the_seeds_of_the_first_and_last_replicate(tmp_path) -> None:
@@ -678,3 +713,38 @@ def test_value_slug_prints_only_halfcheetah_s_returns_whole(study, metric, expec
 	"""HalfCheetah's per-environment returns print as whole numbers; everything else keeps its own format."""
 	with step("Act/Assert: the format slug."):
 		assert value_slug(study, metric) == expected
+
+
+def test_archive_size_entries_count_gladiators_and_niches_per_replicate(tmp_path) -> None:
+	"""The Hall of Fame at the end of training, from each replicate's niches report: mean, min and max over the replicates."""
+	with step("Arrange: two replicates; the archive holds 3 niches of 5, then 2 niches of 5 and 3."):
+		header = "Niche ID   | Env Name             | Total Gladiators\n" + "-" * 51 + "\n"
+		for name, rows in (
+			("exp_1", [(0, "Mars-Light", 5), (1, "Jupiter-Heavy", 5), (2, "Earth-Standard", 5)]),
+			("exp_2", [(0, "Mars-Light", 5), (3, "Earth-Standard", 3)]),
+		):
+			(tmp_path / name).mkdir()
+			body = "".join(f"{niche:<10} | {env:<20} | {count:<15}\n" for niche, env, count in rows)
+			(tmp_path / name / "niches_ENA.txt").write_text(header + body, encoding="utf-8")
+
+	with step("Act: the entries."):
+		entries = archive_size_entries("ablation", str(tmp_path), ["ENA"])
+
+	with step("Assert: 15 and 8 gladiators, 3 and 2 niches."):
+		assert (
+			entries["ablation/ENA/hof/gladiators/mean"],
+			entries["ablation/ENA/hof/gladiators/min"],
+			entries["ablation/ENA/hof/gladiators/max"],
+		) == ("11.5", "8", "15")
+		assert (entries["ablation/ENA/hof/niches/mean"], entries["ablation/ENA/hof/niches/min"], entries["ablation/ENA/hof/niches/max"]) == (
+			"2.5",
+			"2",
+			"3",
+		)
+
+
+def test_welch_total_entries_sum_every_family_s_agreement() -> None:
+	"""Every family's Welch agreement and size, summed; other keys are ignored."""
+	with step("Act/Assert: two families, 3 of 3 and 1 of 2."):
+		entries = {"a/welch/agree": "3", "a/welch/planned": "3", "b/c/welch/agree": "1", "b/c/welch/planned": "2", "a/welch/p": "x"}
+		assert welch_total_entries(entries) == {"stats/welch/agree": "4", "stats/welch/planned": "5"}

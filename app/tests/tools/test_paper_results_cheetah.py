@@ -166,8 +166,8 @@ def test_forgetting_is_negative_when_the_test_beats_the_end_of_phase() -> None:
 
 def test_retention_comparisons_test_the_agent_against_each_baseline_as_one_holm_family() -> None:
 	"""Retention comparisons test ENA against each baseline as one Holm family."""
-	# ENA vs each baseline on the left-behind retention: Welch p, Holm across the baselines, difference with its interval,
-	# effect size and the replicates needed for 80% power.
+	# ENA vs each baseline on the left-behind retention, paired by replicate: paired p, Holm across the baselines, the mean
+	# difference with its interval, effect size d_z and the paired replicates needed for 80% power.
 	with step("Arrange: ENA retains about 90%, PPO about 20%, SAC about 85%, over four replicates."):
 		values = {"ENA": [90, 92, 88, 91], "PPO": [20, 25, 15, 22], "SAC": [80, 90, 85, 86]}
 		rows = _rows({agent: [(f"e{index}", "Mars", 100, value) for index, value in enumerate(series)] for agent, series in values.items()})

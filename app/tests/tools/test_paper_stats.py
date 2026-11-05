@@ -1,4 +1,4 @@
-"""Tests for paper_stats.py: a single replicate gives no statistics, the rank test, and how values and table cells print."""
+"""Tests for paper_stats.py: a single replicate gives no statistics, the signed-rank test, and how values and table cells print."""
 
 # General imports
 import math
@@ -12,14 +12,14 @@ import pytest
 from helpers import step
 from tools.paper_stats import (
 	MINUS,
-	cohens_d,
+	cohens_dz,
 	difference_entries,
 	format_value,
-	mann_whitney_p,
 	mean_cell,
 	mean_std_cell,
 	median_iqr_cell,
 	signed,
+	wilcoxon_p,
 )
 
 
@@ -29,7 +29,7 @@ def test_one_replicate_gives_no_statistics_and_no_warnings() -> None:
 		with warnings.catch_warnings():
 			warnings.simplefilter("error")
 			entries = difference_entries("k", [1.0], [2.0], 0.05, "x")
-			effect = cohens_d([1.0], [2.0])
+			effect = cohens_dz([1.0], [2.0])
 
 	with step("Assert: the difference is known; the rest is n/a."):
 		assert entries["k/diff"] == "+1.0"
@@ -53,16 +53,16 @@ def test_format_value_prints_returns_whole_and_negatives_with_a_minus_sign(value
 		assert format_value(value, metric_slug) == expected
 
 
-def test_mann_whitney_p_separates_shifted_samples_and_handles_degenerate_ones() -> None:
-	"""A rank test: one extreme value does not hide a shift; identical samples give 1, an empty one NaN."""
+def test_wilcoxon_p_separates_paired_shifts_and_handles_degenerate_ones() -> None:
+	"""A signed-rank test on the pairs: one extreme pair does not hide a shift; no difference gives 1, no pair NaN."""
 	with step("Arrange: b is a shifted copy of a, plus one huge outlier in b that would swamp a t-test."):
 		sample_a = list(range(20))
 		sample_b = [value + 15 for value in range(19)] + [10_000_000]
 
 	with step("Act/Assert: the shift is detected; degenerate samples are handled quietly."):
-		assert mann_whitney_p(sample_a, sample_b) < 0.001
-		assert mann_whitney_p([5.0, 5.0], [5.0, 5.0]) == 1.0
-		assert math.isnan(mann_whitney_p([], [1.0]))
+		assert wilcoxon_p(sample_a, sample_b) < 0.001
+		assert wilcoxon_p([5.0, 5.0], [5.0, 5.0]) == 1.0
+		assert math.isnan(wilcoxon_p([], []))
 
 
 @pytest.mark.parametrize(

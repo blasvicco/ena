@@ -30,7 +30,7 @@ def test_add_training_reliability_counts_only_the_test_episodes_in_the_training_
 		assert results["Test"][0].loc[0, TRAINING_RELIABILITY] == 50.0
 
 
-def test_first_solve_entries_give_quartiles_unsolved_counts_and_a_rank_test_of_the_last_agent_against_each_other() -> None:
+def test_first_solve_entries_give_quartiles_unsolved_counts_and_a_signed_rank_test_of_the_last_agent_against_each_other() -> None:
 	"""Medians and quartiles per agent, the replicates that never solved, and the last agent vs each baseline."""
 	with step("Arrange: PPO solves Mars in 10-50 steps; ENA in 100-500, and one replicate never solves it."):
 		steps = {"PPO": [10, 20, 30, 40, 50], "ENA": [100, 200, 300, 400, 500]}
@@ -41,9 +41,9 @@ def test_first_solve_entries_give_quartiles_unsolved_counts_and_a_rank_test_of_t
 	with step("Act: the entries."):
 		entries = first_solve_entries("challenge", lambda agent, metric: series[(agent, metric)], ["PPO", "ENA"], ["Mars"])
 
-	with step("Assert: quartiles and unsolved counts, and a rank test only of ENA against PPO."):
+	with step("Assert: quartiles and unsolved counts, and a signed-rank test (paired by replicate) only of ENA against PPO."):
 		assert (entries["challenge/ENA/adapt/Mars:steps/q1"], entries["challenge/ENA/adapt/Mars:steps/median"]) == ("200", "300")
 		assert entries["challenge/ENA/adapt/Mars:steps/q3"] == "400"
 		assert (entries["challenge/ENA/adapt/Mars:steps/unsolved"], entries["challenge/PPO/adapt/Mars:steps/unsolved"]) == ("1", "0")
-		assert entries["challenge/PPO-vs-ENA/adapt/Mars:steps/p"] == "$p=0.008$"  # fully separated 5 vs 5: exact 2/252
+		assert entries["challenge/PPO-vs-ENA/adapt/Mars:steps/p"] == "$p=0.062$"  # ENA later in all 5 pairs: exact 2/32
 		assert not any("ENA-vs-" in key for key in entries)

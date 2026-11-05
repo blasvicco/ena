@@ -31,9 +31,13 @@ from agents.ena.skills.selection.driver.bpr import Instance as BPR
 from agents.ena.tools import curves, reward_normalizer
 from agents.ena.tools.chirp_features import features as chirp_features
 from tools import detection_ablation, detection_benchmark
-from tools import metrics
+from tools import metrics, plot_study_curves
 from tools import sac_discrete_entropy_check as sac_check
 from tools.paper_stats import signed
+
+APP_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# The libraries the appendix names, keyed as requirements.txt pins them (lowercased, extras dropped).
+PINNED_LIBRARIES = ("tensorflow", "gymnasium", "mujoco", "numpy", "keras", "scipy", "pywavelets")
 
 # Keras activation names as the paper prints them.
 ACTIVATION_NAMES = {"relu": "ReLU", "tanh": "tanh"}
@@ -87,6 +91,12 @@ def baseline_entries() -> dict:
 		"cfg/challenge/pponet": _layers(challenge.ppo_actor_brain(2, 4)),
 		"cfg/cheetah/baselinenet": _layers(cheetah.mlp_brain(6, 17)),
 	}
+
+
+def ramp_minimum_search(agent: object) -> tuple:
+	"""Candidates and evaluation depth per episode at the linear ramp's lowest signal, for an ENA as a study builds it."""
+	candidates, depth = metrics.estimate_eval_cost(curves.MIN_SIGNAL, agent.pop_size, agent.min_eval_steps, agent.max_eval_steps)
+	return candidates, int(depth)
 
 
 def ena_entries() -> dict:
@@ -152,6 +162,10 @@ def ena_entries() -> dict:
 	}
 	entries = {f"cfg/ena/{key}": _number(value) for key, value in values.items()}
 	entries["cfg/ena/brain"] = _layers(agent.population[0]["model"])
+	candidates, depth = ramp_minimum_search(agent)
+	entries["cfg/ena/search/rampmincandidates"], entries["cfg/ena/search/rampminsteps"] = _number(candidates), _number(depth)
+	# The predictive mixture's first window lengths; the paper continues them with an ellipsis.
+	entries["cfg/ena/detect/windows"] = ", ".join(_number(window) for window in detection._cusum.windows[:2])
 	# The CuSum alarm threshold is log(gamma); gamma is printed as a power of ten.
 	entries["cfg/ena/detect/gammaexp"] = _number(round(detection._cusum._threshold / math.log(10)))
 	return entries
@@ -250,6 +264,7 @@ def chirp_entries() -> dict:
 	entries = {
 		**{f"cfg/cheetahena/{name.replace('_', '')}": _setting(value) for name, value in ena_settings.items()},
 		"cfg/cheetahena/brain": _layers(agent.population[0]["model"]),
+		"cfg/cheetah/rampminsteps": _number(ramp_minimum_search(agent)[1]),
 		"cfg/cheetah/chirp/steps": _number(settings["steps"]),
 		"cfg/cheetah/chirp/excitation": settings["excitation"].replace("_", " "),
 		"cfg/cheetah/chirp/excitationwavelet": WAVELET_NAMES.get(
@@ -284,9 +299,26 @@ def chirp_entries() -> dict:
 	return entries
 
 
+def appendix_entries() -> dict:
+	"""The Python version, the pinned versions of the libraries the paper names, and the share of replicates in a figure's band."""
+	pins = {}
+	with open(os.path.join(APP_DIR, "requirements.txt"), encoding="utf-8") as requirements:
+		for line in requirements:
+			name, separator, version = line.split("#")[0].strip().partition("==")
+			if separator:
+				pins[name.split("[")[0].lower()] = version
+	low, high = plot_study_curves.BAND_QUANTILES
+	return {
+		**{f"cfg/software/{name}": pins[name] for name in PINNED_LIBRARIES},
+		# The interpreter of the container the studies ran in (hub/python/Dockerfile); run this inside it.
+		"cfg/software/python": f"{sys.version_info.major}.{sys.version_info.minor}",
+		"cfg/plot/band": _number(round((high - low) * 100, 6)),
+	}
+
+
 def config_entries() -> dict:
 	"""Every configuration macro."""
-	return {**ena_entries(), **protocol_entries(), **chirp_entries(), **baseline_entries()}
+	return {**ena_entries(), **protocol_entries(), **chirp_entries(), **baseline_entries(), **appendix_entries()}
 
 
 if __name__ == "__main__":
