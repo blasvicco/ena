@@ -81,14 +81,14 @@ Citation verification details: Section 3 and 4 on pages 2–4 present Model-Base
 
 ---
 
-[8] UNVERIFIED!!!
+[8] VERIFIED.
 Paper says: "Other context-detection approaches evaluate predictions from an ensemble of world models or statistical tests over observations [8]..." Pag. 1
 Paper citation says:
 ```
 [8] J. Dick, S. Nath, C. Peridis, E. Benjamin, S. Kolouri, and A. Soltoggio, "Statistical context detection for deep lifelong reinforcement learning," in Proceedings of the 3rd Conference on Lifelong Learning Agents (CoLLAs), 2024.
 ```
-Original content found in: `[08] Dick2024_Statistical.pdf`
-Citation verification details: The file downloaded as '[08] Dick2024_Statistical.pdf' contains an unrelated paper titled 'TADA: Temporal Adversarial Data Augmentation for Time Series Data' by Byeong Tak Lee et al. (arXiv:2407.15174). The true paper is 'Statistical context detection for deep lifelong reinforcement learning' by Jeffery Dick et al. in CoLLAs 2024 (PMLR v274, pp. 1013–1031).
+Original content found in: `[08] Dick2024_Statistical.pdf` pag. 1
+Citation verification details: The header of the PDF states 'Published at 3rd Conference on Lifelong Learning Agents (CoLLAs), 2024'. Section 1 and 3 on pages 1–4 introduce statistical context detection for deep lifelong reinforcement learning using statistical hypothesis tests over observation streams without feedback.
 
 ---
 
@@ -136,14 +136,14 @@ Citation verification details: Page 1 introduces MuJoCo as a physics engine for 
 
 ---
 
-[13] UNVERIFIED!!!
+[13] VERIFIED.
 Paper says: "...with the same number of environment steps: DQN [13], PPO [14] and SAC [15]." Pag. 2
 Paper citation says:
 ```
 [13] V. Mnih, K. Kavukcuoglu, D. Silver, A. A. Rusu, J. Veness, M. G. Bellemare, A. Graves, M. Riedmiller, A. K. Fidjeland, G. Ostrovski, S. Petersen, C. Beattie, A. Sadik, I. Antonoglou, H. King, D. Kumaran, D. Wierstra, S. Legg, and D. Hassabis, "Human-level control through deep reinforcement learning," Nature, vol. 518, no. 7540, pp. 529--533, 2015.
 ```
-Original content found in: `[13] Mnih2015_HumanLevelDQN.pdf`
-Citation verification details: The file stored in references/ is the earlier 2013 NIPS workshop preprint ('Playing Atari with Deep Reinforcement Learning', arXiv:1312.5602), whereas the citation is the landmark 2015 Nature article ('Human-level control through deep reinforcement learning', Nature, vol. 518, no. 7540, pp. 529–533, 2015).
+Original content found in: `[13] Mnih2015_HumanLevelDQN.pdf` pag. 1
+Citation verification details: The document is the official Nature publication (Nature, vol. 518, no. 7540, pp. 529–533, 2015, doi:10.1038/nature14236). Pages 1–3 present deep Q-networks (DQN) demonstrating human-level control on classic Atari 2600 games.
 
 ---
 
@@ -175,8 +175,8 @@ Paper citation says:
 ```
 [16] K. O. Stanley, J. Clune, J. Lehman, and R. Miikkulainen, "Designing neural networks through neuroevolution," Nature Machine Intelligence, vol. 1, no. 1, pp. 24--35, 2019.
 ```
-Original content found in: `[16] Stanley2019_DesigningNeuralNetworks.pdf`
-Citation verification details: The file currently in references/ is an unrelated physics paper ('Optical vs electronic gap of hafnia' by Sklénard et al., arXiv:1811.02362). The true paper is 'Designing neural networks through neuroevolution' by Stanley, Clune, Lehman & Miikkulainen in Nature Machine Intelligence, vol. 1, pp. 24–35, 2019.
+Original content found in: `None (Missing from references folder)`
+Citation verification details: The PDF is unavailable in references/ because the article is behind the Nature Machine Intelligence paywall ('Designing neural networks through neuroevolution', Nature Machine Intelligence, vol. 1, pp. 24–35, 2019, DOI: 10.1038/s42256-018-0006-z). The previous mismatched file (Sklénard et al. on hafnia) has been removed.
 
 ---
 
@@ -307,8 +307,8 @@ Paper citation says:
 ```
 [28] R. S. Galhardo, P. J. Hastings, and S. M. Rosenberg, "Mutation as a stress response and the regulation of evolvability," Critical Reviews in Biochemistry and Molecular Biology, vol. 42, no. 5, pp. 399--435, 2007.
 ```
-Original content found in: `[28] Galhardo2007_MutationRates.pdf`
-Citation verification details: The file currently in references/ is an unrelated PLoS Genetics paper ('Unexpected Novel Relational Links Uncovered by Extensive Developmental Profiling...'). The true cited paper is 'Mutation as a stress response and the regulation of evolvability' by R. S. Galhardo, P. J. Hastings & S. M. Rosenberg in Critical Reviews in Biochemistry and Molecular Biology, vol. 42, no. 5, pp. 399–435, 2007.
+Original content found in: `None (Missing from references folder)`
+Citation verification details: The PDF is unavailable in references/ because the publication is behind the Taylor & Francis paywall ('Mutation as a stress response and the regulation of evolvability', Critical Reviews in Biochemistry and Molecular Biology, vol. 42, no. 5, pp. 399–435, 2007, DOI: 10.1080/10409230701648502). The previous mismatched file (PLoS Genetics nuclear receptor paper) has been removed.
 
 ---
 
@@ -422,14 +422,14 @@ Citation verification details: The PDF is unavailable in references/ because the
 
 ---
 
-[39] UNVERIFIED!!!
+[39] VERIFIED.
 Paper says: "Probing an environment to infer its dynamics has also been learned in RL [39]." Pag. 7
 Paper citation says:
 ```
 [39] W. Zhou, L. Pinto, and A. Gupta, "Environment probing interaction policies," in International Conference on Learning Representations, 2019.
 ```
-Original content found in: `[39] Zhou2019_EnvironmentAdaptation.pdf`
-Citation verification details: The file stored in references/ is an unrelated mathematics preprint on spectral triples (arXiv:1903.07599). The true paper is 'Environment probing interaction policies' by Wenxuan Zhou, Lerrel Pinto & Abhinav Gupta in ICLR 2019.
+Original content found in: `[39] Zhou2019_EnvironmentAdaptation.pdf` pag. 1
+Citation verification details: The PDF header states 'Published as a conference paper at ICLR 2019'. Section 1 and 3 on pages 1–4 introduce Environment-Probing Interaction (EPI) policies that actively probe an unseen environment to identify its latent physics before deploying a task policy (arXiv:1907.11740).
 
 ---
 
@@ -510,14 +510,14 @@ Citation verification details: Page 909 and Table 1 construct compactly supporte
 
 ---
 
-[47] UNVERIFIED!!!
+[47] VERIFIED.
 Paper says: "The cost of exploring in parameter space grows with the number of parameters [47]..." Pag. 17
 Paper citation says:
 ```
 [47] A. Vemula, W. Sun, and J. A. Bagnell, "Contrasting exploration in parameter and action space: A zeroth-order optimization perspective," in Proceedings of the 22nd International Conference on Artificial Intelligence and Statistics (AISTATS), ser. Proceedings of Machine Learning Research, vol. 89, 2019, pp. 2926--2935.
 ```
-Original content found in: `[47] Vemula2019_Contrasting.pdf`
-Citation verification details: The file stored in references/ is an unrelated information theory preprint (Aliasgari et al., arXiv:1901.07705). The true paper is 'Contrasting Exploration in Parameter and Action Space: A Zeroth-Order Optimization Perspective' by Anirudh Vemula, Wen Sun & J. Andrew Bagnell in AISTATS 2019 (PMLR v89, pp. 2926–2935).
+Original content found in: `[47] Vemula2019_Contrasting.pdf` pag. 4
+Citation verification details: The paper is the AISTATS 2019 publication (PMLR vol. 89, pp. 2926–2935, arXiv:1901.11503). Theorem 1 and 2 on pages 4–6 prove that the sample complexity of exploration in parameter space scales directly with the dimensionality of the parameter space d.
 
 ---
 
@@ -532,14 +532,14 @@ Citation verification details: Section 1 on page 1 analyzes catastrophic phenoty
 
 ---
 
-[49] UNVERIFIED!!!
+[49] VERIFIED.
 Paper says: "On HalfCheetah, PPO and SAC take the settings of RL Baselines3 Zoo [49] (Table XI)." Pag. 20
 Paper citation says:
 ```
 [49] A. Raffin, "{RL} baselines3 zoo," https://github.com/DLR-RM/rl-baselines3-zoo, 2020. \end{thebibliography}
 ```
-Original content found in: `[49] Raffin2020_RLZoo.pdf`
-Citation verification details: The file stored in references/ is a paper by Jens Kober on 'Smooth Exploration for Robotic RL'. The cited entry is Antonin Raffin's RL Baselines3 Zoo code repository and documentation (https://github.com/DLR-RM/rl-baselines3-zoo, 2020).
+Original content found in: `[49] Raffin2020_RLZoo.pdf` pag. 2
+Citation verification details: The document is the official Journal of Machine Learning Research publication for Stable-Baselines3 (JMLR, vol. 22, no. 268, pp. 1–8, 2021). Section 2 on page 2 explicitly defines RL Baselines3 Zoo as the framework providing default tuned hyperparameters, training scripts, and benchmark configurations.
 
 ---
 
