@@ -1,6 +1,18 @@
-# Citations Verification
+# Citations Verification & Audit
 
-This document verifies each of the 49 citations in the paper against the manuscript content, the compiled bibliography entry, and the reference documents in `references/`.
+**Summary Statistics:**
+- **Total Citations:** 49
+- **✅ Verified (Content + Metadata matched in PDF):** 42 (85.7%)
+- **❌ Unverified (Paywalled original works):** 7 (14.3%)
+
+### Quick Status Overview:
+| Range | Verified | Unverified (Paywalled) |
+|---|---|---|
+| [1]–[10] | [2], [3], [4], [5], [6], [7], [8], [9], [10] | [1] McCloskey & Cohen 1989 |
+| [11]–[20] | [11], [12], [13], [14], [15], [17], [18], [19], [20] | [16] Stanley et al. 2019 |
+| [21]–[30] | [21], [22], [23], [24], [25], [26], [27], [29] | [28] Galhardo et al. 2007, [30] Karafotias et al. 2015 |
+| [31]–[40] | [32], [33], [34], [35], [36], [37], [39], [40] | [31] Grefenstette 1992, [38] Ljung 1999 |
+| [41]–[49] | [41], [43], [44], [45], [46], [47], [48], [49] | [42] Yan, Gao & Chen 2014 |
 
 ---
 
@@ -536,7 +548,7 @@ Citation verification details: Section 1 on page 1 analyzes catastrophic phenoty
 Paper says: "On HalfCheetah, PPO and SAC take the settings of RL Baselines3 Zoo [49] (Table XI)." Pag. 20
 Paper citation says:
 ```
-[49] A. Raffin, "{RL} baselines3 zoo," https://github.com/DLR-RM/rl-baselines3-zoo, 2020. \end{thebibliography}
+[49] A. Raffin, "{RL} baselines3 zoo," https://github.com/DLR-RM/rl-baselines3-zoo, 2020.
 ```
 Original content found in: `[49] Raffin2020_RLZoo.pdf` pag. 2
 Citation verification details: The document is the official Journal of Machine Learning Research publication for Stable-Baselines3 (JMLR, vol. 22, no. 268, pp. 1–8, 2021). Section 2 on page 2 explicitly defines RL Baselines3 Zoo as the framework providing default tuned hyperparameters, training scripts, and benchmark configurations.
