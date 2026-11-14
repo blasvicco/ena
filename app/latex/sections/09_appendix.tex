@@ -42,7 +42,7 @@ All settings are read directly from the code the studies ran, by \texttt{src/too
 
 Table~\ref{tab:hparams_ena_cartpole} gives the settings of ENA-Combined, as built by \texttt{cartpole\_ena\_ablation.py}. All six ablation variants share them, with the relevant skills switched on or off. Table~\ref{tab:hparams_ena_cheetah} lists only the settings that differ on HalfCheetah, set in \texttt{half\_cheetah.py}.
 
-On HalfCheetah, PPO and SAC take the settings of RL Baselines3 Zoo~\cite{raffin2020rlzoo} (Table~\ref{tab:hparams_cheetah_baselines}). Both have a separate actor and critic. PPO normalizes observations, and scales rewards by the standard deviation of the return. Two settings deviate from the zoo. PPO's learning rate is not annealed, because annealing it to zero would freeze PPO in its last environment. SAC applies its gradient steps in groups of \Res{cfg/cheetahsac/gradientsteps} every \Res{cfg/cheetahsac/updatefrequency} environment steps, for speed, which preserves the zoo's ratio of one update per step.
+On HalfCheetah, PPO and SAC take the settings of RL Baselines3 Zoo~\cite{raffin2020rlzoo} (Table~\ref{tab:hparams_cheetah_baselines}). Both have a separate actor and critic. PPO normalizes observations, and scales rewards by the standard deviation of the return. PPO keeps the zoo's constant learning rate. One setting deviates from the zoo: SAC applies its gradient steps in groups of \Res{cfg/cheetahsac/gradientsteps} every \Res{cfg/cheetahsac/updatefrequency} environment steps, for speed, which preserves the zoo's ratio of one update per step.
 
 \begin{table}[htbp]
 \caption{ENA Hyperparameters (CartPole)}

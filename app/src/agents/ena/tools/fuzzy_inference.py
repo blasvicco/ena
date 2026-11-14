@@ -3,6 +3,8 @@
 # Algorithm: Mamdani fuzzy logic controller (min-max inference, centroid defuzzification)
 # Reference: Mamdani & Assilian, "An experiment in linguistic synthesis with a fuzzy logic controller" (1975)
 # https://doi.org/10.1016/S0020-7373(75)80002-2
+# Defuzzification: centroid (center of area), not the 1975 paper's mean of maximum. Reference: Lee, "Fuzzy logic in
+# control systems: fuzzy logic controller, Part II" (1990), Sec. II, https://doi.org/10.1109/21.52552
 # Fuzzy sets: Zadeh, "Fuzzy sets" (1965), https://doi.org/10.1016/S0019-9958(65)90241-X
 
 # Libs imports

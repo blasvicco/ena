@@ -138,12 +138,14 @@ class Normc(initializers.Initializer):
 def ena_brain(action_dim: int, state_dim: int, hidden: int | tuple = ENA_BRAIN_HIDDEN) -> Sequential:
 	"""Build ENA's continuous-control network: the ES MuJoCo policy (Salimans et al., 2017), tanh layers with normc weights."""
 	# Build a ENA-NN for continuous control: the ES MuJoCo policy network (Salimans et al., 2017), two tanh hidden layers
-	# with normc weights and zero biases, and a tanh output in the [-1, 1] action range. hidden is both layers' size, or one
-	# size per layer (32, 16).
+	# with normc weights (evolution-strategies-starter's normc_initializer) and zero biases. hidden is both layers' size, or
+	# one size per layer (32, 16).
 	#
-	# One deviation: the output layer keeps normc std 1.0 instead of their 0.01. ES perturbs a single central policy, so a
-	# near-still start costs it nothing; ENA's first population should already act, with varied gaits for selection to tell
-	# apart (on normalized observations, initial actions are about +-0.5: moving, not saturated).
+	# Two deviations. Their output layer is linear; ENA's is a tanh, as in the CEM-RL actor (Pourchot & Sigaud, 2019,
+	# Table 3), which keeps actions in the [-1, 1] action range. And the output layer keeps normc std 1.0 instead of their
+	# 0.01: ES perturbs a single central policy, so a near-still start costs it nothing; ENA's first population should
+	# already act, with varied gaits for selection to tell apart (on normalized observations, initial actions are about
+	# +-0.5: moving, not saturated).
 	sizes = (hidden, hidden) if isinstance(hidden, int) else tuple(hidden)
 	return Sequential(
 		[

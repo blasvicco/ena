@@ -7,3 +7,13 @@ infra/src/node_modules/
 infra/src/cdk.out/
 infra/src/cdk.context.json
 infra/src/qos/qos.json
+# Reference PDFs (references/): kept locally for the citation audit, but not pushed, because most are copyrighted.
+# Only PDFs whose license allows redistribution are tracked (see references/DOWNLOAD_STATUS.md, "Copyright and git").
+# Matched by author and year, so they survive renumbering.
+references/**/*.pdf
+!references/*Yazdani2021_*.pdf
+!references/*Lillo2026_*.pdf
+!references/*Cobb1990_*.pdf
+!references/*Lee2019_PyWavelets*.pdf
+!references/*Towers2024_*.pdf
+!references/*Raffin2020_*.pdf
