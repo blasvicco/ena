@@ -62,7 +62,6 @@ Verified: https://openreview.net/forum?id=B1eiqi09K7 https://arxiv.org/abs/1810.
 
 [21] D. Yazdani, R. Cheng, D. Yazdani, J. Branke, Y. Jin, and X. Yao, "A survey of evolutionary continuous dynamic optimization over two decades—Part A"
 Verified: https://ieeexplore.ieee.org/document/9354762 https://doi.org/10.1109/TEVC.2021.3060014
-⚠️  Replaced Jin & Branke 2005 [old citation]. Same two authors (Branke, Jin); 2021 survey is more recent and directly relevant.
 
 [22] J.-B. Mouret and J. Clune, "Illuminating search spaces by mapping elites"
 Verified: https://arxiv.org/abs/1504.04909
@@ -88,74 +87,62 @@ Verified: https://www.tandfonline.com/doi/abs/10.1080/10409230701648502 https://
 [29] H. G. Cobb, "An investigation into the use of hypermutation as an adaptive operator in genetic algorithms having continuous, time-dependent nonstationary environments"
 Verified: https://apps.dtic.mil/sti/citations/ADA229159
 
-[30] A. E. Eiben, R. Hinterding, and Z. Michalewicz, "Parameter control in evolutionary algorithms"
-Verified: https://ieeexplore.ieee.org/document/771166 https://doi.org/10.1109/4235.771166
-
-[31] G. Karafotias, M. Hoogendoorn, and A. E. Eiben, "Parameter control in evolutionary algorithms: Trends and challenges"
+[30] G. Karafotias, M. Hoogendoorn, and A. E. Eiben, "Parameter control in evolutionary algorithms: Trends and challenges"
 Verified: https://ieeexplore.ieee.org/document/6747993 https://doi.org/10.1109/TEVC.2014.2308294
-⚠️  Added beside Eiben et al. 1999 [30]. Direct follow-up by Eiben; 2015 review of parameter control.
 
-[32] J. J. Grefenstette, "Genetic algorithms for changing environments"
+[31] J. J. Grefenstette, "Genetic algorithms for changing environments"
 Verified: https://dblp.org/rec/conf/ppsn/Grefenstette92.html https://www.semanticscholar.org/paper/Genetic-Algorithms-For-Changing-Environments-Grefenstette/6710686bfc89e0ddedd2a42fb86d6b40eaa4af06
 
-[33] J. L. McClelland, B. L. McNaughton, and R. C. O'Reilly, "Why there are complementary learning systems in the hippocampus and neocortex: Insights from the successes and failures of connectionist models of learning and memory"
+[32] J. L. McClelland, B. L. McNaughton, and R. C. O'Reilly, "Why there are complementary learning systems in the hippocampus and neocortex: Insights from the successes and failures of connectionist models of learning and memory"
 Verified: https://psycnet.apa.org/record/1995-43093-001 https://doi.org/10.1037/0033-295X.102.3.419
 
-[34] D. Kumaran, D. Hassabis, and J. L. McClelland, "What learning systems do intelligent agents need? Complementary learning systems theory updated"
+[33] D. Kumaran, D. Hassabis, and J. L. McClelland, "What learning systems do intelligent agents need? Complementary learning systems theory updated"
 Verified: https://www.cell.com/trends/cognitive-sciences/fulltext/S1364-6613(16)30043-2 https://doi.org/10.1016/j.tics.2016.05.004
-⚠️  Added beside McClelland et al. 1995 [33]. 2016 update of CLS theory; also links to replay in deep RL.
 
-[35] C. D. Rosin and R. K. Belew, "New methods for competitive coevolution"
+[34] C. D. Rosin and R. K. Belew, "New methods for competitive coevolution"
 Verified: https://direct.mit.edu/evco/article/5/1/1-29/1271 https://doi.org/10.1162/evco.1997.5.1.1
 
-[36] J. Branke, "Memory enhanced evolutionary algorithms for changing optimization problems"
+[35] J. Branke, "Memory enhanced evolutionary algorithms for changing optimization problems"
 Verified: https://ieeexplore.ieee.org/document/785502 https://doi.org/10.1109/CEC.1999.785502
 
-[37] E. H. Mamdani and S. Assilian, "An experiment in linguistic synthesis with a fuzzy logic controller"
+[36] E. H. Mamdani and S. Assilian, "An experiment in linguistic synthesis with a fuzzy logic controller"
 Verified: https://www.sciencedirect.com/science/article/pii/S0020737375800022 https://doi.org/10.1016/S0020-7373(75)80002-2
 
-[38] M. Herbster and M. K. Warmuth, "Tracking the best expert"
+[37] M. Herbster and M. K. Warmuth, "Tracking the best expert"
 Verified: https://link.springer.com/article/10.1023/A:1007424614876 https://doi.org/10.1023/A:1007424614876
 
-[39] L. Ljung, System Identification: Theory for the User, 2nd ed. Upper Saddle River, NJ: Prentice Hall, 1999.
+[38] L. Ljung, System Identification: Theory for the User, 2nd ed. Upper Saddle River, NJ: Prentice Hall, 1999.
 Verified: https://ieeexplore.ieee.org/document/5267490 https://books.google.com/books/about/System_Identification.html?id=o6_wAAAAMAAJ
 
-[40] W. Zhou, L. Pinto, and A. Gupta, "Environment probing interaction policies"
+[39] W. Zhou, L. Pinto, and A. Gupta, "Environment probing interaction policies"
 Verified: https://openreview.net/forum?id=Skx-4n05FQ https://arxiv.org/abs/1903.07599
 
-[41] R. R. Coifman and M. V. Wickerhauser, "Entropy-based algorithms for best basis selection"
+[40] R. R. Coifman and M. V. Wickerhauser, "Entropy-based algorithms for best basis selection"
 Verified: https://ieeexplore.ieee.org/document/119732 https://doi.org/10.1109/18.119732
 
-[42] S. G. Mallat, "A theory for multiresolution signal decomposition: The wavelet representation"
+[41] S. G. Mallat, "A theory for multiresolution signal decomposition: The wavelet representation"
 Verified: https://ieeexplore.ieee.org/document/192463 https://doi.org/10.1109/34.192463
 
-[43] T. Kijewski and A. Kareem, "Wavelet transforms for system identification in civil engineering"
-Verified: https://onlinelibrary.wiley.com/doi/10.1111/1467-8667.t01-1-00312 https://doi.org/10.1111/1467-8667.t01-1-00312
-
-[44] Z. K. Peng and F. L. Chu, "Application of the wavelet transform in machine condition monitoring and fault diagnostics: A review with bibliography"
-Verified: https://www.sciencedirect.com/science/article/pii/S088832700300075X https://doi.org/10.1016/S0888-3270(03)00075-X
-
-[45] R. Yan, R. X. Gao, and X. Chen, "Wavelets for fault diagnosis of rotary machines: A review with applications"
+[42] R. Yan, R. X. Gao, and X. Chen, "Wavelets for fault diagnosis of rotary machines: A review with applications"
 Verified: https://www.sciencedirect.com/science/article/pii/S0165168413001308 https://doi.org/10.1016/j.sigpro.2013.04.015
-⚠️  Added beside Kijewski 2003 [43] and Peng 2004 [44]. 2014 review supporting "standard signature" claim.
 
-[46] G. R. Lee, R. Gommers, F. Waselewski, K. Wohlfahrt, and A. O'Leary, "PyWavelets: A Python package for wavelet analysis"
+[43] G. R. Lee, R. Gommers, F. Waselewski, K. Wohlfahrt, and A. O'Leary, "PyWavelets: A Python package for wavelet analysis"
 Verified: https://joss.theoj.org/papers/10.21105/joss.01237 https://doi.org/10.21105/joss.01237
 
-[47] M. Towers et al., "Gymnasium: A standard interface for reinforcement learning environments"
+[44] M. Towers et al., "Gymnasium: A standard interface for reinforcement learning environments"
 Verified: https://arxiv.org/abs/2407.17032
 
-[48] P. Christodoulou, "Soft actor-critic for discrete action settings"
+[45] P. Christodoulou, "Soft actor-critic for discrete action settings"
 Verified: https://arxiv.org/abs/1910.07207
 
-[49] I. Daubechies, "Orthonormal bases of compactly supported wavelets"
+[46] I. Daubechies, "Orthonormal bases of compactly supported wavelets"
 Verified: https://onlinelibrary.wiley.com/doi/10.1002/cpa.3160410705 https://doi.org/10.1002/cpa.3160410705
 
-[50] A. Vemula, W. Sun, and J. A. Bagnell, "Contrasting exploration in parameter and action space: A zeroth-order optimization perspective"
+[47] A. Vemula, W. Sun, and J. A. Bagnell, "Contrasting exploration in parameter and action space: A zeroth-order optimization perspective"
 Verified: https://proceedings.mlr.press/v89/vemula19a.html https://arxiv.org/abs/1901.07705
 
-[51] J. Lehman, J. Chen, J. Clune, and K. O. Stanley, "Safe mutations for deep and recurrent neural networks through output gradients"
+[48] J. Lehman, J. Chen, J. Clune, and K. O. Stanley, "Safe mutations for deep and recurrent neural networks through output gradients"
 Verified: https://dl.acm.org/doi/10.1145/3205455.3205473 https://arxiv.org/abs/1712.06563
 
-[52] A. Raffin, "RL baselines3 zoo"
+[49] A. Raffin, "RL baselines3 zoo"
 Verified: https://github.com/DLR-RM/rl-baselines3-zoo
