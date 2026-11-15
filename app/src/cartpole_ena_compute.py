@@ -7,6 +7,7 @@ import os
 
 # App imports
 from cartpole_ena_ablation import ABLATION_VARIANTS, parse_args, run_study, select_variants
+from tools.replicates import OUTPUTS_DIR
 
 # ENA-Combined (Hall of Fame + env detection) at three levels of search effort:
 #   full        — fixed maximum effort: every episode evaluates the whole population, at full depth;
@@ -24,8 +25,7 @@ _COMBINED = next(row for row in ABLATION_VARIANTS if row["name"] == "ENA-Combine
 COMPUTE_VARIANTS = [{**_COMBINED, "name": "ENA-Combined-PlasticityFull", "plasticity_algorithm": "full"}]
 REFERENCES = {"zero": "ENA-HoF+EnvDetection", "linear_ramp": "ENA-Combined"}
 NUM_EXPERIMENTS = 1
-# Anchored to this file's own location (one level up from src/), not the caller's cwd.
-OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cartpole_ena_compute_outputs")
+OUTPUT_DIR = os.path.join(OUTPUTS_DIR, "cartpole_ena_compute_outputs")
 
 
 if __name__ == "__main__":

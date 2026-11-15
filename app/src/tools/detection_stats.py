@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """Environment-recognition numbers per phase, from a study's live logs (the paper's appendix on what the detector achieves)."""
-# Usage: python src/tools/detection_stats.py --output-dir cartpole_ena_ablation_outputs
+# Usage: python src/tools/detection_stats.py --output-dir outputs/cartpole_ena_ablation_outputs
 
 # General imports
 import argparse

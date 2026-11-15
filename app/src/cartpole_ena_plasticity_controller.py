@@ -7,6 +7,7 @@ import os
 
 # App imports
 from cartpole_ena_ablation import NUM_EXPERIMENTS, ABLATION_VARIANTS, parse_args, run_study, select_variants
+from tools.replicates import OUTPUTS_DIR
 
 # ENA-Combined (Plasticity + Hall of Fame + env detection, bpr selection, linear_ramp Trust) with
 # only the Plasticity driver swapped. The linear_ramp reference is cartpole_ena_ablation.py's own
@@ -18,8 +19,7 @@ CONTROLLER_VARIANTS = [
 	{**_COMBINED, "name": "ENA-Combined-QuadraticPlasticity", "plasticity_algorithm": "quadratic"},
 	{**_COMBINED, "name": "ENA-Combined-FuzzyPlasticity", "plasticity_algorithm": "fuzzylogic"},
 ]
-# Anchored to this file's own location (one level up from src/), not the caller's cwd.
-OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cartpole_ena_plasticity_controller_outputs")
+OUTPUT_DIR = os.path.join(OUTPUTS_DIR, "cartpole_ena_plasticity_controller_outputs")
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@
 #   - cartpole.csv: CartPole's detector on CartPole's benchmark, confirmation seeds (the benchmark's sanity check).
 # tools/paper_results.py turns them into the paper's table and macros.
 #
-#         python src/tools/detection_ablation.py --output-dir detection_ablation_outputs --workers 4
+#         python src/tools/detection_ablation.py --workers 4      # into app/outputs/detection_ablation_outputs/
 
 # General imports
 import argparse
@@ -27,6 +27,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # App imports
 # pylint: disable=wrong-import-position
 from tools.detection_benchmark import meets_target, run
+from tools.replicates import OUTPUTS_DIR
+
+OUTPUT_DIR = os.path.join(OUTPUTS_DIR, "detection_ablation_outputs")
 
 # Three disjoint seed sets, each with one role:
 #   - SELECTION_SEEDS (0-4): first screening;
@@ -166,7 +169,7 @@ def main() -> None:
 	# Run the grid (ablation seeds) and/or the confirmation (the baselines, the study's chirp among them, on the
 	# confirmation seeds); write grid.csv and confirmation.csv.
 	parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-	parser.add_argument("--output-dir", required=True)
+	parser.add_argument("--output-dir", default=OUTPUT_DIR)
 	parser.add_argument("--workers", type=int, default=1)
 	parser.add_argument("--stage", choices=["grid", "confirmation", "cartpole", "all"], default="all")
 	args = parser.parse_args()

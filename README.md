@@ -172,35 +172,35 @@ Evaluates 6 ENA variants (Plasticity, Hall of Fame, Environment Detection on/off
 ```bash
 python src/cartpole_ena_ablation.py --num-experiments 30 --workers 6
 ```
-*Outputs saved to:* `app/cartpole_ena_ablation_outputs/`
+*Outputs saved to:* `app/outputs/cartpole_ena_ablation_outputs/`
 
 #### Study 2: Compute Cost of Plasticity
 Compares full exploratory candidate evaluation vs. failure-scaled linear ramp vs. zero search effort.
 ```bash
 python src/cartpole_ena_compute.py
 ```
-*Outputs saved to:* `app/cartpole_ena_compute_outputs/`
+*Outputs saved to:* `app/outputs/cartpole_ena_compute_outputs/`
 
 #### Study 3: Plasticity Controller Comparison (30 Replicates)
 Evaluates the linear ramp controller against quadratic and Mamdani fuzzy logic controllers.
 ```bash
 python src/cartpole_ena_plasticity_controller.py --num-experiments 30 --workers 6
 ```
-*Outputs saved to:* `app/cartpole_ena_plasticity_controller_outputs/`
+*Outputs saved to:* `app/outputs/cartpole_ena_plasticity_controller_outputs/`
 
 #### Study 4: Selection Ablation (30 Replicates)
 ENA-Combined with each simpler test-time retrieval in place of Bayesian policy reuse; the BPR reference is the skill ablation's own ENA-Combined (same seeds, identical training).
 ```bash
 python src/cartpole_ena_selection.py --num-experiments 30 --workers 6
 ```
-*Outputs saved to:* `app/cartpole_ena_selection_outputs/`
+*Outputs saved to:* `app/outputs/cartpole_ena_selection_outputs/`
 
 #### Study 5: CartPole Baseline Challenge (50 Replicates)
 Compares ENA-Combined against DQN, PPO, and SAC-Discrete under an equal environment-step interaction budget.
 ```bash
 python src/cartpole_challenge.py --num-experiments 50 --workers 6
 ```
-*Outputs saved to:* `app/cartpole_challenge_outputs/`
+*Outputs saved to:* `app/outputs/cartpole_challenge_outputs/`
 
 #### Study 6: Wavelet Chirp Detection Benchmark & Ablation (30 Seeds)
 Evaluates change detection under non-stationary contact dynamics with scripted gaits:
@@ -211,7 +211,7 @@ python src/tools/detection_ablation.py
 # 2. Benchmark confirmation on HalfCheetah and CartPole (McNemar paired tests):
 python src/tools/detection_benchmark.py
 ```
-*Outputs saved to:* `app/detection_ablation_outputs/`
+*Outputs saved to:* `app/outputs/detection_ablation_outputs/`
 
 #### Study 7: HalfCheetah Continuous Control Challenge (20 Replicates)
 * **Local Test (Single Replicate / Smoke Test):**
@@ -334,10 +334,10 @@ The HalfCheetah study (`half_cheetah.py`) runs once in AWS: 20 replicates, one p
 
 **To download the results** (once the machines have finished):
 ```bash
-# 1. Start the infra toolbox container (mounts ~/.aws read-only and app/half_cheetah_outputs as /home/outputs)
+# 1. Start the infra toolbox container (mounts ~/.aws read-only and app/outputs/half_cheetah_outputs as /home/outputs)
 docker compose up -d ena_infra
 
-# 2. Sync s3://<bucket>/ → app/half_cheetah_outputs/
+# 2. Sync s3://<bucket>/ → app/outputs/half_cheetah_outputs/
 docker compose exec ena_infra bash /home/scripts/download.sh
 
 # 3. Regenerate the paper's numbers, tables and figures

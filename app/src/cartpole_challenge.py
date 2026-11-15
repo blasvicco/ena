@@ -30,6 +30,7 @@ from cartpole_ena_ablation import (
 	select_variants,
 	train_and_test,
 )
+from tools.replicates import OUTPUTS_DIR
 from tools.visualization import post_update, vprint
 from tools.early_stopping import StoppingRule
 
@@ -47,8 +48,7 @@ SAC_DISCRETE_TARGET_ENTROPY = 0.5
 DQN_SETTINGS = {}
 PPO_SETTINGS = {"entropy_coef": 0.01, "anneal_lr": False}
 SAC_DISCRETE_SETTINGS = {"target_entropy_ratio": SAC_DISCRETE_TARGET_ENTROPY}
-# Anchored to this file's own location (one level up from src/), not the caller's cwd.
-OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cartpole_challenge_outputs")
+OUTPUT_DIR = os.path.join(OUTPUTS_DIR, "cartpole_challenge_outputs")
 ENA_NAME = "ENA-Combined"
 
 # Two protocols, selected with --protocol:
@@ -82,7 +82,7 @@ FIXED_BUDGET_PER_ENV = 2_500_000
 PROTOCOLS = ("fixed-budget", "first-solve")
 OUTPUT_DIRS = {
 	"fixed-budget": OUTPUT_DIR,
-	"first-solve": os.path.join(os.path.dirname(OUTPUT_DIR), "cartpole_challenge_first_solve_outputs"),
+	"first-solve": os.path.join(OUTPUTS_DIR, "cartpole_challenge_first_solve_outputs"),
 }
 CHALLENGE_AGENTS = [{"name": ENA_NAME}, {"name": "DQN"}, {"name": "PPO"}, {"name": "SAC-Discrete"}]
 

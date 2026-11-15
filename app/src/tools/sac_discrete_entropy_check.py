@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from agents import SACDiscreteAgent
 from cartpole_challenge import SAC_DISCRETE_TARGET_ENTROPY, mlp_brain
 from cartpole_ena_ablation import env_seed_for, make_env, make_training_worlds, play, seed_experiment
+from tools.replicates import OUTPUTS_DIR
 
 PAPER_RATIO = 0.98  # Christodoulou (2019)
 CLEANRL_RATIO = 0.89  # CleanRL's choice
@@ -36,8 +37,7 @@ STEPS = 150_000
 SEEDS = 3
 LOG_EVERY = 2_000
 PROBE_STATES = 256
-# Anchored to this file's own location (app/src/tools/ -> app/), not the caller's cwd.
-OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "sac_discrete_entropy_outputs")
+OUTPUT_DIR = os.path.join(OUTPUTS_DIR, "sac_discrete_entropy_outputs")
 
 
 def probe_value(agent: SACDiscreteAgent) -> float:

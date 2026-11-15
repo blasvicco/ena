@@ -7,6 +7,7 @@ import os
 
 # App imports
 from cartpole_ena_ablation import NUM_EXPERIMENTS, ABLATION_VARIANTS, parse_args, run_study, select_variants
+from tools.replicates import OUTPUTS_DIR
 
 # ENA-Combined (Plasticity + Hall of Fame + env detection, linear_ramp Trust) with only the
 # selection driver swapped. Every driver selects identically during training (epsilon-greedy by
@@ -20,8 +21,7 @@ SELECTION_VARIANTS = [
 	{**_COMBINED, "name": "ENA-Combined-BestTrust", "selection_driver": "best_trust"},
 ]
 
-# Anchored to this file's own location (one level up from src/), not the caller's cwd.
-OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cartpole_ena_selection_outputs")
+OUTPUT_DIR = os.path.join(OUTPUTS_DIR, "cartpole_ena_selection_outputs")
 
 
 if __name__ == "__main__":

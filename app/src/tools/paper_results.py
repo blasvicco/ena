@@ -50,14 +50,18 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # pylint: disable=wrong-import-position
 from cartpole_ena_ablation import (
 	ABLATION_VARIANTS,
+	OUTPUT_DIR as ABLATION_DIR,
 	SEED_OFFSET,
 	SUCCESS_THRESHOLD,
 	TRAINING_EPISODES_ENA,
 	make_training_worlds,
 	make_unseen_worlds,
 )
-from cartpole_ena_compute import REFERENCES as COMPUTE_REFERENCES
-from half_cheetah import SOLVED_SCORE as CHEETAH_SOLVED, Y_LIM as CHEETAH_Y_LIM, build_ena_agent as build_cheetah_ena
+from cartpole_challenge import OUTPUT_DIR as CHALLENGE_DIR
+from cartpole_ena_compute import OUTPUT_DIR as COMPUTE_DIR, REFERENCES as COMPUTE_REFERENCES
+from cartpole_ena_plasticity_controller import OUTPUT_DIR as CONTROLLER_DIR
+from cartpole_ena_selection import OUTPUT_DIR as SELECTION_DIR
+from half_cheetah import OUTPUT_DIR as CHEETAH_DIR, SOLVED_SCORE as CHEETAH_SOLVED, Y_LIM as CHEETAH_Y_LIM, build_ena_agent as build_cheetah_ena
 from tools.aggregate_metrics import collect_results
 from tools.cartpole_results import TRAINING_RELIABILITY, add_training_reliability, first_solve_entries
 from tools.replicates import get_experiment_directories
@@ -75,7 +79,7 @@ from tools.cheetah_results import (
 	retention_rows,
 	retention_table,
 )
-from tools.detection_ablation import SCREENED, pass_table, study_labels
+from tools.detection_ablation import OUTPUT_DIR as DETECTION_ABLATION_DIR, SCREENED, pass_table, study_labels
 from tools.detection_stats import hall_of_fame_size, majority_recognition, study_detection, summarize as summarize_detection
 from tools.plot_study_curves import plot as plot_study_curves
 from tools.paper_figures import replicate_box_figure
@@ -177,15 +181,15 @@ ABLATION_SKILLS = (
 	("Hall of Fame", "hall_of_fame_driver", "none"),
 	("Detection", "recognizer_strategy", "none"),
 )
+# Each study's replicates, read where its runner writes them (app/outputs/<study>_outputs/, tools/replicates.OUTPUTS_DIR).
 STUDIES = {
-	"ablation": "cartpole_ena_ablation_outputs",
-	"compute": "cartpole_ena_compute_outputs",
-	"controller": "cartpole_ena_plasticity_controller_outputs",
-	"selection": "cartpole_ena_selection_outputs",
-	"challenge": "cartpole_challenge_outputs",
-	"cheetah": "half_cheetah_outputs",
+	"ablation": ABLATION_DIR,
+	"compute": COMPUTE_DIR,
+	"controller": CONTROLLER_DIR,
+	"selection": SELECTION_DIR,
+	"challenge": CHALLENGE_DIR,
+	"cheetah": CHEETAH_DIR,
 }
-DETECTION_ABLATION_DIR = os.path.join(APP_DIR, "detection_ablation_outputs")  # tools/detection_ablation.py
 # detection_ablation.BASELINES label -> macro slug.
 BASELINE_SLUGS = {
 	"Transition model, changing behavior": "transition",
@@ -685,17 +689,16 @@ def selection_comparisons(results: dict) -> dict:
 def collect_studies() -> tuple:
 	"""Return every study's parsed results and its per-study macros: ({study: results}, entries)."""
 	results, entries = {}, {}
-	for study, directory in STUDIES.items():
-		study_dir = os.path.join(APP_DIR, directory)
+	for study, study_dir in STUDIES.items():
 		results[study] = collect_results(study_dir)
 		if study != "cheetah":
 			add_training_reliability(results[study], study_dir, CARTPOLE_TRAIN_ENVS, SUCCESS_THRESHOLD)
 		entries.update(summary_entries(study, results[study]))
 		entries.update(time_entries(study, study_dir))
 		entries.update(seed_entries(study, study_dir))
-	entries.update(episode_count_entries("challenge", os.path.join(APP_DIR, STUDIES["challenge"]), CHALLENGE_AGENTS))
-	entries.update(episode_count_entries("cheetah", os.path.join(APP_DIR, STUDIES["cheetah"]), CHEETAH_AGENTS))
-	entries.update(hardware_entries("cheetah", os.path.join(APP_DIR, STUDIES["cheetah"])))
+	entries.update(episode_count_entries("challenge", STUDIES["challenge"], CHALLENGE_AGENTS))
+	entries.update(episode_count_entries("cheetah", STUDIES["cheetah"], CHEETAH_AGENTS))
+	entries.update(hardware_entries("cheetah", STUDIES["cheetah"]))
 	# The compute study runs full search only; zero and the ramp are the ablation's runs of the same replicates.
 	results["compute"] = with_reference_rows(results["compute"], results["ablation"], list(COMPUTE_REFERENCES.values()))
 	entries.update(summary_entries("compute", results["compute"]))
@@ -707,7 +710,7 @@ def collect_studies() -> tuple:
 	# the no-archive reference, its ENA-Plasticity.
 	results["selection"] = with_reference_rows(results["selection"], results["ablation"], [SELECTION_REFERENCE, SELECTION_NO_ARCHIVE])
 	entries.update(summary_entries("selection", results["selection"]))
-	selection_dir, ablation_dir = os.path.join(APP_DIR, STUDIES["selection"]), os.path.join(APP_DIR, STUDIES["ablation"])
+	selection_dir, ablation_dir = STUDIES["selection"], STUDIES["ablation"]
 	entries.update(training_identity_entries(selection_dir, ablation_dir))
 	entries.update(played_entries(selection_dir, ablation_dir))
 	entries.update(trust_audit_entries(selection_dir, ablation_dir, CARTPOLE_TRAIN_ENVS, SUCCESS_THRESHOLD))
@@ -719,7 +722,7 @@ def forgetting_entries() -> tuple:
 	"""Compute retention and absolute forgetting (HalfCheetah, the CartPole challenge), and HalfCheetah's retention rows."""
 	# They read each replicate's training and test episodes, not the outputs.txt tables; the rows feed HalfCheetah's
 	# table and figure.
-	rows = retention_rows(os.path.join(APP_DIR, STUDIES["cheetah"]), CHEETAH_AGENTS, CHEETAH_TRAIN_ENVS)
+	rows = retention_rows(STUDIES["cheetah"], CHEETAH_AGENTS, CHEETAH_TRAIN_ENVS)
 	return {**cheetah_retention_entries(rows), **challenge_forgetting_entries()}, rows
 
 
@@ -727,7 +730,7 @@ def challenge_forgetting_entries() -> dict:
 	"""Compute how much each CartPole challenge agent forgets its training environments (descriptive)."""
 	# How much each CartPole challenge agent forgets the environments it trained on: end of phase, retention and absolute
 	# forgetting, descriptive only (the challenge's planned tests are on reliability).
-	rows = retention_rows(os.path.join(APP_DIR, STUDIES["challenge"]), CHALLENGE_AGENTS, CARTPOLE_TRAIN_ENVS, CHALLENGE_END_OF_PHASE_STEPS)
+	rows = retention_rows(STUDIES["challenge"], CHALLENGE_AGENTS, CARTPOLE_TRAIN_ENVS, CHALLENGE_END_OF_PHASE_STEPS)
 	return retention_entries("challenge", rows, CARTPOLE_TRAIN_ENVS[:-1])
 
 
@@ -738,7 +741,7 @@ def cheetah_retention_entries(rows: pd.DataFrame) -> dict:
 		**retention_entries("cheetah", rows, CHEETAH_LEFT_BEHIND),
 		**retention_comparisons("cheetah", rows, CHEETAH_LEFT_BEHIND, "ENA-Combined", baselines),
 		**forgetting_comparisons("cheetah", rows, CHEETAH_LEFT_BEHIND, "ENA-Combined", baselines),
-		**archived_reference_entries("cheetah", os.path.join(APP_DIR, STUDIES["cheetah"]), "ENA-Combined"),
+		**archived_reference_entries("cheetah", STUDIES["cheetah"], "ENA-Combined"),
 	}
 
 
@@ -774,7 +777,7 @@ def write_cheetah_outputs(results: dict, rows: pd.DataFrame, entries: dict) -> N
 	retention_figure(rows, CHEETAH_LEFT_BEHIND, CHEETAH_AGENTS, os.path.join(IMAGES_DIR, "cheetah_retention.pdf"))
 	# Training at a step budget: replicates play different numbers of episodes, so the curves are binned by env-steps.
 	plot_study_curves(
-		os.path.join(APP_DIR, STUDIES["cheetah"]),
+		STUDIES["cheetah"],
 		"training",
 		CHEETAH_AGENTS,
 		os.path.join(IMAGES_DIR, "cheetah_training_curves.pdf"),
@@ -783,7 +786,7 @@ def write_cheetah_outputs(results: dict, rows: pd.DataFrame, entries: dict) -> N
 		x_axis="env_steps",
 	)
 	plot_study_curves(
-		os.path.join(APP_DIR, STUDIES["cheetah"]),
+		STUDIES["cheetah"],
 		"testing",
 		CHEETAH_AGENTS,
 		os.path.join(IMAGES_DIR, "cheetah_test_curves.pdf"),
@@ -839,7 +842,7 @@ def controller_table(entries: dict) -> str:
 
 def recognition_entries(study: str, agent: str, train_envs: list) -> dict:
 	"""Replicates that mostly recognize each test environment as each training environment's niche (or none), and mostly play its gladiators."""
-	study_dir = os.path.join(APP_DIR, STUDIES[study])
+	study_dir = STUDIES[study]
 	frames = [majority_recognition(os.path.join(study_dir, exp_dir), agent) for exp_dir in get_experiment_directories(study_dir)]
 	key = f"{study}/{agent}"
 	entries = {f"{key}/recog/distinct": str(sum(bool(frame["distinct"].iloc[0]) for frame in frames))}
@@ -867,7 +870,7 @@ def detection_outputs() -> tuple:
 		("ablation", "tab:detection", "Environment Recognition in the Skill Ablation"),
 		("cheetah", "tab:cheetah_detection", "Environment Recognition on HalfCheetah"),
 	):
-		detection = study_detection(os.path.join(APP_DIR, STUDIES[study]))
+		detection = study_detection(STUDIES[study])
 		summary = summarize_detection(detection)
 		entries.update({**detection_entries(study, summary), **detection_total_entries(study, detection)})
 		caption += f" ({detection['exp'].nunique()} Replicates)"
@@ -882,7 +885,7 @@ def detection_outputs() -> tuple:
 def ablation_retention() -> tuple:
 	"""The ablation variants' end of phase, test return, retention and forgetting per training environment (descriptive), and its table."""
 	agents, left_behind = ABLATION_AGENTS[1:], CARTPOLE_TRAIN_ENVS[:-1]
-	rows = retention_rows(os.path.join(APP_DIR, STUDIES["ablation"]), agents, CARTPOLE_TRAIN_ENVS, last_episodes=ABLATION_END_OF_PHASE_EPISODES)
+	rows = retention_rows(STUDIES["ablation"], agents, CARTPOLE_TRAIN_ENVS, last_episodes=ABLATION_END_OF_PHASE_EPISODES)
 	caption = f"Skill Ablation: Retention of the Environments Left Behind ({rows['Exp'].nunique()} Replicates)"
 	return retention_entries("ablation", rows, left_behind), retention_table(rows, left_behind, agents, None, caption, "tab:ablation_retention")
 
@@ -973,7 +976,7 @@ def main() -> None:
 		_write(os.path.join(GENERATED_DIR, name), table)
 	reliability_figure(results["ablation"], ABLATION_AGENTS[1:], os.path.join(IMAGES_DIR, "ablation_reliability.pdf"))
 	reliability_figure(results["challenge"], CHALLENGE_AGENTS, os.path.join(IMAGES_DIR, "challenge_reliability.pdf"))
-	plot_study_curves(os.path.join(APP_DIR, STUDIES["challenge"]), "testing", CHALLENGE_AGENTS, os.path.join(IMAGES_DIR, "challenge_test_curves.pdf"))
+	plot_study_curves(STUDIES["challenge"], "testing", CHALLENGE_AGENTS, os.path.join(IMAGES_DIR, "challenge_test_curves.pdf"))
 	write_cheetah_outputs(results["cheetah"], rows, entries)
 	print(f"Wrote {len(entries)} numbers and the tables to {GENERATED_DIR}")
 

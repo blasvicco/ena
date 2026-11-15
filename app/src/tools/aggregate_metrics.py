@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # App imports
 # pylint: disable=wrong-import-position
 from tools.detection_stats import write_detection_report
-from tools.replicates import get_experiment_directories
+from tools.replicates import OUTPUTS_DIR, get_experiment_directories
 
 PERFORMANCE_MARKER = "--- ACADEMIC PERFORMANCE & RELIABILITY SUMMARY ---"
 COMPUTE_COST_MARKER = "--- COMPUTE-COST SUMMARY (candidate evaluation, training phase) ---"
@@ -23,9 +23,7 @@ ADAPTATION_MARKER = "--- ADAPTATION SUMMARY (training, early-stopped per environ
 PHASES = ["Training", "Compute Cost", "Adaptation", "Test"]
 # The summary metrics every performance table ends with (tools/metrics.calculate_paper_metrics).
 SUMMARY_HEADERS = ["Reliability (%)", "Stability Gap (↓)", "Efficiency (Score/s)"]
-# Anchored to this file's own location (app/src/tools/ -> app/), not the caller's cwd, so the
-# default target is found regardless of where this script is invoked from.
-DEFAULT_OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "cartpole_ena_ablation_outputs")
+DEFAULT_OUTPUT_DIR = os.path.join(OUTPUTS_DIR, "cartpole_ena_ablation_outputs")
 
 
 # pylint: disable=too-many-locals

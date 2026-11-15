@@ -2,6 +2,7 @@
 
 # General imports
 import math
+import os
 
 # Libs imports
 import pandas as pd
@@ -28,8 +29,12 @@ from tools.paper_stats import (
 	replicates_for_power,
 	welch_p,
 )
+from tools.paper_config import APP_DIR
 from tools.paper_results import (
 	ABLATION_FAMILY,
+	DETECTION_ABLATION_DIR,
+	SACD_DIR,
+	STUDIES,
 	ablation_family_table,
 	archive_size_entries,
 	comparison_table,
@@ -61,6 +66,7 @@ from tools.paper_results import (
 	with_reference_rows,
 	write_macros,
 )
+from tools.replicates import OUTPUTS_DIR
 
 
 def _results(rows: list, phase: str = "Test") -> dict:
@@ -748,3 +754,16 @@ def test_welch_total_entries_sum_every_family_s_agreement() -> None:
 	with step("Act/Assert: two families, 3 of 3 and 1 of 2."):
 		entries = {"a/welch/agree": "3", "a/welch/planned": "3", "b/c/welch/agree": "1", "b/c/welch/planned": "2", "a/welch/p": "x"}
 		assert welch_total_entries(entries) == {"stats/welch/agree": "4", "stats/welch/planned": "5"}
+
+
+def test_the_generator_reads_every_study_under_app_outputs() -> None:
+	"""Every study the generator reads, the detection benchmark and the SAC-Discrete check included, is under app/outputs/."""
+	with step("Arrange: every directory the generator reads its numbers from."):
+		read = [*STUDIES.values(), DETECTION_ABLATION_DIR, SACD_DIR]
+
+	with step("Act: the directory each one sits in."):
+		parents = {os.path.dirname(directory) for directory in read}
+
+	with step("Assert: all of them sit in app/outputs/."):
+		assert parents == {OUTPUTS_DIR}
+		assert OUTPUTS_DIR == os.path.join(APP_DIR, "outputs")

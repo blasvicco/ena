@@ -17,6 +17,7 @@ import argparse
 import glob
 import os
 import re
+import sys
 
 # Libs imports
 import matplotlib
@@ -26,8 +27,12 @@ import matplotlib.pyplot as plt  # pylint: disable=wrong-import-position
 import numpy as np  # pylint: disable=wrong-import-position
 import pandas as pd  # pylint: disable=wrong-import-position
 
-# Anchored to this file's own location (app/src/tools/ -> app/), not the caller's cwd.
-DEFAULT_OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "cartpole_ena_ablation_outputs")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# App imports
+from tools.replicates import OUTPUTS_DIR  # pylint: disable=wrong-import-position
+
+DEFAULT_OUTPUT_DIR = os.path.join(OUTPUTS_DIR, "cartpole_ena_ablation_outputs")
 MASTERY_SCORE = 475.0
 Y_LIM = (-10, 560)
 SMOOTHING_WINDOW = 10

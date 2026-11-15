@@ -25,7 +25,7 @@ services:
       - ./infra/src:/home/app
       - /home/app/node_modules
       - ./infra/scripts:/home/scripts
-      - ./app/half_cheetah_outputs:/home/outputs
+      - ./app/outputs/half_cheetah_outputs:/home/outputs
       - ~/.aws:/root/.aws:ro
     environment:
       - AWS_PROFILE=${AWS_PROFILE:-personal}

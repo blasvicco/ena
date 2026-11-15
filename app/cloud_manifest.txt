@@ -8,4 +8,5 @@ tools/__init__.py
 tools/agent_health.py
 tools/early_stopping.py
 tools/metrics.py
+tools/replicates.py
 tools/visualization.py

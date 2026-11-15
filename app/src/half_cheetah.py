@@ -31,13 +31,13 @@ from cartpole_ena_ablation import (
 	select_variants,
 	train_and_test,
 )
+from tools.replicates import OUTPUTS_DIR
 from tools.visualization import post_update, vprint
 
 
 # Constants
 NUM_EXPERIMENTS = 20  # author, 2026-10-12: 20 replicates in one go (detects d >= 1.0 at 80% power, alpha 0.05 / 2)
-# Anchored to this file's own location (one level up from src/), not the caller's cwd.
-OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "half_cheetah_outputs")
+OUTPUT_DIR = os.path.join(OUTPUTS_DIR, "half_cheetah_outputs")
 ENA_NAME = "ENA-Combined"
 ENA_BRAIN_HIDDEN = (32, 16)  # ENA's hidden layers, frozen by the search tuning (see ENA_SETTINGS)
 
