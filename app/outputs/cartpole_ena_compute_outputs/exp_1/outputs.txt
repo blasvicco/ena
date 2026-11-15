@@ -1,0 +1,25 @@
+Experiment 1 Log
+==============================
+
+  --- Training Performance vs Time ---
+  ENA-Combined-PlasticityFull: 19588.49 seconds, 58,604,310 env-steps
+
+Training:
+
+--- ACADEMIC PERFORMANCE & RELIABILITY SUMMARY ---
+                      Agent Mars-Light Avg Jupiter-Heavy Avg Earth-Standard Avg Reliability (%) Stability Gap (↓) Efficiency (Score/s)
+ENA-Combined-PlasticityFull         472.42            468.78             486.70           91.3%            280.45                36.45
+
+--- COMPUTE-COST SUMMARY (candidate evaluation, training phase) ---
+                      Agent Avg Eval Depth Avg Candidates/Gen Total Candidate Env-Steps
+ENA-Combined-PlasticityFull          500.0              100.0                57,890,361
+
+--- ADAPTATION SUMMARY (training, early-stopped per environment) ---
+                      Agent Mars-Light:steps  Mars-Light:solved Jupiter-Heavy:steps  Jupiter-Heavy:solved Earth-Standard:steps  Earth-Standard:solved  Solved-Phases Train-Env-Steps Eval-Env-Steps
+ENA-Combined-PlasticityFull       19,857,811                  0          18,559,118                     0           20,187,381                      0              0      58,604,310              0
+
+  --- Experiment 1 Test Results ---
+
+--- ACADEMIC PERFORMANCE & RELIABILITY SUMMARY ---
+                      Agent Mars-Light Avg Neptune Avg Jupiter-Heavy Avg Brown-dwarf Avg Earth-Standard Avg Reliability (%) Stability Gap (↓) Efficiency (Score/s)
+ENA-Combined-PlasticityFull         500.00      497.68            487.76          409.96             456.92           90.3%             23.15              2461.95

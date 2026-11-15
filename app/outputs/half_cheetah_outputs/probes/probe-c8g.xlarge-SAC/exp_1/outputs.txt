@@ -1,0 +1,22 @@
+Experiment 1 Log
+==============================
+  Hardware: Linux aarch64, 4 cores; TensorFlow threads all; ENA threads 2
+
+  --- Training Performance vs Time ---
+  SAC: 17114.49 seconds, 3,000,000 env-steps
+
+Training:
+
+--- ACADEMIC PERFORMANCE & RELIABILITY SUMMARY ---
+Agent Earth-Standard Avg Heavy-Rough Avg Mars-Slippery Avg Reliability (%) Stability Gap (↓) Efficiency (Score/s)
+  SAC            6887.58         5392.43           5892.49           84.6%           4071.23              1061.82
+
+--- ADAPTATION SUMMARY (training, early-stopped per environment) ---
+Agent Earth-Standard:steps  Earth-Standard:solved Heavy-Rough:steps  Heavy-Rough:solved Mars-Slippery:steps  Mars-Slippery:solved  Solved-Phases Train-Env-Steps Eval-Env-Steps
+  SAC            1,000,000                      0         1,000,000                   0           1,000,000                     0              0       3,000,000              0
+
+  --- Experiment 1 Test Results ---
+
+--- ACADEMIC PERFORMANCE & RELIABILITY SUMMARY ---
+Agent Earth-Standard Avg Ice-Floor Avg Heavy-Rough Avg High-Wind Avg Mars-Slippery Avg Reliability (%) Stability Gap (↓) Efficiency (Score/s)
+  SAC            4310.60       4568.77         2055.03       2866.76           9236.78           22.8%           -245.22             12113.84

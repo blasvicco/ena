@@ -1,0 +1,91 @@
+baseline,seed,passes,changes,inside,niches,min_purity,max_delay,distinct
+"Transition model, changing behavior",35,False,29,27,24,0.2,2,False
+"Transition model, changing behavior",36,False,28,26,22,0.15,0,True
+"Transition model, changing behavior",37,False,33,31,28,0.2,2,True
+"Transition model, changing behavior",38,False,28,26,20,0.225,1,True
+"Transition model, changing behavior",39,False,26,24,19,0.275,1,True
+"Transition model, changing behavior",40,False,27,25,21,0.225,1,True
+"Transition model, changing behavior",41,False,18,16,15,0.2,1,True
+"Transition model, changing behavior",42,False,26,25,26,0.275,9,True
+"Transition model, changing behavior",43,False,26,25,27,0.175,5,True
+"Transition model, changing behavior",44,False,26,24,21,0.2,1,True
+"Transition model, changing behavior",45,False,25,23,22,0.2,1,False
+"Transition model, changing behavior",46,False,30,28,22,0.225,1,True
+"Transition model, changing behavior",47,False,28,26,22,0.225,1,True
+"Transition model, changing behavior",48,False,21,19,20,0.225,1,True
+"Transition model, changing behavior",49,False,26,24,18,0.25,1,True
+"Transition model, changing behavior",50,False,20,18,17,0.2,1,True
+"Transition model, changing behavior",51,False,29,27,22,0.275,4,True
+"Transition model, changing behavior",52,False,27,25,22,0.225,1,True
+"Transition model, changing behavior",53,False,23,21,21,0.25,1,True
+"Transition model, changing behavior",54,False,27,25,23,0.15,1,True
+"Transition model, changing behavior",55,False,25,23,22,0.25,1,True
+"Transition model, changing behavior",56,False,22,20,20,0.35,1,True
+"Transition model, changing behavior",57,False,26,24,23,0.25,1,True
+"Transition model, changing behavior",58,False,25,23,24,0.25,1,True
+"Transition model, changing behavior",59,False,31,29,24,0.2,1,False
+"Transition model, changing behavior",60,False,22,21,18,0.2,5,False
+"Transition model, changing behavior",61,False,29,27,24,0.2,1,True
+"Transition model, changing behavior",62,False,27,26,20,0.2,6,True
+"Transition model, changing behavior",63,False,33,31,25,0.15,1,True
+"Transition model, changing behavior",64,False,27,25,21,0.175,2,True
+"Transition model, one fixed gait",35,False,14,13,6,0.5,5,True
+"Transition model, one fixed gait",36,False,13,11,6,0.475,1,True
+"Transition model, one fixed gait",37,False,15,14,8,0.325,5,True
+"Transition model, one fixed gait",38,False,15,13,7,0.275,1,False
+"Transition model, one fixed gait",39,False,13,11,5,0.5,1,False
+"Transition model, one fixed gait",40,False,14,13,6,0.35,9,True
+"Transition model, one fixed gait",41,False,9,7,6,0.6,2,False
+"Transition model, one fixed gait",42,False,19,17,6,0.45,0,True
+"Transition model, one fixed gait",43,False,13,12,5,0.55,10,False
+"Transition model, one fixed gait",44,False,19,17,4,0.55,1,False
+"Transition model, one fixed gait",45,False,12,10,6,0.525,1,False
+"Transition model, one fixed gait",46,False,22,20,8,0.375,4,True
+"Transition model, one fixed gait",47,False,17,15,6,0.35,2,True
+"Transition model, one fixed gait",48,False,17,15,9,0.25,1,True
+"Transition model, one fixed gait",49,False,22,20,7,0.375,3,False
+"Transition model, one fixed gait",50,False,18,16,8,0.4,3,True
+"Transition model, one fixed gait",51,False,24,22,7,0.325,4,False
+"Transition model, one fixed gait",52,False,19,18,7,0.375,11,True
+"Transition model, one fixed gait",53,False,15,14,6,0.45,-1,False
+"Transition model, one fixed gait",54,False,14,12,6,0.35,1,False
+"Transition model, one fixed gait",55,False,17,16,6,0.425,10,False
+"Transition model, one fixed gait",56,False,13,13,6,0.475,-1,False
+"Transition model, one fixed gait",57,False,18,16,7,0.3,2,True
+"Transition model, one fixed gait",58,False,16,14,7,0.4,1,True
+"Transition model, one fixed gait",59,False,20,19,8,0.3,6,True
+"Transition model, one fixed gait",60,False,16,14,8,0.35,1,True
+"Transition model, one fixed gait",61,False,13,11,4,0.55,1,False
+"Transition model, one fixed gait",62,False,15,14,6,0.325,7,True
+"Transition model, one fixed gait",63,False,17,15,7,0.45,2,True
+"Transition model, one fixed gait",64,False,18,17,6,0.375,5,False
+"Chirp (study), changing behavior",35,True,2,0,3,1.0,0,True
+"Chirp (study), changing behavior",36,True,2,0,3,1.0,0,True
+"Chirp (study), changing behavior",37,True,2,0,3,1.0,0,True
+"Chirp (study), changing behavior",38,True,2,0,3,1.0,0,True
+"Chirp (study), changing behavior",39,False,3,1,4,0.75,0,True
+"Chirp (study), changing behavior",40,True,2,0,3,1.0,0,True
+"Chirp (study), changing behavior",41,True,2,0,3,1.0,0,True
+"Chirp (study), changing behavior",42,True,2,0,3,1.0,0,True
+"Chirp (study), changing behavior",43,True,2,0,3,1.0,0,True
+"Chirp (study), changing behavior",44,True,2,0,3,1.0,0,True
+"Chirp (study), changing behavior",45,True,2,0,3,1.0,0,True
+"Chirp (study), changing behavior",46,True,2,0,3,1.0,0,True
+"Chirp (study), changing behavior",47,True,2,0,3,1.0,0,True
+"Chirp (study), changing behavior",48,True,2,0,3,1.0,0,True
+"Chirp (study), changing behavior",49,True,2,0,3,1.0,0,True
+"Chirp (study), changing behavior",50,True,2,0,3,1.0,0,True
+"Chirp (study), changing behavior",51,True,2,0,3,1.0,0,True
+"Chirp (study), changing behavior",52,True,2,0,3,1.0,0,True
+"Chirp (study), changing behavior",53,True,2,0,3,1.0,0,True
+"Chirp (study), changing behavior",54,True,2,0,3,1.0,0,True
+"Chirp (study), changing behavior",55,True,2,0,3,1.0,0,True
+"Chirp (study), changing behavior",56,True,2,0,3,1.0,0,True
+"Chirp (study), changing behavior",57,True,2,0,3,1.0,0,True
+"Chirp (study), changing behavior",58,True,2,0,3,1.0,0,True
+"Chirp (study), changing behavior",59,True,2,0,3,1.0,0,True
+"Chirp (study), changing behavior",60,True,2,0,3,1.0,0,True
+"Chirp (study), changing behavior",61,True,2,0,3,1.0,0,True
+"Chirp (study), changing behavior",62,True,2,0,3,1.0,0,True
+"Chirp (study), changing behavior",63,True,2,0,3,1.0,0,True
+"Chirp (study), changing behavior",64,True,2,0,3,1.0,0,True

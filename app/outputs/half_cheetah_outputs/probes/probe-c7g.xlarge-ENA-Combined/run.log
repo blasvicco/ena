@@ -1,0 +1,53 @@
+Hardware: No GPU detected. Defaulting to CPU.
+
+============================================================
+LAUNCHING 1 OF 1 HALFCHEETAH CHALLENGE REPLICATES, 1 at a time
+Agents: ['ENA-Combined']
+============================================================
+
+2026-10-12 15:04:38 Experiment 1: Initializing Agents...
+2026-10-12 15:05:46 Experiment 1: Training ENA-Combined (ETA 30m 7s)
+2026-10-12 15:07:25 Experiment 1: Training ENA-Combined (ETA 35m 56s)
+2026-10-12 15:08:32 Experiment 1: Training ENA-Combined (ETA 34m 32s)
+2026-10-12 15:09:33 Experiment 1: Training ENA-Combined (ETA 33m 20s)
+2026-10-12 15:11:46 Experiment 1: Training ENA-Combined (ETA 41m 27s)
+2026-10-12 15:12:47 Experiment 1: Training ENA-Combined (ETA 38m 23s)
+2026-10-12 15:15:27 Experiment 1: Training ENA-Combined (ETA 40m 21s)
+2026-10-12 15:16:28 Experiment 1: Training ENA-Combined (ETA 38m 24s)
+2026-10-12 15:17:29 Experiment 1: Training ENA-Combined (ETA 36m 21s)
+2026-10-12 15:19:54 Experiment 1: Training ENA-Combined (ETA 38m 12s)
+2026-10-12 15:20:55 Experiment 1: Training ENA-Combined (ETA 36m 2s)
+2026-10-12 15:22:04 Experiment 1: Training ENA-Combined (ETA 33m 42s)
+2026-10-12 15:23:16 Experiment 1: Training ENA-Combined (ETA 30m 51s)
+2026-10-12 15:24:16 Experiment 1: Training ENA-Combined (ETA 28m 28s)
+2026-10-12 15:25:28 Experiment 1: Training ENA-Combined (ETA 26m 2s)
+2026-10-12 15:27:09 Experiment 1: Training ENA-Combined (ETA 26m 23s)
+2026-10-12 15:28:13 Experiment 1: Training ENA-Combined (ETA 24m 0s)
+2026-10-12 15:29:29 Experiment 1: Training ENA-Combined (ETA 23m 9s)
+2026-10-12 15:30:31 Experiment 1: Training ENA-Combined (ETA 21m 30s)
+2026-10-12 15:31:31 Experiment 1: Training ENA-Combined (ETA 19m 56s)
+2026-10-12 15:33:45 Experiment 1: Training ENA-Combined (ETA 20m 2s)
+2026-10-12 15:34:46 Experiment 1: Training ENA-Combined (ETA 18m 32s)
+2026-10-12 15:35:47 Experiment 1: Training ENA-Combined (ETA 17m 8s)
+2026-10-12 15:37:51 Experiment 1: Training ENA-Combined (ETA 17m 10s)
+2026-10-12 15:38:57 Experiment 1: Training ENA-Combined (ETA 15m 4s)
+2026-10-12 15:40:07 Experiment 1: Training ENA-Combined (ETA 13m 29s)
+2026-10-12 15:41:12 Experiment 1: Training ENA-Combined (ETA 11m 32s)
+2026-10-12 15:43:03 Experiment 1: Training ENA-Combined (ETA 9m 36s)
+2026-10-12 15:44:05 Experiment 1: Training ENA-Combined (ETA 7m 56s)
+2026-10-12 15:46:32 Experiment 1: Training ENA-Combined (ETA 6m 28s)
+2026-10-12 15:47:32 Experiment 1: Training ENA-Combined (ETA 4m 57s)
+2026-10-12 15:50:31 Experiment 1: Training ENA-Combined (ETA 3m 12s)
+2026-10-12 15:51:31 Experiment 1: Training ENA-Combined (ETA 1m 39s)
+2026-10-12 15:54:22 Experiment 1: Generating Training Plots
+2026-10-12 15:55:23 Experiment 1: Testing ENA-Combined (ETA 1m 51s)
+2026-10-12 15:56:23 Experiment 1: Testing ENA-Combined (ETA 50s)
+2026-10-12 15:57:15 Experiment 1: Done
+  Total Experiments Progress | Mem: 1.3GB (17.1%) ━━━━━━━━━━━━━━━━━ 100% 0:52:36
+  Experiment 1: Done                              ━━━━━━━━━━━━━━━━━ 100% 0:52:36
+
+============================================================
+ALL 1 EXPERIMENTS COMPLETE
+Check the /results/ directory for detailed logs and plots.
+============================================================
+exit code 0

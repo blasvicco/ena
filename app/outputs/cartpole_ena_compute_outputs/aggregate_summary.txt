@@ -1,0 +1,41 @@
+Averages and Standard Deviations Across 1 Experiments
+============================================================
+
+--- Training Phase ---
+Agent: ENA-Combined-PlasticityFull
+  Mars-Light Avg......: Mean =   472.42 | Std =      nan | Min =   472.42 | Max =   472.42
+  Jupiter-Heavy Avg...: Mean =   468.78 | Std =      nan | Min =   468.78 | Max =   468.78
+  Earth-Standard Avg..: Mean =   486.70 | Std =      nan | Min =   486.70 | Max =   486.70
+  Reliability (%).....: Mean =    91.30 | Std =      nan | Min =    91.30 | Max =    91.30
+  Stability Gap (↓)...: Mean =   280.45 | Std =      nan | Min =   280.45 | Max =   280.45
+  Efficiency (Score/s): Mean =    36.45 | Std =      nan | Min =    36.45 | Max =    36.45
+
+--- Compute Cost Phase ---
+Agent: ENA-Combined-PlasticityFull
+  Avg Eval Depth......: Mean =   500.00 | Std =      nan | Min =   500.00 | Max =   500.00
+  Avg Candidates/Gen..: Mean =   100.00 | Std =      nan | Min =   100.00 | Max =   100.00
+  Total Candidate Env-Steps: Mean = 57890361.00 | Std =      nan | Min = 57890361.00 | Max = 57890361.00
+
+--- Adaptation Phase ---
+Agent: ENA-Combined-PlasticityFull
+  Mars-Light:steps....: Mean = 19857811.00 | Std =      nan | Min = 19857811.00 | Max = 19857811.00
+  Mars-Light:solved...: Mean =     0.00 | Std =      nan | Min =     0.00 | Max =     0.00
+  Jupiter-Heavy:steps.: Mean = 18559118.00 | Std =      nan | Min = 18559118.00 | Max = 18559118.00
+  Jupiter-Heavy:solved: Mean =     0.00 | Std =      nan | Min =     0.00 | Max =     0.00
+  Earth-Standard:steps: Mean = 20187381.00 | Std =      nan | Min = 20187381.00 | Max = 20187381.00
+  Earth-Standard:solved: Mean =     0.00 | Std =      nan | Min =     0.00 | Max =     0.00
+  Solved-Phases.......: Mean =     0.00 | Std =      nan | Min =     0.00 | Max =     0.00
+  Train-Env-Steps.....: Mean = 58604310.00 | Std =      nan | Min = 58604310.00 | Max = 58604310.00
+  Eval-Env-Steps......: Mean =     0.00 | Std =      nan | Min =     0.00 | Max =     0.00
+
+--- Test Phase ---
+Agent: ENA-Combined-PlasticityFull
+  Mars-Light Avg......: Mean =   500.00 | Std =      nan | Min =   500.00 | Max =   500.00
+  Neptune Avg.........: Mean =   497.68 | Std =      nan | Min =   497.68 | Max =   497.68
+  Jupiter-Heavy Avg...: Mean =   487.76 | Std =      nan | Min =   487.76 | Max =   487.76
+  Brown-dwarf Avg.....: Mean =   409.96 | Std =      nan | Min =   409.96 | Max =   409.96
+  Earth-Standard Avg..: Mean =   456.92 | Std =      nan | Min =   456.92 | Max =   456.92
+  Reliability (%).....: Mean =    90.30 | Std =      nan | Min =    90.30 | Max =    90.30
+  Stability Gap (↓)...: Mean =    23.15 | Std =      nan | Min =    23.15 | Max =    23.15
+  Efficiency (Score/s): Mean =  2461.95 | Std =      nan | Min =  2461.95 | Max =  2461.95
+

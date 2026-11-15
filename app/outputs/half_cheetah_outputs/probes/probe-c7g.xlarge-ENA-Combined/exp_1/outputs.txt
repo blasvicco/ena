@@ -1,0 +1,26 @@
+Experiment 1 Log
+==============================
+  Hardware: Linux aarch64, 4 cores; TensorFlow threads all; ENA threads 2
+
+  --- Training Performance vs Time ---
+  ENA-Combined: 2981.68 seconds, 3,018,673 env-steps
+
+Training:
+
+--- ACADEMIC PERFORMANCE & RELIABILITY SUMMARY ---
+       Agent Earth-Standard Avg Heavy-Rough Avg Mars-Slippery Avg Reliability (%) Stability Gap (↓) Efficiency (Score/s)
+ENA-Combined            1956.10         2159.72           1445.51            0.0%           1736.49               359.48
+
+--- COMPUTE-COST SUMMARY (candidate evaluation, training phase) ---
+       Agent Avg Eval Depth Avg Candidates/Gen Total Candidate Env-Steps
+ENA-Combined           68.6               30.5                 2,456,673
+
+--- ADAPTATION SUMMARY (training, early-stopped per environment) ---
+       Agent Earth-Standard:steps  Earth-Standard:solved Heavy-Rough:steps  Heavy-Rough:solved Mars-Slippery:steps  Mars-Slippery:solved  Solved-Phases Train-Env-Steps Eval-Env-Steps
+ENA-Combined            1,000,610                      0         1,001,879                   0           1,016,184                     0              0       3,018,673              0
+
+  --- Experiment 1 Test Results ---
+
+--- ACADEMIC PERFORMANCE & RELIABILITY SUMMARY ---
+       Agent Earth-Standard Avg Ice-Floor Avg Heavy-Rough Avg High-Wind Avg Mars-Slippery Avg Reliability (%) Stability Gap (↓) Efficiency (Score/s)
+ENA-Combined            2485.54       2453.02         2672.16       1262.57           1490.90            0.0%            238.85              3064.39

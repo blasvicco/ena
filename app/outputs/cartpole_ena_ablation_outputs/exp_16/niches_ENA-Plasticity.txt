@@ -1,0 +1,3 @@
+Niche ID   | Env Name             | Total Gladiators
+---------------------------------------------------
+No gladiators inducted.

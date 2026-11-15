@@ -1,0 +1,128 @@
+Averages and Standard Deviations Across 50 Experiments
+============================================================
+
+--- Training Phase ---
+Agent: ENA-Combined
+  Mars-Light Avg......: Mean =   455.50 | Std =    20.59 | Min =   406.07 | Max =   479.84
+  Jupiter-Heavy Avg...: Mean =   460.68 | Std =    29.87 | Min =   282.13 | Max =   482.88
+  Earth-Standard Avg..: Mean =   474.71 | Std =     5.08 | Min =   462.58 | Max =   482.62
+  Reliability (%).....: Mean =    88.07 | Std =     6.08 | Min =    69.00 | Max =    95.10
+  Stability Gap (↓)...: Mean =   186.78 | Std =    95.97 | Min =   -29.50 | Max =   379.25
+  Efficiency (Score/s): Mean =   291.74 | Std =    38.46 | Min =   193.67 | Max =   364.08
+
+Agent: DQN
+  Mars-Light Avg......: Mean =   381.16 | Std =     9.10 | Min =   357.91 | Max =   400.99
+  Jupiter-Heavy Avg...: Mean =   335.00 | Std =    25.53 | Min =   272.40 | Max =   385.42
+  Earth-Standard Avg..: Mean =   404.43 | Std =    24.36 | Min =   311.34 | Max =   449.57
+  Reliability (%).....: Mean =    56.68 | Std =     3.73 | Min =    47.60 | Max =    64.70
+  Stability Gap (↓)...: Mean =   345.58 | Std =    56.44 | Min =   218.70 | Max =   443.70
+  Efficiency (Score/s): Mean =  1304.53 | Std =   144.55 | Min =   986.35 | Max =  1494.99
+
+Agent: PPO
+  Mars-Light Avg......: Mean =   436.35 | Std =    13.86 | Min =   371.63 | Max =   446.67
+  Jupiter-Heavy Avg...: Mean =   383.55 | Std =    38.80 | Min =   277.16 | Max =   451.01
+  Earth-Standard Avg..: Mean =   495.94 | Std =    10.26 | Min =   440.69 | Max =   500.00
+  Reliability (%).....: Mean =    85.08 | Std =     4.01 | Min =    74.20 | Max =    90.70
+  Stability Gap (↓)...: Mean =   476.25 | Std =    30.27 | Min =   293.35 | Max =   484.55
+  Efficiency (Score/s): Mean =   904.85 | Std =   109.41 | Min =   686.13 | Max =  1194.11
+
+Agent: SAC-Discrete
+  Mars-Light Avg......: Mean =   426.81 | Std =    10.69 | Min =   381.89 | Max =   438.06
+  Jupiter-Heavy Avg...: Mean =   364.49 | Std =    17.16 | Min =   329.41 | Max =   401.98
+  Earth-Standard Avg..: Mean =   495.90 | Std =     9.20 | Min =   452.48 | Max =   500.00
+  Reliability (%).....: Mean =    80.06 | Std =     2.06 | Min =    73.70 | Max =    83.50
+  Stability Gap (↓)...: Mean =   473.74 | Std =    16.59 | Min =   411.40 | Max =   484.50
+  Efficiency (Score/s): Mean =  1062.27 | Std =   112.05 | Min =   857.69 | Max =  1312.88
+
+--- Compute Cost Phase ---
+Agent: ENA-Combined
+  Avg Eval Depth......: Mean =    93.80 | Std =     9.21 | Min =    80.00 | Max =   131.10
+  Avg Candidates/Gen..: Mean =    17.04 | Std =     1.86 | Min =    14.30 | Max =    24.60
+  Total Candidate Env-Steps: Mean = 6390752.42 | Std = 150590.86 | Min = 6137207.00 | Max = 6778840.00
+
+--- Adaptation Phase ---
+Agent: ENA-Combined
+  Mars-Light:steps....: Mean = 104348.44 | Std = 192453.13 | Min =  5031.00 | Max = 1065664.00
+  Mars-Light:solved...: Mean =     1.00 | Std =     0.00 | Min =     1.00 | Max =     1.00
+  Jupiter-Heavy:steps.: Mean = 206891.62 | Std = 391315.75 | Min =  7555.00 | Max = 2505583.00
+  Jupiter-Heavy:solved: Mean =     0.98 | Std =     0.14 | Min =     0.00 | Max =     1.00
+  Earth-Standard:steps: Mean = 45343.06 | Std = 23681.07 | Min =  9537.00 | Max = 109480.00
+  Earth-Standard:solved: Mean =     1.00 | Std =     0.00 | Min =     1.00 | Max =     1.00
+  Solved-Phases.......: Mean =     2.98 | Std =     0.14 | Min =     2.00 | Max =     3.00
+  Train-Env-Steps.....: Mean = 7531787.60 | Std = 18968.17 | Min = 7501429.00 | Max = 7586668.00
+  Eval-Env-Steps......: Mean = 48267.48 | Std = 78849.60 | Min =  8753.00 | Max = 407077.00
+
+Agent: DQN
+  Mars-Light:steps....: Mean = 234008.56 | Std = 100297.71 | Min =  5001.00 | Max = 380075.00
+  Mars-Light:solved...: Mean =     1.00 | Std =     0.00 | Min =     1.00 | Max =     1.00
+  Jupiter-Heavy:steps.: Mean = 141965.78 | Std = 59692.66 | Min = 40035.00 | Max = 295273.00
+  Jupiter-Heavy:solved: Mean =     1.00 | Std =     0.00 | Min =     1.00 | Max =     1.00
+  Earth-Standard:steps: Mean = 21068.00 | Std = 25218.22 | Min =  5000.00 | Max = 110499.00
+  Earth-Standard:solved: Mean =     1.00 | Std =     0.00 | Min =     1.00 | Max =     1.00
+  Solved-Phases.......: Mean =     3.00 | Std =     0.00 | Min =     3.00 | Max =     3.00
+  Train-Env-Steps.....: Mean = 7500688.36 | Std =   247.22 | Min = 7500171.00 | Max = 7501270.00
+  Eval-Env-Steps......: Mean = 111938.98 | Std = 38011.59 | Min = 19268.00 | Max = 180101.00
+
+Agent: PPO
+  Mars-Light:steps....: Mean =  8835.38 | Std =  2397.92 | Min =  5000.00 | Max = 15113.00
+  Mars-Light:solved...: Mean =     1.00 | Std =     0.00 | Min =     1.00 | Max =     1.00
+  Jupiter-Heavy:steps.: Mean = 56406.94 | Std = 27248.17 | Min = 25008.00 | Max = 130494.00
+  Jupiter-Heavy:solved: Mean =     1.00 | Std =     0.00 | Min =     1.00 | Max =     1.00
+  Earth-Standard:steps: Mean =  5100.00 | Std =   707.11 | Min =  5000.00 | Max = 10000.00
+  Earth-Standard:solved: Mean =     1.00 | Std =     0.00 | Min =     1.00 | Max =     1.00
+  Solved-Phases.......: Mean =     3.00 | Std =     0.00 | Min =     3.00 | Max =     3.00
+  Train-Env-Steps.....: Mean = 7500724.58 | Std =   279.40 | Min = 7500138.00 | Max = 7501321.00
+  Eval-Env-Steps......: Mean = 14014.64 | Std =  3999.63 | Min =  8211.00 | Max = 28006.00
+
+Agent: SAC-Discrete
+  Mars-Light:steps....: Mean = 109514.66 | Std = 78131.75 | Min =  5009.00 | Max = 215339.00
+  Mars-Light:solved...: Mean =     1.00 | Std =     0.00 | Min =     1.00 | Max =     1.00
+  Jupiter-Heavy:steps.: Mean = 163220.54 | Std = 23670.82 | Min = 95120.00 | Max = 220192.00
+  Jupiter-Heavy:solved: Mean =     1.00 | Std =     0.00 | Min =     1.00 | Max =     1.00
+  Earth-Standard:steps: Mean =  6855.68 | Std =  8733.78 | Min =  5000.00 | Max = 65316.00
+  Earth-Standard:solved: Mean =     1.00 | Std =     0.00 | Min =     1.00 | Max =     1.00
+  Solved-Phases.......: Mean =     3.00 | Std =     0.00 | Min =     3.00 | Max =     3.00
+  Train-Env-Steps.....: Mean = 7500634.36 | Std =   262.92 | Min = 7500203.00 | Max = 7501166.00
+  Eval-Env-Steps......: Mean = 69157.66 | Std = 31527.71 | Min = 25452.00 | Max = 121253.00
+
+--- Test Phase ---
+Agent: ENA-Combined
+  Mars-Light Avg......: Mean =   480.16 | Std =    43.60 | Min =   219.76 | Max =   500.00
+  Neptune Avg.........: Mean =   492.91 | Std =    11.90 | Min =   443.01 | Max =   500.00
+  Jupiter-Heavy Avg...: Mean =   461.29 | Std =    52.64 | Min =   307.92 | Max =   500.00
+  Brown-dwarf Avg.....: Mean =   381.58 | Std =   118.68 | Min =   114.26 | Max =   500.00
+  Earth-Standard Avg..: Mean =   498.07 | Std =     6.76 | Min =   462.28 | Max =   500.00
+  Reliability (%).....: Mean =    83.86 | Std =    11.67 | Min =    53.40 | Max =    99.70
+  Stability Gap (↓)...: Mean =    14.62 | Std =    42.36 | Min =  -222.65 | Max =   102.95
+  Efficiency (Score/s): Mean =  1682.71 | Std =   248.36 | Min =  1073.17 | Max =  2443.94
+
+Agent: DQN
+  Mars-Light Avg......: Mean =   401.56 | Std =   130.32 | Min =     7.15 | Max =   500.00
+  Neptune Avg.........: Mean =   443.69 | Std =   121.08 | Min =    82.07 | Max =   500.00
+  Jupiter-Heavy Avg...: Mean =    75.23 | Std =    73.72 | Min =    16.24 | Max =   500.00
+  Brown-dwarf Avg.....: Mean =   238.25 | Std =   185.77 | Min =    10.98 | Max =   500.00
+  Earth-Standard Avg..: Mean =   441.99 | Std =   119.01 | Min =    90.52 | Max =   500.00
+  Reliability (%).....: Mean =    50.60 | Std =    26.37 | Min =     0.00 | Max =   100.00
+  Stability Gap (↓)...: Mean =   -41.51 | Std =   134.56 | Min =  -490.85 | Max =   219.25
+  Efficiency (Score/s): Mean =  2632.86 | Std =   383.00 | Min =  1686.41 | Max =  3929.05
+
+Agent: PPO
+  Mars-Light Avg......: Mean =   487.98 | Std =    68.77 | Min =    18.54 | Max =   500.00
+  Neptune Avg.........: Mean =   497.87 | Std =    14.38 | Min =   398.28 | Max =   500.00
+  Jupiter-Heavy Avg...: Mean =    21.56 | Std =    11.79 | Min =    15.70 | Max =    88.78
+  Brown-dwarf Avg.....: Mean =   379.52 | Std =   171.32 | Min =    15.22 | Max =   500.00
+  Earth-Standard Avg..: Mean =   498.01 | Std =    13.42 | Min =   405.10 | Max =   500.00
+  Reliability (%).....: Mean =    73.79 | Std =     9.65 | Min =    39.80 | Max =    82.30
+  Stability Gap (↓)...: Mean =   -10.57 | Std =    68.35 | Min =  -481.35 | Max =     5.20
+  Efficiency (Score/s): Mean =  2645.72 | Std =   384.09 | Min =  1649.57 | Max =  3938.71
+
+Agent: SAC-Discrete
+  Mars-Light Avg......: Mean =   495.66 | Std =    20.29 | Min =   366.36 | Max =   500.00
+  Neptune Avg.........: Mean =   500.00 | Std =     0.00 | Min =   500.00 | Max =   500.00
+  Jupiter-Heavy Avg...: Mean =    52.06 | Std =    71.91 | Min =    15.82 | Max =   500.00
+  Brown-dwarf Avg.....: Mean =   393.53 | Std =   178.64 | Min =    23.95 | Max =   500.00
+  Earth-Standard Avg..: Mean =   500.00 | Std =     0.00 | Min =   500.00 | Max =   500.00
+  Reliability (%).....: Mean =    74.50 | Std =    10.22 | Min =    43.50 | Max =   100.00
+  Stability Gap (↓)...: Mean =    -4.40 | Std =    22.17 | Min =  -152.95 | Max =     0.00
+  Efficiency (Score/s): Mean =  2611.67 | Std =   391.63 | Min =  1669.21 | Max =  3928.24
+

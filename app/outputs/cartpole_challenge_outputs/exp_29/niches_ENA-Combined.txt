@@ -1,0 +1,7 @@
+Niche ID   | Env Name             | Total Gladiators
+---------------------------------------------------
+0          | Mars-Light           | 5              
+1          | Mars-Light           | 3              
+2          | Jupiter-Heavy        | 2              
+3          | Jupiter-Heavy        | 5              
+4          | Earth-Standard       | 5              

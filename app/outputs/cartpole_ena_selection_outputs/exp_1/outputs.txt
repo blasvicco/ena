@@ -1,0 +1,30 @@
+Experiment 1 Log
+==============================
+
+  --- Training Performance vs Time ---
+  ENA-Combined-NicheMatch: 1815.67 seconds, 5,300,641 env-steps
+  ENA-Combined-BestTrust: 1796.46 seconds, 5,300,641 env-steps
+
+Training:
+
+--- ACADEMIC PERFORMANCE & RELIABILITY SUMMARY ---
+                  Agent Mars-Light Avg Jupiter-Heavy Avg Earth-Standard Avg Reliability (%) Stability Gap (↓) Efficiency (Score/s)
+ENA-Combined-NicheMatch         467.93            437.89             460.80           82.5%            304.40               376.34
+ ENA-Combined-BestTrust         467.93            437.89             460.80           82.5%            304.40               380.36
+
+--- COMPUTE-COST SUMMARY (candidate evaluation, training phase) ---
+                  Agent Avg Eval Depth Avg Candidates/Gen Total Candidate Env-Steps
+ENA-Combined-NicheMatch          101.5               18.6                 4,617,335
+ ENA-Combined-BestTrust          101.5               18.6                 4,617,335
+
+--- ADAPTATION SUMMARY (training, early-stopped per environment) ---
+                  Agent Mars-Light:steps  Mars-Light:solved Jupiter-Heavy:steps  Jupiter-Heavy:solved Earth-Standard:steps  Earth-Standard:solved  Solved-Phases Train-Env-Steps Eval-Env-Steps
+ENA-Combined-NicheMatch        1,237,773                  0           2,042,923                     0            2,019,945                      0              0       5,300,641              0
+ ENA-Combined-BestTrust        1,237,773                  0           2,042,923                     0            2,019,945                      0              0       5,300,641              0
+
+  --- Experiment 1 Test Results ---
+
+--- ACADEMIC PERFORMANCE & RELIABILITY SUMMARY ---
+                  Agent Mars-Light Avg Neptune Avg Jupiter-Heavy Avg Brown-dwarf Avg Earth-Standard Avg Reliability (%) Stability Gap (↓) Efficiency (Score/s)
+ENA-Combined-NicheMatch         496.06      496.72            201.50           62.62             500.00           65.5%              9.80              2577.35
+ ENA-Combined-BestTrust         500.00      498.00             36.91           60.38             500.00           59.9%              0.00              2556.51

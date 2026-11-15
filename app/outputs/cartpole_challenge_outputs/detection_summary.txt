@@ -1,0 +1,20 @@
+Environment recognition across 50 replicates (mean ± std; n = replicates with a value)
+============================================================
+For every agent with a real recognizer and every complete replicate, per contiguous environment phase:
+  - unrecognized: % of episodes whose transitions matched no known niche (detected_env_id -1);
+  - changes: confirmed changes (detect_change() firing). A phase follows a real switch, except the
+    run's very first, so at most one is a detection and the rest are false alarms;
+  - first_change: episodes into the phase of the first confirmation (none: NaN);
+  - niches (training only): niches the Hall of Fame holds for the environment (fragmentation if > 1).
+
+--- ENA-Combined: Training ---
+  Mars-Light       unrecognized 0.3 ± 0.3 (n=50) | changes 2.0 ± 2.5 (n=50) | first_change 255.4 ± 236.8 (n=27) | niches 1.6 ± 0.5 (n=50)
+  Jupiter-Heavy    unrecognized 0.1 ± 0.1 (n=50) | changes 1.3 ± 0.6 (n=50) | first_change 0.7 ± 0.8 (n=50) | niches 1.4 ± 0.6 (n=50)
+  Earth-Standard   unrecognized 0.0 ± 0.0 (n=50) | changes 1.2 ± 0.4 (n=50) | first_change 0.1 ± 0.4 (n=50) | niches 1.2 ± 0.4 (n=50)
+
+--- ENA-Combined: Test ---
+  Mars-Light       unrecognized 1.2 ± 2.4 (n=50) | changes 1.3 ± 4.7 (n=50) | first_change 8.0 ± 8.7 (n=13)
+  Neptune          unrecognized 0.6 ± 0.3 (n=50) | changes 1.1 ± 0.3 (n=50) | first_change 0.2 ± 0.5 (n=50)
+  Jupiter-Heavy    unrecognized 0.5 ± 0.0 (n=50) | changes 1.0 ± 0.0 (n=50) | first_change 0.1 ± 0.2 (n=50)
+  Brown-dwarf      unrecognized 94.8 ± 12.3 (n=50) | changes 10.4 ± 14.1 (n=50) | first_change 0.0 ± 0.0 (n=50)
+  Earth-Standard   unrecognized 0.4 ± 0.2 (n=50) | changes 0.0 ± 0.1 (n=50) | first_change 1.0 ± 0.0 (n=1)

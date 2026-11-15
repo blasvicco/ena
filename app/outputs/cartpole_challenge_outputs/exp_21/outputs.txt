@@ -1,0 +1,37 @@
+Experiment 21 Log
+==============================
+
+  --- Training Performance vs Time ---
+  ENA-Combined: 3890.83 seconds, 7,545,259 env-steps
+  DQN: 5604.98 seconds, 7,500,869 env-steps
+  PPO: 7364.85 seconds, 7,500,886 env-steps
+  SAC-Discrete: 6665.78 seconds, 7,500,501 env-steps
+
+Training:
+
+--- ACADEMIC PERFORMANCE & RELIABILITY SUMMARY ---
+       Agent Mars-Light Avg Jupiter-Heavy Avg Earth-Standard Avg Reliability (%) Stability Gap (↓) Efficiency (Score/s)
+ENA-Combined         467.13            476.11             481.96           93.6%            200.55               352.69
+         DQN         377.46            345.29             414.93           60.7%            309.95              1338.25
+         PPO         443.46            408.31             463.94           86.2%            484.15              1018.47
+SAC-Discrete         431.64            379.54             500.00           82.0%            479.80              1125.22
+
+--- COMPUTE-COST SUMMARY (candidate evaluation, training phase) ---
+       Agent Avg Eval Depth Avg Candidates/Gen Total Candidate Env-Steps
+ENA-Combined           84.9               15.3                 6,172,984
+
+--- ADAPTATION SUMMARY (training, early-stopped per environment) ---
+       Agent Mars-Light:steps  Mars-Light:solved Jupiter-Heavy:steps  Jupiter-Heavy:solved Earth-Standard:steps  Earth-Standard:solved  Solved-Phases Train-Env-Steps Eval-Env-Steps
+ENA-Combined           22,822                  1              19,635                     1               50,335                      1              3       7,545,259         11,797
+         DQN          270,448                  1             130,495                     1                5,317                      1              3       7,500,869        110,284
+         PPO            5,012                  1              40,248                     1                5,000                      1              3       7,500,886         12,295
+SAC-Discrete           25,051                  1             170,346                     1                5,000                      1              3       7,500,501         32,138
+
+  --- Experiment 21 Test Results ---
+
+--- ACADEMIC PERFORMANCE & RELIABILITY SUMMARY ---
+       Agent Mars-Light Avg Neptune Avg Jupiter-Heavy Avg Brown-dwarf Avg Earth-Standard Avg Reliability (%) Stability Gap (↓) Efficiency (Score/s)
+ENA-Combined         500.00      497.82            456.50          493.63             500.00           89.7%             21.85              1736.11
+         DQN         500.00      500.00            100.86          442.08             500.00           77.2%              0.00              2629.78
+         PPO          18.54      497.57             15.85           15.22             497.58           39.8%           -481.35              2654.61
+SAC-Discrete         500.00      500.00             40.20          500.00             500.00           80.0%              0.00              2255.50

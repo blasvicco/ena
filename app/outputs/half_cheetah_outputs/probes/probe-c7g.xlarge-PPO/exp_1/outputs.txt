@@ -1,0 +1,22 @@
+Experiment 1 Log
+==============================
+  Hardware: Linux aarch64, 4 cores; TensorFlow threads all; ENA threads 2
+
+  --- Training Performance vs Time ---
+  PPO: 9870.57 seconds, 3,000,000 env-steps
+
+Training:
+
+--- ACADEMIC PERFORMANCE & RELIABILITY SUMMARY ---
+Agent Earth-Standard Avg Heavy-Rough Avg Mars-Slippery Avg Reliability (%) Stability Gap (↓) Efficiency (Score/s)
+  PPO            3061.08         4968.19           2035.27           28.0%           2144.80              1019.65
+
+--- ADAPTATION SUMMARY (training, early-stopped per environment) ---
+Agent Earth-Standard:steps  Earth-Standard:solved Heavy-Rough:steps  Heavy-Rough:solved Mars-Slippery:steps  Mars-Slippery:solved  Solved-Phases Train-Env-Steps Eval-Env-Steps
+  PPO            1,000,000                      0         1,000,000                   0           1,000,000                     0              0       3,000,000              0
+
+  --- Experiment 1 Test Results ---
+
+--- ACADEMIC PERFORMANCE & RELIABILITY SUMMARY ---
+Agent Earth-Standard Avg Ice-Floor Avg Heavy-Rough Avg High-Wind Avg Mars-Slippery Avg Reliability (%) Stability Gap (↓) Efficiency (Score/s)
+  PPO            2934.22       4115.85          745.04       2619.06           3832.17            0.0%          -1044.72              4997.85

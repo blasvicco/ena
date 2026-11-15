@@ -1,0 +1,34 @@
+Experiment 12 Log
+==============================
+  Hardware: Linux aarch64, 4 cores; TensorFlow threads all; ENA threads 2
+
+  --- Training Performance vs Time ---
+  ENA-Combined: 1980.17 seconds, 3,022,689 env-steps
+  PPO: 7982.52 seconds, 3,000,000 env-steps
+  SAC: 17497.90 seconds, 3,000,000 env-steps
+
+Training:
+
+--- ACADEMIC PERFORMANCE & RELIABILITY SUMMARY ---
+       Agent Earth-Standard Avg Heavy-Rough Avg Mars-Slippery Avg Reliability (%) Stability Gap (↓) Efficiency (Score/s)
+ENA-Combined            1668.13         2566.58           1437.17            0.0%            216.33               571.97
+         PPO            3091.23         4134.56           2607.55           25.1%           4284.42              1231.86
+         SAC            6945.59         4996.06           6001.95           84.0%           4054.77              1025.47
+
+--- COMPUTE-COST SUMMARY (candidate evaluation, training phase) ---
+       Agent Avg Eval Depth Avg Candidates/Gen Total Candidate Env-Steps
+ENA-Combined           63.5               27.8                 2,420,689
+
+--- ADAPTATION SUMMARY (training, early-stopped per environment) ---
+       Agent Earth-Standard:steps  Earth-Standard:solved Heavy-Rough:steps  Heavy-Rough:solved Mars-Slippery:steps  Mars-Slippery:solved  Solved-Phases Train-Env-Steps Eval-Env-Steps
+ENA-Combined            1,000,620                      0         1,006,706                   0           1,015,363                     0              0       3,022,689              0
+         PPO            1,000,000                      0         1,000,000                   0           1,000,000                     0              0       3,000,000              0
+         SAC            1,000,000                      0         1,000,000                   0           1,000,000                     0              0       3,000,000              0
+
+  --- Experiment 12 Test Results ---
+
+--- ACADEMIC PERFORMANCE & RELIABILITY SUMMARY ---
+       Agent Earth-Standard Avg Ice-Floor Avg Heavy-Rough Avg High-Wind Avg Mars-Slippery Avg Reliability (%) Stability Gap (↓) Efficiency (Score/s)
+ENA-Combined            2583.76       2489.70         3028.21       1520.19           1914.16            0.0%            132.63              4806.66
+         PPO            2609.50       2803.96         1488.15       1346.14           3397.81            0.0%           -231.68              6278.33
+         SAC            4674.17       5476.34          884.24       2942.12           8961.86           48.4%           -718.29             11312.67

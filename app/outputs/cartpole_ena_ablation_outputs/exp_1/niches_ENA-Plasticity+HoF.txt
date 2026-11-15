@@ -1,0 +1,3 @@
+Niche ID   | Env Name             | Total Gladiators
+---------------------------------------------------
+0          | Mars-Light           | 5              

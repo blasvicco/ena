@@ -1,0 +1,75 @@
+Averages and Standard Deviations Across 30 Experiments
+============================================================
+
+--- Training Phase ---
+Agent: ENA-Combined-QuadraticPlasticity
+  Mars-Light Avg......: Mean =   449.78 | Std =    23.40 | Min =   380.40 | Max =   477.62
+  Jupiter-Heavy Avg...: Mean =   454.55 | Std =    21.42 | Min =   389.10 | Max =   479.01
+  Earth-Standard Avg..: Mean =   473.45 | Std =     4.70 | Min =   463.29 | Max =   484.05
+  Reliability (%).....: Mean =    85.43 | Std =     6.08 | Min =    71.00 | Max =    94.40
+  Stability Gap (↓)...: Mean =   171.06 | Std =    99.30 | Min =    12.10 | Max =   347.40
+  Efficiency (Score/s): Mean =   278.96 | Std =    35.18 | Min =   181.48 | Max =   321.43
+
+Agent: ENA-Combined-FuzzyPlasticity
+  Mars-Light Avg......: Mean =   452.44 | Std =    21.02 | Min =   372.32 | Max =   477.15
+  Jupiter-Heavy Avg...: Mean =   458.50 | Std =    18.39 | Min =   409.25 | Max =   482.03
+  Earth-Standard Avg..: Mean =   475.51 | Std =     5.75 | Min =   462.39 | Max =   483.67
+  Reliability (%).....: Mean =    86.34 | Std =     5.56 | Min =    71.10 | Max =    93.70
+  Stability Gap (↓)...: Mean =   205.92 | Std =    99.64 | Min =    39.20 | Max =   419.95
+  Efficiency (Score/s): Mean =   245.64 | Std =    24.08 | Min =   200.21 | Max =   290.80
+
+--- Compute Cost Phase ---
+Agent: ENA-Combined-QuadraticPlasticity
+  Avg Eval Depth......: Mean =    93.68 | Std =     9.88 | Min =    82.60 | Max =   129.10
+  Avg Candidates/Gen..: Mean =    17.02 | Std =     2.01 | Min =    14.80 | Max =    24.30
+  Total Candidate Env-Steps: Mean = 3932794.10 | Std = 710361.87 | Min = 3308135.00 | Max = 6453026.00
+
+Agent: ENA-Combined-FuzzyPlasticity
+  Avg Eval Depth......: Mean =   107.01 | Std =     6.92 | Min =    93.30 | Max =   118.60
+  Avg Candidates/Gen..: Mean =    19.67 | Std =     1.39 | Min =    16.90 | Max =    22.00
+  Total Candidate Env-Steps: Mean = 4708773.30 | Std = 542399.30 | Min = 3628938.00 | Max = 5773034.00
+
+--- Adaptation Phase ---
+Agent: ENA-Combined-QuadraticPlasticity
+  Mars-Light:steps....: Mean = 1731435.17 | Std = 711052.30 | Min = 1064612.00 | Max = 4235167.00
+  Mars-Light:solved...: Mean =     0.00 | Std =     0.00 | Min =     0.00 | Max =     0.00
+  Jupiter-Heavy:steps.: Mean = 1383992.90 | Std = 124363.20 | Min = 1197149.00 | Max = 1776252.00
+  Jupiter-Heavy:solved: Mean =     0.00 | Std =     0.00 | Min =     0.00 | Max =     0.00
+  Earth-Standard:steps: Mean = 1506255.20 | Std = 143470.19 | Min = 1205201.00 | Max = 1763081.00
+  Earth-Standard:solved: Mean =     0.00 | Std =     0.00 | Min =     0.00 | Max =     0.00
+  Solved-Phases.......: Mean =     0.00 | Std =     0.00 | Min =     0.00 | Max =     0.00
+  Train-Env-Steps.....: Mean = 4621683.27 | Std = 706562.72 | Min = 4025234.00 | Max = 7130746.00
+  Eval-Env-Steps......: Mean =     0.00 | Std =     0.00 | Min =     0.00 | Max =     0.00
+
+Agent: ENA-Combined-FuzzyPlasticity
+  Mars-Light:steps....: Mean = 1963071.93 | Std = 369255.30 | Min = 1339060.00 | Max = 2705518.00
+  Mars-Light:solved...: Mean =     0.00 | Std =     0.00 | Min =     0.00 | Max =     0.00
+  Jupiter-Heavy:steps.: Mean = 1729029.20 | Std = 309825.75 | Min = 1205372.00 | Max = 2487708.00
+  Jupiter-Heavy:solved: Mean =     0.00 | Std =     0.00 | Min =     0.00 | Max =     0.00
+  Earth-Standard:steps: Mean = 1709894.07 | Std = 220062.11 | Min = 1346231.00 | Max = 2140379.00
+  Earth-Standard:solved: Mean =     0.00 | Std =     0.00 | Min =     0.00 | Max =     0.00
+  Solved-Phases.......: Mean =     0.00 | Std =     0.00 | Min =     0.00 | Max =     0.00
+  Train-Env-Steps.....: Mean = 5401995.20 | Std = 534472.08 | Min = 4339220.00 | Max = 6460957.00
+  Eval-Env-Steps......: Mean =     0.00 | Std =     0.00 | Min =     0.00 | Max =     0.00
+
+--- Test Phase ---
+Agent: ENA-Combined-QuadraticPlasticity
+  Mars-Light Avg......: Mean =   474.21 | Std =    53.44 | Min =   221.78 | Max =   500.00
+  Neptune Avg.........: Mean =   495.64 | Std =     5.14 | Min =   478.06 | Max =   500.00
+  Jupiter-Heavy Avg...: Mean =   481.79 | Std =    31.50 | Min =   354.47 | Max =   500.00
+  Brown-dwarf Avg.....: Mean =   436.11 | Std =    98.29 | Min =    46.54 | Max =   500.00
+  Earth-Standard Avg..: Mean =   499.81 | Std =     0.74 | Min =   497.02 | Max =   500.00
+  Reliability (%).....: Mean =    89.26 | Std =     7.74 | Min =    71.70 | Max =   100.00
+  Stability Gap (↓)...: Mean =     5.35 | Std =    47.53 | Min =  -225.80 | Max =    43.15
+  Efficiency (Score/s): Mean =  1714.01 | Std =   201.92 | Min =  1384.56 | Max =  2404.89
+
+Agent: ENA-Combined-FuzzyPlasticity
+  Mars-Light Avg......: Mean =   475.72 | Std =    51.61 | Min =   219.40 | Max =   500.00
+  Neptune Avg.........: Mean =   491.95 | Std =    12.38 | Min =   441.02 | Max =   500.00
+  Jupiter-Heavy Avg...: Mean =   475.57 | Std =    45.86 | Min =   304.96 | Max =   500.00
+  Brown-dwarf Avg.....: Mean =   379.83 | Std =   122.07 | Min =   112.18 | Max =   500.00
+  Earth-Standard Avg..: Mean =   495.48 | Std =    10.67 | Min =   457.66 | Max =   500.00
+  Reliability (%).....: Mean =    83.89 | Std =    11.42 | Min =    41.70 | Max =    97.10
+  Stability Gap (↓)...: Mean =     8.03 | Std =    54.72 | Min =  -225.75 | Max =    80.95
+  Efficiency (Score/s): Mean =  1718.10 | Std =   224.31 | Min =  1389.21 | Max =  2486.61
+

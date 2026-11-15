@@ -1,0 +1,1051 @@
+excitation,features,seed,passes,changes,inside,niches,min_purity,max_delay,distinct
+Linear chirp,Raw,5,False,0,0,1,1.0,-1,False
+Linear chirp,Raw,6,False,1,0,2,0.95,-1,False
+Linear chirp,Raw,7,False,1,1,2,0.875,-1,False
+Linear chirp,Raw,8,False,0,0,1,1.0,-1,False
+Linear chirp,Raw,9,False,1,0,2,0.975,-1,False
+Linear chirp,Raw,10,False,0,0,1,1.0,-1,False
+Linear chirp,Raw,11,False,1,0,1,1.0,-1,False
+Linear chirp,Raw,12,False,0,0,1,1.0,-1,False
+Linear chirp,Raw,13,False,0,0,1,1.0,-1,False
+Linear chirp,Raw,14,False,1,0,2,0.975,-1,False
+Linear chirp,Raw,15,False,1,0,2,1.0,-1,False
+Linear chirp,Raw,16,False,1,0,2,1.0,-1,False
+Linear chirp,Raw,17,False,1,0,2,1.0,-1,False
+Linear chirp,Raw,18,False,1,0,2,1.0,-1,False
+Linear chirp,Raw,19,False,1,0,1,1.0,-1,False
+Linear chirp,Raw,20,False,2,1,2,0.825,-1,False
+Linear chirp,Raw,21,False,0,0,1,1.0,-1,False
+Linear chirp,Raw,22,False,1,0,2,1.0,-1,False
+Linear chirp,Raw,23,False,1,0,2,0.9,-1,False
+Linear chirp,Raw,24,False,1,0,2,1.0,-1,False
+Linear chirp,Raw,25,False,1,0,2,1.0,-1,False
+Linear chirp,Raw,26,False,1,0,2,1.0,-1,False
+Linear chirp,Raw,27,False,0,0,1,1.0,-1,False
+Linear chirp,Raw,28,False,0,0,1,1.0,-1,False
+Linear chirp,Raw,29,False,2,1,2,1.0,-1,False
+Linear chirp,Raw,30,False,1,0,2,0.975,-1,False
+Linear chirp,Raw,31,False,1,0,2,1.0,-1,False
+Linear chirp,Raw,32,False,0,0,1,1.0,-1,False
+Linear chirp,Raw,33,False,0,0,1,1.0,-1,False
+Linear chirp,Raw,34,False,1,0,2,0.95,-1,False
+Linear chirp,DWT Haar,5,False,1,1,2,0.875,-1,False
+Linear chirp,DWT Haar,6,False,1,0,2,0.95,-1,False
+Linear chirp,DWT Haar,7,False,1,1,2,0.875,-1,False
+Linear chirp,DWT Haar,8,False,2,1,3,0.65,-1,False
+Linear chirp,DWT Haar,9,False,1,0,2,0.975,-1,False
+Linear chirp,DWT Haar,10,False,1,0,2,0.925,-1,False
+Linear chirp,DWT Haar,11,False,1,0,2,1.0,-1,False
+Linear chirp,DWT Haar,12,False,1,0,2,0.95,-1,False
+Linear chirp,DWT Haar,13,False,1,0,2,1.0,-1,False
+Linear chirp,DWT Haar,14,False,1,1,1,1.0,-1,False
+Linear chirp,DWT Haar,15,False,1,0,2,1.0,-1,False
+Linear chirp,DWT Haar,16,False,1,0,2,0.95,-1,False
+Linear chirp,DWT Haar,17,False,1,0,2,0.925,-1,False
+Linear chirp,DWT Haar,18,False,1,0,2,0.95,-1,False
+Linear chirp,DWT Haar,19,False,1,0,2,1.0,-1,False
+Linear chirp,DWT Haar,20,False,1,0,2,1.0,-1,False
+Linear chirp,DWT Haar,21,False,1,0,2,1.0,-1,False
+Linear chirp,DWT Haar,22,False,1,0,2,1.0,-1,False
+Linear chirp,DWT Haar,23,False,1,0,2,0.975,-1,False
+Linear chirp,DWT Haar,24,False,1,0,2,0.975,-1,False
+Linear chirp,DWT Haar,25,False,1,0,2,1.0,-1,False
+Linear chirp,DWT Haar,26,False,1,0,2,0.95,-1,False
+Linear chirp,DWT Haar,27,False,1,0,2,1.0,-1,False
+Linear chirp,DWT Haar,28,False,1,0,2,0.925,-1,False
+Linear chirp,DWT Haar,29,False,1,0,2,1.0,-1,False
+Linear chirp,DWT Haar,30,False,1,0,2,1.0,-1,False
+Linear chirp,DWT Haar,31,False,1,0,2,0.925,-1,False
+Linear chirp,DWT Haar,32,False,1,0,2,1.0,-1,False
+Linear chirp,DWT Haar,33,False,1,0,2,0.975,-1,False
+Linear chirp,DWT Haar,34,False,1,0,2,0.95,-1,False
+Linear chirp,DWT db4,5,False,1,1,2,0.875,-1,False
+Linear chirp,DWT db4,6,False,1,0,2,0.95,-1,False
+Linear chirp,DWT db4,7,False,1,0,2,0.95,-1,False
+Linear chirp,DWT db4,8,False,1,0,2,0.975,-1,False
+Linear chirp,DWT db4,9,False,1,0,2,0.975,-1,False
+Linear chirp,DWT db4,10,False,1,1,1,1.0,-1,False
+Linear chirp,DWT db4,11,False,1,0,2,1.0,-1,False
+Linear chirp,DWT db4,12,False,0,0,1,1.0,-1,False
+Linear chirp,DWT db4,13,False,1,0,2,1.0,-1,False
+Linear chirp,DWT db4,14,False,1,0,2,0.95,-1,False
+Linear chirp,DWT db4,15,False,2,0,2,0.925,3,False
+Linear chirp,DWT db4,16,False,2,1,2,0.95,-1,False
+Linear chirp,DWT db4,17,False,1,0,2,0.925,-1,False
+Linear chirp,DWT db4,18,False,2,1,2,0.95,-1,False
+Linear chirp,DWT db4,19,False,1,0,2,1.0,-1,False
+Linear chirp,DWT db4,20,False,1,0,2,1.0,-1,False
+Linear chirp,DWT db4,21,False,1,0,2,1.0,-1,False
+Linear chirp,DWT db4,22,False,1,0,2,1.0,-1,False
+Linear chirp,DWT db4,23,False,1,0,2,0.975,-1,False
+Linear chirp,DWT db4,24,False,1,0,2,0.975,-1,False
+Linear chirp,DWT db4,25,False,1,0,2,1.0,-1,False
+Linear chirp,DWT db4,26,False,1,0,2,0.95,-1,False
+Linear chirp,DWT db4,27,False,1,0,2,1.0,-1,False
+Linear chirp,DWT db4,28,False,1,0,2,0.925,-1,False
+Linear chirp,DWT db4,29,False,1,0,2,1.0,-1,False
+Linear chirp,DWT db4,30,False,1,0,2,1.0,-1,False
+Linear chirp,DWT db4,31,False,1,0,2,0.925,-1,False
+Linear chirp,DWT db4,32,False,1,0,2,1.0,-1,False
+Linear chirp,DWT db4,33,False,1,0,2,0.975,-1,False
+Linear chirp,DWT db4,34,False,1,0,2,0.975,-1,False
+Linear chirp,SWT Haar,5,False,1,1,2,0.875,-1,False
+Linear chirp,SWT Haar,6,False,2,0,2,0.925,3,False
+Linear chirp,SWT Haar,7,False,2,0,2,0.925,3,False
+Linear chirp,SWT Haar,8,False,2,0,2,0.925,3,False
+Linear chirp,SWT Haar,9,False,2,0,2,0.925,3,False
+Linear chirp,SWT Haar,10,False,1,0,2,0.925,-1,False
+Linear chirp,SWT Haar,11,False,2,0,2,0.925,3,False
+Linear chirp,SWT Haar,12,False,1,0,2,0.95,-1,False
+Linear chirp,SWT Haar,13,False,1,0,2,1.0,-1,False
+Linear chirp,SWT Haar,14,False,2,1,2,0.875,5,False
+Linear chirp,SWT Haar,15,False,2,0,2,0.925,3,False
+Linear chirp,SWT Haar,16,False,3,1,2,0.925,3,False
+Linear chirp,SWT Haar,17,False,2,0,2,0.925,3,False
+Linear chirp,SWT Haar,18,False,3,1,2,0.925,3,False
+Linear chirp,SWT Haar,19,False,2,0,2,0.925,3,False
+Linear chirp,SWT Haar,20,False,1,0,2,1.0,-1,False
+Linear chirp,SWT Haar,21,False,2,0,2,0.925,3,False
+Linear chirp,SWT Haar,22,False,1,0,2,1.0,-1,False
+Linear chirp,SWT Haar,23,False,2,0,2,0.925,3,False
+Linear chirp,SWT Haar,24,False,2,0,2,0.925,3,False
+Linear chirp,SWT Haar,25,False,1,0,2,1.0,-1,False
+Linear chirp,SWT Haar,26,False,2,0,2,0.925,3,False
+Linear chirp,SWT Haar,27,False,1,0,2,1.0,-1,False
+Linear chirp,SWT Haar,28,False,1,0,2,0.925,-1,False
+Linear chirp,SWT Haar,29,False,1,0,2,1.0,-1,False
+Linear chirp,SWT Haar,30,False,2,0,2,0.925,3,False
+Linear chirp,SWT Haar,31,False,2,0,2,0.925,3,False
+Linear chirp,SWT Haar,32,False,2,0,2,0.925,3,False
+Linear chirp,SWT Haar,33,False,2,0,2,0.925,3,False
+Linear chirp,SWT Haar,34,False,2,0,2,0.925,3,False
+Linear chirp,Packets Haar,5,False,0,0,1,1.0,-1,False
+Linear chirp,Packets Haar,6,False,1,0,2,0.95,-1,False
+Linear chirp,Packets Haar,7,False,1,1,2,0.875,-1,False
+Linear chirp,Packets Haar,8,False,0,0,1,1.0,-1,False
+Linear chirp,Packets Haar,9,False,1,0,2,0.975,-1,False
+Linear chirp,Packets Haar,10,False,0,0,1,1.0,-1,False
+Linear chirp,Packets Haar,11,False,1,1,1,1.0,-1,False
+Linear chirp,Packets Haar,12,False,0,0,1,1.0,-1,False
+Linear chirp,Packets Haar,13,False,1,0,2,1.0,-1,False
+Linear chirp,Packets Haar,14,False,1,1,2,0.8,-1,False
+Linear chirp,Packets Haar,15,False,1,0,2,1.0,-1,False
+Linear chirp,Packets Haar,16,False,1,0,2,0.95,-1,False
+Linear chirp,Packets Haar,17,False,1,0,2,0.925,-1,False
+Linear chirp,Packets Haar,18,False,1,0,2,0.925,-1,False
+Linear chirp,Packets Haar,19,False,0,0,1,1.0,-1,False
+Linear chirp,Packets Haar,20,False,0,0,1,1.0,-1,False
+Linear chirp,Packets Haar,21,False,1,0,2,1.0,-1,False
+Linear chirp,Packets Haar,22,False,1,0,2,1.0,-1,False
+Linear chirp,Packets Haar,23,False,1,0,1,1.0,-1,False
+Linear chirp,Packets Haar,24,False,0,0,1,1.0,-1,False
+Linear chirp,Packets Haar,25,False,1,0,2,1.0,-1,False
+Linear chirp,Packets Haar,26,False,0,0,1,1.0,-1,False
+Linear chirp,Packets Haar,27,False,1,0,2,1.0,-1,False
+Linear chirp,Packets Haar,28,False,0,0,1,1.0,-1,False
+Linear chirp,Packets Haar,29,False,1,0,2,1.0,-1,False
+Linear chirp,Packets Haar,30,False,1,0,2,1.0,-1,False
+Linear chirp,Packets Haar,31,False,0,0,1,1.0,-1,False
+Linear chirp,Packets Haar,32,False,1,0,2,1.0,-1,False
+Linear chirp,Packets Haar,33,False,0,0,1,1.0,-1,False
+Linear chirp,Packets Haar,34,False,1,0,2,0.95,-1,False
+Exponential chirp,Raw,5,False,2,0,2,0.925,3,False
+Exponential chirp,Raw,6,False,3,1,3,0.5,2,True
+Exponential chirp,Raw,7,False,2,0,2,0.925,3,False
+Exponential chirp,Raw,8,False,3,1,3,0.575,3,False
+Exponential chirp,Raw,9,False,2,0,2,0.925,3,False
+Exponential chirp,Raw,10,False,3,1,3,0.75,3,False
+Exponential chirp,Raw,11,False,5,3,4,0.7,4,True
+Exponential chirp,Raw,12,False,2,1,2,0.925,43,False
+Exponential chirp,Raw,13,False,2,0,2,0.925,3,False
+Exponential chirp,Raw,14,False,3,1,3,0.75,3,False
+Exponential chirp,Raw,15,False,3,1,3,0.75,2,False
+Exponential chirp,Raw,16,False,3,1,2,0.925,3,False
+Exponential chirp,Raw,17,False,5,3,4,0.5,3,True
+Exponential chirp,Raw,18,False,3,1,3,0.7,3,True
+Exponential chirp,Raw,19,False,4,2,4,0.625,3,True
+Exponential chirp,Raw,20,False,3,1,3,0.625,3,False
+Exponential chirp,Raw,21,False,3,1,3,0.65,3,True
+Exponential chirp,Raw,22,False,3,1,3,0.75,3,False
+Exponential chirp,Raw,23,False,2,0,2,0.925,3,False
+Exponential chirp,Raw,24,False,4,2,3,0.675,3,False
+Exponential chirp,Raw,25,False,2,0,2,0.95,2,False
+Exponential chirp,Raw,26,False,2,0,2,0.925,3,False
+Exponential chirp,Raw,27,False,3,2,3,0.875,5,True
+Exponential chirp,Raw,28,False,2,0,2,0.925,3,False
+Exponential chirp,Raw,29,False,4,2,3,0.825,3,False
+Exponential chirp,Raw,30,False,3,2,3,0.725,-1,False
+Exponential chirp,Raw,31,False,2,0,2,0.95,2,False
+Exponential chirp,Raw,32,False,3,2,3,0.6,-1,False
+Exponential chirp,Raw,33,False,3,2,2,0.85,-1,False
+Exponential chirp,Raw,34,False,4,2,3,0.55,3,False
+Exponential chirp,DWT Haar,5,False,2,0,2,0.975,3,False
+Exponential chirp,DWT Haar,6,False,4,2,3,0.5,3,True
+Exponential chirp,DWT Haar,7,False,2,1,1,1.0,-1,False
+Exponential chirp,DWT Haar,8,False,3,1,1,1.0,3,False
+Exponential chirp,DWT Haar,9,False,2,0,2,0.95,3,False
+Exponential chirp,DWT Haar,10,False,4,2,2,0.75,3,False
+Exponential chirp,DWT Haar,11,False,4,2,2,0.825,3,False
+Exponential chirp,DWT Haar,12,False,1,0,1,1.0,43,False
+Exponential chirp,DWT Haar,13,False,2,0,2,0.95,3,False
+Exponential chirp,DWT Haar,14,False,4,3,2,0.625,-1,False
+Exponential chirp,DWT Haar,15,False,4,2,1,1.0,3,False
+Exponential chirp,DWT Haar,16,False,3,1,2,0.95,3,False
+Exponential chirp,DWT Haar,17,False,3,1,3,0.725,3,True
+Exponential chirp,DWT Haar,18,False,3,1,3,0.7,3,True
+Exponential chirp,DWT Haar,19,False,4,3,5,0.325,-1,True
+Exponential chirp,DWT Haar,20,False,4,2,2,0.95,3,False
+Exponential chirp,DWT Haar,21,False,2,1,3,0.65,-1,True
+Exponential chirp,DWT Haar,22,False,3,1,3,0.75,3,True
+Exponential chirp,DWT Haar,23,False,2,1,2,0.85,-1,False
+Exponential chirp,DWT Haar,24,False,3,2,3,0.475,-1,True
+Exponential chirp,DWT Haar,25,False,3,1,2,0.95,3,False
+Exponential chirp,DWT Haar,26,False,2,0,2,0.975,3,False
+Exponential chirp,DWT Haar,27,False,3,1,2,0.95,3,False
+Exponential chirp,DWT Haar,28,False,3,1,2,0.975,3,False
+Exponential chirp,DWT Haar,29,False,2,0,2,0.95,3,False
+Exponential chirp,DWT Haar,30,False,3,2,3,0.7,-1,False
+Exponential chirp,DWT Haar,31,False,3,1,2,1.0,3,False
+Exponential chirp,DWT Haar,32,False,1,0,1,1.0,-1,False
+Exponential chirp,DWT Haar,33,False,0,0,1,1.0,-1,False
+Exponential chirp,DWT Haar,34,False,3,1,2,0.95,3,False
+Exponential chirp,DWT db4,5,False,3,2,3,0.625,-1,True
+Exponential chirp,DWT db4,6,False,4,3,2,0.575,-1,False
+Exponential chirp,DWT db4,7,False,3,1,2,0.975,3,False
+Exponential chirp,DWT db4,8,False,2,1,2,0.575,-1,False
+Exponential chirp,DWT db4,9,False,3,1,2,0.95,3,False
+Exponential chirp,DWT db4,10,False,2,1,2,0.75,-1,False
+Exponential chirp,DWT db4,11,False,2,1,2,0.8,-1,False
+Exponential chirp,DWT db4,12,False,3,1,2,1.0,3,False
+Exponential chirp,DWT db4,13,False,2,0,2,0.95,3,False
+Exponential chirp,DWT db4,14,False,5,4,3,0.475,-1,True
+Exponential chirp,DWT db4,15,False,4,2,1,1.0,3,False
+Exponential chirp,DWT db4,16,False,2,1,3,0.55,-1,False
+Exponential chirp,DWT db4,17,False,3,1,2,0.95,3,False
+Exponential chirp,DWT db4,18,False,3,1,3,0.7,3,True
+Exponential chirp,DWT db4,19,False,2,1,3,0.575,-1,True
+Exponential chirp,DWT db4,20,False,4,2,3,0.625,3,False
+Exponential chirp,DWT db4,21,False,2,1,3,0.6,-1,True
+Exponential chirp,DWT db4,22,False,4,2,4,0.75,2,True
+Exponential chirp,DWT db4,23,False,2,1,2,0.85,-1,False
+Exponential chirp,DWT db4,24,False,4,3,3,0.4,-1,False
+Exponential chirp,DWT db4,25,False,3,1,2,0.95,3,False
+Exponential chirp,DWT db4,26,False,1,0,2,0.975,-1,False
+Exponential chirp,DWT db4,27,False,2,1,3,0.875,-1,True
+Exponential chirp,DWT db4,28,False,2,0,2,0.975,3,False
+Exponential chirp,DWT db4,29,False,5,4,3,0.45,-1,False
+Exponential chirp,DWT db4,30,False,2,2,3,0.7,-1,False
+Exponential chirp,DWT db4,31,False,3,1,2,0.975,3,False
+Exponential chirp,DWT db4,32,False,3,1,2,0.825,3,False
+Exponential chirp,DWT db4,33,False,0,0,1,1.0,-1,False
+Exponential chirp,DWT db4,34,False,2,1,3,0.55,-1,False
+Exponential chirp,SWT Haar,5,False,3,1,2,1.0,3,False
+Exponential chirp,SWT Haar,6,False,5,3,3,0.5,3,True
+Exponential chirp,SWT Haar,7,True,2,0,3,0.925,3,True
+Exponential chirp,SWT Haar,8,False,4,2,2,0.575,3,False
+Exponential chirp,SWT Haar,9,False,3,1,2,0.95,2,False
+Exponential chirp,SWT Haar,10,False,5,3,2,0.75,3,False
+Exponential chirp,SWT Haar,11,False,4,2,3,0.825,3,False
+Exponential chirp,SWT Haar,12,False,1,0,1,1.0,43,False
+Exponential chirp,SWT Haar,13,False,3,1,2,1.0,3,False
+Exponential chirp,SWT Haar,14,False,5,3,4,0.475,4,True
+Exponential chirp,SWT Haar,15,False,3,1,3,0.95,2,True
+Exponential chirp,SWT Haar,16,False,3,2,3,0.875,-1,True
+Exponential chirp,SWT Haar,17,False,4,2,4,0.725,2,True
+Exponential chirp,SWT Haar,18,False,3,1,3,0.7,3,True
+Exponential chirp,SWT Haar,19,False,4,3,5,0.325,-1,True
+Exponential chirp,SWT Haar,20,True,2,0,3,0.95,2,True
+Exponential chirp,SWT Haar,21,False,3,1,3,0.65,3,True
+Exponential chirp,SWT Haar,22,False,3,1,3,0.75,3,True
+Exponential chirp,SWT Haar,23,False,2,0,2,0.95,3,False
+Exponential chirp,SWT Haar,24,False,3,2,3,0.525,-1,True
+Exponential chirp,SWT Haar,25,True,2,0,3,0.95,2,True
+Exponential chirp,SWT Haar,26,False,3,1,2,1.0,3,False
+Exponential chirp,SWT Haar,27,False,3,2,3,0.875,5,True
+Exponential chirp,SWT Haar,28,False,3,1,2,0.95,2,False
+Exponential chirp,SWT Haar,29,False,2,1,3,0.55,-1,False
+Exponential chirp,SWT Haar,30,False,3,2,3,0.7,-1,False
+Exponential chirp,SWT Haar,31,True,2,0,3,0.95,2,True
+Exponential chirp,SWT Haar,32,False,4,2,2,0.825,3,False
+Exponential chirp,SWT Haar,33,False,0,0,1,1.0,-1,False
+Exponential chirp,SWT Haar,34,False,5,3,3,0.55,3,False
+Exponential chirp,Packets Haar,5,False,2,1,1,1.0,-1,False
+Exponential chirp,Packets Haar,6,False,3,2,3,0.5,8,True
+Exponential chirp,Packets Haar,7,False,1,0,1,1.0,43,False
+Exponential chirp,Packets Haar,8,False,1,0,1,1.0,43,False
+Exponential chirp,Packets Haar,9,False,3,1,2,0.95,3,False
+Exponential chirp,Packets Haar,10,False,0,0,1,1.0,-1,False
+Exponential chirp,Packets Haar,11,False,3,1,2,0.825,3,False
+Exponential chirp,Packets Haar,12,False,1,0,1,1.0,43,False
+Exponential chirp,Packets Haar,13,False,2,0,2,0.95,3,False
+Exponential chirp,Packets Haar,14,False,2,1,2,0.775,-1,False
+Exponential chirp,Packets Haar,15,False,3,1,2,0.775,3,False
+Exponential chirp,Packets Haar,16,False,1,0,1,1.0,-1,False
+Exponential chirp,Packets Haar,17,False,4,2,3,0.725,3,False
+Exponential chirp,Packets Haar,18,True,2,0,3,0.95,2,True
+Exponential chirp,Packets Haar,19,False,3,2,4,0.6,-1,True
+Exponential chirp,Packets Haar,20,False,2,0,1,1.0,3,False
+Exponential chirp,Packets Haar,21,False,3,2,2,0.7,-1,False
+Exponential chirp,Packets Haar,22,False,4,2,4,0.75,2,True
+Exponential chirp,Packets Haar,23,False,2,1,2,0.825,-1,False
+Exponential chirp,Packets Haar,24,False,3,2,2,0.525,-1,False
+Exponential chirp,Packets Haar,25,False,2,0,2,0.925,3,False
+Exponential chirp,Packets Haar,26,False,2,0,2,0.975,3,False
+Exponential chirp,Packets Haar,27,False,3,1,1,1.0,3,False
+Exponential chirp,Packets Haar,28,False,2,0,2,0.975,3,False
+Exponential chirp,Packets Haar,29,False,2,1,2,0.8,-1,False
+Exponential chirp,Packets Haar,30,False,2,2,3,0.7,-1,False
+Exponential chirp,Packets Haar,31,False,3,1,2,0.975,3,False
+Exponential chirp,Packets Haar,32,False,1,0,1,1.0,-1,False
+Exponential chirp,Packets Haar,33,False,0,0,1,1.0,-1,False
+Exponential chirp,Packets Haar,34,False,3,1,2,0.8,3,False
+Sine,Raw,5,False,1,0,2,0.95,-1,False
+Sine,Raw,6,False,1,0,2,1.0,-1,False
+Sine,Raw,7,False,1,0,2,0.975,-1,False
+Sine,Raw,8,False,1,1,2,0.825,-1,False
+Sine,Raw,9,False,1,0,2,1.0,-1,False
+Sine,Raw,10,False,1,0,2,0.95,-1,False
+Sine,Raw,11,False,1,1,2,0.85,-1,False
+Sine,Raw,12,False,1,0,2,0.9,-1,False
+Sine,Raw,13,False,1,0,2,0.9,-1,False
+Sine,Raw,14,False,1,0,2,0.975,-1,False
+Sine,Raw,15,False,1,0,2,0.975,-1,False
+Sine,Raw,16,False,1,0,2,0.95,-1,False
+Sine,Raw,17,False,1,0,2,1.0,-1,False
+Sine,Raw,18,False,1,1,2,0.825,-1,False
+Sine,Raw,19,False,1,0,2,0.925,-1,False
+Sine,Raw,20,False,1,0,2,0.925,-1,False
+Sine,Raw,21,False,1,0,2,1.0,-1,False
+Sine,Raw,22,False,1,0,2,0.925,-1,False
+Sine,Raw,23,False,1,0,2,0.95,-1,False
+Sine,Raw,24,False,1,0,2,0.975,-1,False
+Sine,Raw,25,False,1,0,2,0.9,-1,False
+Sine,Raw,26,False,1,1,2,0.825,-1,False
+Sine,Raw,27,False,1,0,2,0.95,-1,False
+Sine,Raw,28,False,1,0,2,0.975,-1,False
+Sine,Raw,29,False,1,0,2,0.95,-1,False
+Sine,Raw,30,False,1,0,2,0.975,-1,False
+Sine,Raw,31,False,1,0,2,1.0,-1,False
+Sine,Raw,32,False,2,1,3,0.75,-1,False
+Sine,Raw,33,False,2,1,2,0.9,-1,False
+Sine,Raw,34,False,1,0,2,1.0,-1,False
+Sine,DWT Haar,5,False,2,1,3,0.7,-1,False
+Sine,DWT Haar,6,False,1,0,2,1.0,-1,False
+Sine,DWT Haar,7,False,1,0,2,0.975,-1,False
+Sine,DWT Haar,8,False,1,1,2,0.825,-1,False
+Sine,DWT Haar,9,False,1,0,2,1.0,-1,False
+Sine,DWT Haar,10,False,1,0,2,1.0,-1,False
+Sine,DWT Haar,11,False,1,1,2,0.85,-1,False
+Sine,DWT Haar,12,False,2,2,3,0.575,-1,False
+Sine,DWT Haar,13,False,1,0,2,0.9,-1,False
+Sine,DWT Haar,14,False,1,0,2,0.975,-1,False
+Sine,DWT Haar,15,False,1,0,2,0.975,-1,False
+Sine,DWT Haar,16,False,1,0,2,1.0,-1,False
+Sine,DWT Haar,17,False,2,1,2,0.925,-1,False
+Sine,DWT Haar,18,False,1,1,2,0.825,-1,False
+Sine,DWT Haar,19,False,1,0,2,0.925,-1,False
+Sine,DWT Haar,20,False,1,0,2,0.925,-1,False
+Sine,DWT Haar,21,False,1,0,2,1.0,-1,False
+Sine,DWT Haar,22,False,1,0,2,0.925,-1,False
+Sine,DWT Haar,23,False,1,0,2,0.95,-1,False
+Sine,DWT Haar,24,False,1,0,2,0.975,-1,False
+Sine,DWT Haar,25,False,1,0,2,0.9,-1,False
+Sine,DWT Haar,26,False,2,1,3,0.675,-1,False
+Sine,DWT Haar,27,False,1,0,2,0.95,-1,False
+Sine,DWT Haar,28,False,1,0,2,0.975,-1,False
+Sine,DWT Haar,29,False,1,0,2,0.95,-1,False
+Sine,DWT Haar,30,False,1,0,2,0.975,-1,False
+Sine,DWT Haar,31,False,1,0,2,0.925,-1,False
+Sine,DWT Haar,32,False,2,1,3,0.675,-1,False
+Sine,DWT Haar,33,False,1,0,2,0.9,-1,False
+Sine,DWT Haar,34,False,1,0,2,1.0,-1,False
+Sine,DWT db4,5,False,1,0,2,0.95,-1,False
+Sine,DWT db4,6,False,2,0,2,0.925,3,False
+Sine,DWT db4,7,False,1,0,2,0.975,-1,False
+Sine,DWT db4,8,False,1,1,2,0.825,-1,False
+Sine,DWT db4,9,False,2,0,2,0.925,3,False
+Sine,DWT db4,10,False,1,0,2,0.975,-1,False
+Sine,DWT db4,11,False,1,1,2,0.85,-1,False
+Sine,DWT db4,12,False,2,2,2,0.825,-1,False
+Sine,DWT db4,13,False,1,0,2,0.9,-1,False
+Sine,DWT db4,14,False,1,0,2,0.975,-1,False
+Sine,DWT db4,15,False,2,0,2,0.925,3,False
+Sine,DWT db4,16,False,2,0,2,0.9,4,False
+Sine,DWT db4,17,False,1,1,1,1.0,-1,False
+Sine,DWT db4,18,False,1,1,2,0.825,-1,False
+Sine,DWT db4,19,False,1,0,2,0.925,-1,False
+Sine,DWT db4,20,False,1,0,2,0.925,-1,False
+Sine,DWT db4,21,False,1,0,2,0.95,-1,False
+Sine,DWT db4,22,False,1,0,2,0.925,-1,False
+Sine,DWT db4,23,False,1,0,2,0.95,-1,False
+Sine,DWT db4,24,False,1,0,2,0.975,-1,False
+Sine,DWT db4,25,False,1,0,2,0.9,-1,False
+Sine,DWT db4,26,False,1,1,2,0.825,-1,False
+Sine,DWT db4,27,False,1,0,2,0.95,-1,False
+Sine,DWT db4,28,False,1,0,2,0.975,-1,False
+Sine,DWT db4,29,False,2,0,2,0.925,3,False
+Sine,DWT db4,30,False,1,0,2,0.975,-1,False
+Sine,DWT db4,31,False,1,0,2,0.925,-1,False
+Sine,DWT db4,32,False,1,1,2,0.675,-1,False
+Sine,DWT db4,33,False,2,0,2,0.9,4,False
+Sine,DWT db4,34,False,2,1,2,0.875,5,False
+Sine,SWT Haar,5,False,1,0,2,0.95,-1,False
+Sine,SWT Haar,6,False,2,0,2,0.925,3,False
+Sine,SWT Haar,7,False,1,0,2,0.975,-1,False
+Sine,SWT Haar,8,False,1,1,2,0.825,-1,False
+Sine,SWT Haar,9,False,2,1,3,0.575,-1,True
+Sine,SWT Haar,10,False,1,0,2,0.975,-1,False
+Sine,SWT Haar,11,False,1,1,2,0.85,-1,False
+Sine,SWT Haar,12,False,2,0,2,0.9,4,False
+Sine,SWT Haar,13,False,1,0,2,0.9,-1,False
+Sine,SWT Haar,14,False,1,0,2,0.975,-1,False
+Sine,SWT Haar,15,False,2,0,2,0.925,3,False
+Sine,SWT Haar,16,False,2,0,2,0.9,4,False
+Sine,SWT Haar,17,False,1,0,2,1.0,-1,False
+Sine,SWT Haar,18,False,1,1,2,0.825,-1,False
+Sine,SWT Haar,19,False,1,0,2,0.925,-1,False
+Sine,SWT Haar,20,False,1,0,2,0.925,-1,False
+Sine,SWT Haar,21,False,3,1,2,0.925,3,False
+Sine,SWT Haar,22,False,1,0,2,0.925,-1,False
+Sine,SWT Haar,23,False,2,1,3,0.55,-1,True
+Sine,SWT Haar,24,False,1,0,2,0.975,-1,False
+Sine,SWT Haar,25,False,1,0,2,0.9,-1,False
+Sine,SWT Haar,26,False,2,1,2,0.825,-1,False
+Sine,SWT Haar,27,False,1,0,2,0.95,-1,False
+Sine,SWT Haar,28,False,1,0,2,0.975,-1,False
+Sine,SWT Haar,29,False,1,0,2,0.95,-1,False
+Sine,SWT Haar,30,False,1,0,2,0.975,-1,False
+Sine,SWT Haar,31,False,1,0,2,0.925,-1,False
+Sine,SWT Haar,32,False,2,1,3,0.675,-1,False
+Sine,SWT Haar,33,False,2,1,3,0.6,-1,True
+Sine,SWT Haar,34,False,2,1,3,0.7,-1,False
+Sine,Packets Haar,5,False,1,0,2,0.95,-1,False
+Sine,Packets Haar,6,False,0,0,1,1.0,-1,False
+Sine,Packets Haar,7,False,1,0,2,0.975,-1,False
+Sine,Packets Haar,8,False,1,1,2,0.825,-1,False
+Sine,Packets Haar,9,False,1,0,1,1.0,-1,False
+Sine,Packets Haar,10,False,0,0,1,1.0,-1,False
+Sine,Packets Haar,11,False,1,1,2,0.85,-1,False
+Sine,Packets Haar,12,False,2,2,2,0.825,-1,False
+Sine,Packets Haar,13,False,1,0,2,0.9,-1,False
+Sine,Packets Haar,14,False,1,0,2,0.975,-1,False
+Sine,Packets Haar,15,False,1,0,2,0.975,-1,False
+Sine,Packets Haar,16,False,0,0,1,1.0,-1,False
+Sine,Packets Haar,17,False,0,0,1,1.0,-1,False
+Sine,Packets Haar,18,False,0,0,1,1.0,-1,False
+Sine,Packets Haar,19,False,0,0,1,1.0,-1,False
+Sine,Packets Haar,20,False,1,0,2,0.925,-1,False
+Sine,Packets Haar,21,False,1,0,2,0.95,-1,False
+Sine,Packets Haar,22,False,1,0,2,0.925,-1,False
+Sine,Packets Haar,23,False,1,0,2,0.95,-1,False
+Sine,Packets Haar,24,False,1,0,2,0.975,-1,False
+Sine,Packets Haar,25,False,1,0,2,0.9,-1,False
+Sine,Packets Haar,26,False,0,0,1,1.0,-1,False
+Sine,Packets Haar,27,False,1,0,2,0.95,-1,False
+Sine,Packets Haar,28,False,1,0,2,0.975,-1,False
+Sine,Packets Haar,29,False,1,0,2,0.95,-1,False
+Sine,Packets Haar,30,False,0,0,1,1.0,-1,False
+Sine,Packets Haar,31,False,1,0,2,0.925,-1,False
+Sine,Packets Haar,32,False,1,1,2,0.675,-1,False
+Sine,Packets Haar,33,False,1,0,2,0.9,-1,False
+Sine,Packets Haar,34,False,1,0,2,0.925,-1,False
+Impulse,Raw,5,False,2,1,1,1.0,43,False
+Impulse,Raw,6,False,0,0,1,1.0,-1,False
+Impulse,Raw,7,False,1,0,1,1.0,43,False
+Impulse,Raw,8,False,2,1,1,1.0,43,False
+Impulse,Raw,9,False,1,0,1,1.0,43,False
+Impulse,Raw,10,False,0,0,1,1.0,-1,False
+Impulse,Raw,11,False,0,0,1,1.0,-1,False
+Impulse,Raw,12,False,1,0,1,1.0,43,False
+Impulse,Raw,13,False,1,0,1,1.0,43,False
+Impulse,Raw,14,False,1,0,1,1.0,43,False
+Impulse,Raw,15,False,2,1,1,1.0,43,False
+Impulse,Raw,16,False,0,0,1,1.0,-1,False
+Impulse,Raw,17,False,0,0,1,1.0,-1,False
+Impulse,Raw,18,False,3,2,1,1.0,43,False
+Impulse,Raw,19,False,0,0,1,1.0,-1,False
+Impulse,Raw,20,False,1,0,1,1.0,43,False
+Impulse,Raw,21,False,1,0,1,1.0,43,False
+Impulse,Raw,22,False,2,1,1,1.0,43,False
+Impulse,Raw,23,False,2,1,1,1.0,43,False
+Impulse,Raw,24,False,2,1,1,1.0,43,False
+Impulse,Raw,25,False,1,0,1,1.0,43,False
+Impulse,Raw,26,False,0,0,1,1.0,-1,False
+Impulse,Raw,27,False,2,1,1,1.0,43,False
+Impulse,Raw,28,False,1,0,1,1.0,44,False
+Impulse,Raw,29,False,2,1,1,1.0,43,False
+Impulse,Raw,30,False,2,1,1,1.0,43,False
+Impulse,Raw,31,False,2,1,1,1.0,43,False
+Impulse,Raw,32,False,1,0,1,1.0,43,False
+Impulse,Raw,33,False,0,0,1,1.0,-1,False
+Impulse,Raw,34,False,1,0,1,1.0,43,False
+Impulse,DWT Haar,5,False,4,3,1,1.0,43,False
+Impulse,DWT Haar,6,False,2,1,2,0.8,44,False
+Impulse,DWT Haar,7,False,2,1,1,1.0,43,False
+Impulse,DWT Haar,8,False,2,1,3,0.6,42,False
+Impulse,DWT Haar,9,False,3,2,1,1.0,42,False
+Impulse,DWT Haar,10,False,1,0,1,1.0,43,False
+Impulse,DWT Haar,11,False,1,0,1,1.0,43,False
+Impulse,DWT Haar,12,False,2,1,1,1.0,43,False
+Impulse,DWT Haar,13,False,2,1,1,1.0,43,False
+Impulse,DWT Haar,14,False,1,0,1,1.0,43,False
+Impulse,DWT Haar,15,False,1,0,2,0.95,42,False
+Impulse,DWT Haar,16,False,1,0,1,1.0,43,False
+Impulse,DWT Haar,17,False,1,0,1,1.0,43,False
+Impulse,DWT Haar,18,False,2,1,2,0.95,42,False
+Impulse,DWT Haar,19,False,3,2,1,1.0,43,False
+Impulse,DWT Haar,20,False,1,0,1,1.0,43,False
+Impulse,DWT Haar,21,False,1,0,1,1.0,43,False
+Impulse,DWT Haar,22,False,1,0,2,0.95,42,False
+Impulse,DWT Haar,23,False,1,0,1,1.0,42,False
+Impulse,DWT Haar,24,False,3,2,1,1.0,43,False
+Impulse,DWT Haar,25,False,3,2,1,1.0,43,False
+Impulse,DWT Haar,26,False,0,0,1,1.0,-1,False
+Impulse,DWT Haar,27,False,2,1,1,1.0,43,False
+Impulse,DWT Haar,28,False,2,1,1,1.0,43,False
+Impulse,DWT Haar,29,False,1,0,2,0.95,42,False
+Impulse,DWT Haar,30,False,2,1,1,1.0,43,False
+Impulse,DWT Haar,31,False,1,0,1,1.0,43,False
+Impulse,DWT Haar,32,False,2,1,1,1.0,43,False
+Impulse,DWT Haar,33,False,4,3,1,1.0,43,False
+Impulse,DWT Haar,34,False,2,1,3,0.675,42,True
+Impulse,DWT db4,5,False,1,0,2,1.0,40,False
+Impulse,DWT db4,6,False,3,2,3,0.625,43,False
+Impulse,DWT db4,7,False,3,2,1,1.0,42,False
+Impulse,DWT db4,8,False,1,0,2,0.975,41,False
+Impulse,DWT db4,9,False,1,0,2,1.0,40,False
+Impulse,DWT db4,10,False,3,2,1,1.0,43,False
+Impulse,DWT db4,11,False,1,0,2,0.925,43,False
+Impulse,DWT db4,12,False,1,0,2,0.95,42,False
+Impulse,DWT db4,13,False,1,0,2,1.0,40,False
+Impulse,DWT db4,14,False,1,0,2,1.0,40,False
+Impulse,DWT db4,15,False,1,0,2,1.0,40,False
+Impulse,DWT db4,16,False,1,0,2,1.0,40,False
+Impulse,DWT db4,17,False,2,1,2,0.85,42,False
+Impulse,DWT db4,18,False,1,0,2,1.0,40,False
+Impulse,DWT db4,19,False,3,2,1,1.0,43,False
+Impulse,DWT db4,20,False,3,2,1,1.0,42,False
+Impulse,DWT db4,21,False,2,1,3,0.675,42,True
+Impulse,DWT db4,22,False,1,0,2,0.95,42,False
+Impulse,DWT db4,23,False,1,0,2,0.95,42,False
+Impulse,DWT db4,24,False,4,3,1,1.0,43,False
+Impulse,DWT db4,25,False,1,0,2,0.95,42,False
+Impulse,DWT db4,26,False,4,3,1,1.0,43,False
+Impulse,DWT db4,27,False,1,0,2,1.0,40,False
+Impulse,DWT db4,28,False,1,0,2,0.95,42,False
+Impulse,DWT db4,29,False,2,1,3,0.725,41,True
+Impulse,DWT db4,30,False,4,3,1,1.0,42,False
+Impulse,DWT db4,31,False,1,0,2,1.0,40,False
+Impulse,DWT db4,32,False,1,0,2,1.0,40,False
+Impulse,DWT db4,33,False,4,3,1,1.0,43,False
+Impulse,DWT db4,34,False,2,1,3,0.675,41,True
+Impulse,SWT Haar,5,False,1,0,2,0.95,42,False
+Impulse,SWT Haar,6,False,2,1,2,0.8,44,False
+Impulse,SWT Haar,7,False,4,3,1,1.0,42,False
+Impulse,SWT Haar,8,False,1,0,2,0.95,42,False
+Impulse,SWT Haar,9,False,1,0,2,0.975,41,False
+Impulse,SWT Haar,10,False,2,1,1,1.0,43,False
+Impulse,SWT Haar,11,False,4,3,1,1.0,42,False
+Impulse,SWT Haar,12,False,3,2,1,1.0,43,False
+Impulse,SWT Haar,13,False,1,0,2,0.95,42,False
+Impulse,SWT Haar,14,False,4,3,1,1.0,42,False
+Impulse,SWT Haar,15,False,1,0,2,0.95,42,False
+Impulse,SWT Haar,16,False,4,3,1,1.0,42,False
+Impulse,SWT Haar,17,False,1,0,2,0.925,43,False
+Impulse,SWT Haar,18,False,1,0,2,0.95,42,False
+Impulse,SWT Haar,19,False,3,2,1,1.0,43,False
+Impulse,SWT Haar,20,False,2,1,1,1.0,42,False
+Impulse,SWT Haar,21,False,4,3,1,1.0,43,False
+Impulse,SWT Haar,22,False,1,0,2,0.95,42,False
+Impulse,SWT Haar,23,False,1,0,2,0.95,42,False
+Impulse,SWT Haar,24,False,4,3,1,1.0,43,False
+Impulse,SWT Haar,25,False,4,3,1,1.0,43,False
+Impulse,SWT Haar,26,False,3,2,2,0.7,43,False
+Impulse,SWT Haar,27,False,1,0,2,0.95,42,False
+Impulse,SWT Haar,28,False,1,0,2,0.925,43,False
+Impulse,SWT Haar,29,False,1,0,2,0.95,42,False
+Impulse,SWT Haar,30,False,4,3,1,1.0,42,False
+Impulse,SWT Haar,31,False,1,0,2,0.925,43,False
+Impulse,SWT Haar,32,False,4,3,1,1.0,43,False
+Impulse,SWT Haar,33,False,5,4,1,1.0,43,False
+Impulse,SWT Haar,34,False,2,1,3,0.675,42,True
+Impulse,Packets Haar,5,False,4,3,1,1.0,43,False
+Impulse,Packets Haar,6,False,2,1,2,0.8,44,False
+Impulse,Packets Haar,7,False,2,1,1,1.0,43,False
+Impulse,Packets Haar,8,False,1,0,2,0.95,42,False
+Impulse,Packets Haar,9,False,2,1,1,1.0,43,False
+Impulse,Packets Haar,10,False,1,0,1,1.0,43,False
+Impulse,Packets Haar,11,False,1,0,1,1.0,43,False
+Impulse,Packets Haar,12,False,2,1,1,1.0,43,False
+Impulse,Packets Haar,13,False,1,0,1,1.0,43,False
+Impulse,Packets Haar,14,False,4,3,1,1.0,43,False
+Impulse,Packets Haar,15,False,4,3,1,1.0,43,False
+Impulse,Packets Haar,16,False,0,0,1,1.0,-1,False
+Impulse,Packets Haar,17,False,1,0,1,1.0,43,False
+Impulse,Packets Haar,18,False,1,0,2,0.95,42,False
+Impulse,Packets Haar,19,False,3,2,1,1.0,43,False
+Impulse,Packets Haar,20,False,1,0,1,1.0,43,False
+Impulse,Packets Haar,21,False,1,0,1,1.0,43,False
+Impulse,Packets Haar,22,False,2,1,1,1.0,43,False
+Impulse,Packets Haar,23,False,2,1,1,1.0,42,False
+Impulse,Packets Haar,24,False,3,2,1,1.0,43,False
+Impulse,Packets Haar,25,False,3,2,1,1.0,43,False
+Impulse,Packets Haar,26,False,0,0,1,1.0,-1,False
+Impulse,Packets Haar,27,False,2,1,1,1.0,43,False
+Impulse,Packets Haar,28,False,2,1,1,1.0,43,False
+Impulse,Packets Haar,29,False,1,0,2,0.95,42,False
+Impulse,Packets Haar,30,False,2,1,1,1.0,43,False
+Impulse,Packets Haar,31,False,1,0,1,1.0,43,False
+Impulse,Packets Haar,32,False,3,2,1,1.0,43,False
+Impulse,Packets Haar,33,False,2,1,1,1.0,43,False
+Impulse,Packets Haar,34,False,1,0,2,0.925,43,False
+Wavelet train (Haar),Raw,5,False,3,1,3,1.0,0,True
+Wavelet train (Haar),Raw,6,True,2,0,3,1.0,0,True
+Wavelet train (Haar),Raw,7,True,2,0,3,1.0,0,True
+Wavelet train (Haar),Raw,8,True,2,0,3,1.0,0,True
+Wavelet train (Haar),Raw,9,True,2,0,3,1.0,0,True
+Wavelet train (Haar),Raw,10,True,2,0,3,1.0,0,True
+Wavelet train (Haar),Raw,11,False,3,1,3,0.95,2,True
+Wavelet train (Haar),Raw,12,True,2,0,3,1.0,0,True
+Wavelet train (Haar),Raw,13,True,2,0,3,1.0,0,True
+Wavelet train (Haar),Raw,14,True,2,0,3,1.0,0,True
+Wavelet train (Haar),Raw,15,False,1,0,2,1.0,40,False
+Wavelet train (Haar),Raw,16,True,2,0,3,0.975,1,True
+Wavelet train (Haar),Raw,17,True,2,0,3,1.0,0,True
+Wavelet train (Haar),Raw,18,True,2,0,3,1.0,0,True
+Wavelet train (Haar),Raw,19,True,2,0,3,1.0,0,True
+Wavelet train (Haar),Raw,20,True,2,0,3,1.0,0,True
+Wavelet train (Haar),Raw,21,True,2,0,3,1.0,0,True
+Wavelet train (Haar),Raw,22,True,2,0,3,1.0,0,True
+Wavelet train (Haar),Raw,23,True,2,0,3,1.0,0,True
+Wavelet train (Haar),Raw,24,True,2,0,3,1.0,0,True
+Wavelet train (Haar),Raw,25,True,2,0,3,1.0,0,True
+Wavelet train (Haar),Raw,26,True,2,0,3,1.0,0,True
+Wavelet train (Haar),Raw,27,True,2,0,3,1.0,0,True
+Wavelet train (Haar),Raw,28,True,2,0,3,1.0,0,True
+Wavelet train (Haar),Raw,29,True,2,0,3,1.0,0,True
+Wavelet train (Haar),Raw,30,False,3,1,4,0.825,3,True
+Wavelet train (Haar),Raw,31,True,2,0,3,1.0,0,True
+Wavelet train (Haar),Raw,32,True,2,0,3,1.0,0,True
+Wavelet train (Haar),Raw,33,True,2,0,3,1.0,0,True
+Wavelet train (Haar),Raw,34,True,2,0,3,1.0,0,True
+Wavelet train (Haar),DWT Haar,5,False,6,4,1,1.0,3,False
+Wavelet train (Haar),DWT Haar,6,True,2,0,3,0.95,2,True
+Wavelet train (Haar),DWT Haar,7,True,2,0,3,0.95,2,True
+Wavelet train (Haar),DWT Haar,8,False,4,2,1,1.0,3,False
+Wavelet train (Haar),DWT Haar,9,True,2,0,3,0.95,2,True
+Wavelet train (Haar),DWT Haar,10,False,4,2,1,1.0,3,False
+Wavelet train (Haar),DWT Haar,11,False,5,3,1,1.0,3,False
+Wavelet train (Haar),DWT Haar,12,False,3,1,2,0.95,3,False
+Wavelet train (Haar),DWT Haar,13,False,5,3,1,1.0,3,False
+Wavelet train (Haar),DWT Haar,14,True,2,0,3,0.95,2,True
+Wavelet train (Haar),DWT Haar,15,False,4,2,2,0.95,2,False
+Wavelet train (Haar),DWT Haar,16,False,2,1,3,0.9,42,True
+Wavelet train (Haar),DWT Haar,17,True,2,0,3,0.925,3,True
+Wavelet train (Haar),DWT Haar,18,True,2,0,3,0.95,2,True
+Wavelet train (Haar),DWT Haar,19,False,4,2,2,0.85,3,False
+Wavelet train (Haar),DWT Haar,20,True,2,0,3,0.95,2,True
+Wavelet train (Haar),DWT Haar,21,True,2,0,3,0.95,2,True
+Wavelet train (Haar),DWT Haar,22,True,2,0,3,0.925,3,True
+Wavelet train (Haar),DWT Haar,23,False,4,2,2,0.95,2,False
+Wavelet train (Haar),DWT Haar,24,True,2,0,3,0.925,3,True
+Wavelet train (Haar),DWT Haar,25,False,2,0,2,0.95,3,False
+Wavelet train (Haar),DWT Haar,26,True,2,0,3,0.95,2,True
+Wavelet train (Haar),DWT Haar,27,False,3,1,3,0.725,3,False
+Wavelet train (Haar),DWT Haar,28,False,3,1,2,0.95,3,False
+Wavelet train (Haar),DWT Haar,29,False,4,2,2,0.825,3,False
+Wavelet train (Haar),DWT Haar,30,False,4,2,4,0.825,3,True
+Wavelet train (Haar),DWT Haar,31,False,7,5,1,1.0,3,False
+Wavelet train (Haar),DWT Haar,32,False,6,4,2,0.75,2,False
+Wavelet train (Haar),DWT Haar,33,True,2,0,3,0.95,2,True
+Wavelet train (Haar),DWT Haar,34,False,5,3,1,1.0,3,False
+Wavelet train (Haar),DWT db4,5,True,2,0,3,0.975,1,True
+Wavelet train (Haar),DWT db4,6,True,2,0,3,0.95,2,True
+Wavelet train (Haar),DWT db4,7,True,2,0,3,0.975,1,True
+Wavelet train (Haar),DWT db4,8,True,2,0,3,0.95,2,True
+Wavelet train (Haar),DWT db4,9,True,2,0,3,0.95,2,True
+Wavelet train (Haar),DWT db4,10,True,2,0,3,0.95,2,True
+Wavelet train (Haar),DWT db4,11,True,2,0,3,0.95,2,True
+Wavelet train (Haar),DWT db4,12,True,2,0,3,0.975,1,True
+Wavelet train (Haar),DWT db4,13,True,2,0,3,1.0,0,True
+Wavelet train (Haar),DWT db4,14,True,2,0,3,0.95,2,True
+Wavelet train (Haar),DWT db4,15,True,2,0,3,0.975,1,True
+Wavelet train (Haar),DWT db4,16,False,5,3,2,0.975,3,False
+Wavelet train (Haar),DWT db4,17,True,2,0,3,0.95,2,True
+Wavelet train (Haar),DWT db4,18,True,2,0,3,1.0,0,True
+Wavelet train (Haar),DWT db4,19,True,2,0,3,0.95,2,True
+Wavelet train (Haar),DWT db4,20,True,2,0,3,0.975,1,True
+Wavelet train (Haar),DWT db4,21,True,2,0,3,0.975,1,True
+Wavelet train (Haar),DWT db4,22,True,2,0,3,0.975,1,True
+Wavelet train (Haar),DWT db4,23,True,2,0,3,0.975,1,True
+Wavelet train (Haar),DWT db4,24,True,2,0,3,0.95,2,True
+Wavelet train (Haar),DWT db4,25,True,2,0,3,0.975,1,True
+Wavelet train (Haar),DWT db4,26,True,2,0,3,0.95,2,True
+Wavelet train (Haar),DWT db4,27,True,2,0,3,0.975,1,True
+Wavelet train (Haar),DWT db4,28,True,2,0,3,0.95,2,True
+Wavelet train (Haar),DWT db4,29,True,2,0,3,0.975,1,True
+Wavelet train (Haar),DWT db4,30,False,3,1,4,0.825,3,True
+Wavelet train (Haar),DWT db4,31,True,2,0,3,0.95,2,True
+Wavelet train (Haar),DWT db4,32,True,2,0,3,0.95,2,True
+Wavelet train (Haar),DWT db4,33,True,2,0,3,0.975,1,True
+Wavelet train (Haar),DWT db4,34,True,2,0,3,0.95,2,True
+Wavelet train (Haar),SWT Haar,5,False,3,1,2,1.0,3,False
+Wavelet train (Haar),SWT Haar,6,False,3,1,2,1.0,3,False
+Wavelet train (Haar),SWT Haar,7,False,3,1,3,0.85,2,True
+Wavelet train (Haar),SWT Haar,8,False,4,2,2,1.0,2,False
+Wavelet train (Haar),SWT Haar,9,False,4,2,2,1.0,3,False
+Wavelet train (Haar),SWT Haar,10,False,3,1,2,1.0,3,False
+Wavelet train (Haar),SWT Haar,11,False,2,0,2,1.0,3,False
+Wavelet train (Haar),SWT Haar,12,False,3,1,2,1.0,3,False
+Wavelet train (Haar),SWT Haar,13,False,3,1,2,1.0,3,False
+Wavelet train (Haar),SWT Haar,14,False,3,1,2,1.0,3,False
+Wavelet train (Haar),SWT Haar,15,False,3,1,2,1.0,3,False
+Wavelet train (Haar),SWT Haar,16,False,2,0,2,0.95,3,False
+Wavelet train (Haar),SWT Haar,17,False,3,1,2,1.0,3,False
+Wavelet train (Haar),SWT Haar,18,True,2,0,3,0.95,2,True
+Wavelet train (Haar),SWT Haar,19,False,3,1,2,1.0,3,False
+Wavelet train (Haar),SWT Haar,20,True,2,0,3,0.95,2,True
+Wavelet train (Haar),SWT Haar,21,False,3,1,2,1.0,3,False
+Wavelet train (Haar),SWT Haar,22,False,2,0,2,1.0,3,False
+Wavelet train (Haar),SWT Haar,23,False,2,0,2,1.0,3,False
+Wavelet train (Haar),SWT Haar,24,False,3,1,2,1.0,3,False
+Wavelet train (Haar),SWT Haar,25,False,3,1,2,1.0,3,False
+Wavelet train (Haar),SWT Haar,26,False,2,0,2,1.0,3,False
+Wavelet train (Haar),SWT Haar,27,False,2,0,2,1.0,3,False
+Wavelet train (Haar),SWT Haar,28,False,2,0,2,1.0,3,False
+Wavelet train (Haar),SWT Haar,29,False,2,0,2,1.0,3,False
+Wavelet train (Haar),SWT Haar,30,False,3,1,4,0.825,3,True
+Wavelet train (Haar),SWT Haar,31,False,4,2,2,1.0,3,False
+Wavelet train (Haar),SWT Haar,32,False,3,1,2,1.0,2,False
+Wavelet train (Haar),SWT Haar,33,False,4,2,2,1.0,3,False
+Wavelet train (Haar),SWT Haar,34,False,2,0,2,1.0,3,False
+Wavelet train (Haar),Packets Haar,5,True,2,0,3,0.95,2,True
+Wavelet train (Haar),Packets Haar,6,False,4,2,1,1.0,3,False
+Wavelet train (Haar),Packets Haar,7,True,2,0,3,0.95,2,True
+Wavelet train (Haar),Packets Haar,8,False,3,1,3,0.85,2,True
+Wavelet train (Haar),Packets Haar,9,False,3,1,2,0.95,2,False
+Wavelet train (Haar),Packets Haar,10,False,4,2,1,1.0,3,False
+Wavelet train (Haar),Packets Haar,11,False,4,2,2,0.925,3,False
+Wavelet train (Haar),Packets Haar,12,False,3,1,2,0.95,3,False
+Wavelet train (Haar),Packets Haar,13,True,2,0,3,0.95,2,True
+Wavelet train (Haar),Packets Haar,14,True,2,0,3,0.95,2,True
+Wavelet train (Haar),Packets Haar,15,False,5,3,2,0.95,2,False
+Wavelet train (Haar),Packets Haar,16,False,1,0,2,0.925,43,False
+Wavelet train (Haar),Packets Haar,17,False,4,2,1,1.0,3,False
+Wavelet train (Haar),Packets Haar,18,True,2,0,3,0.95,2,True
+Wavelet train (Haar),Packets Haar,19,False,4,2,2,0.825,3,False
+Wavelet train (Haar),Packets Haar,20,True,2,0,3,0.95,2,True
+Wavelet train (Haar),Packets Haar,21,True,2,0,3,0.95,2,True
+Wavelet train (Haar),Packets Haar,22,False,4,2,1,1.0,3,False
+Wavelet train (Haar),Packets Haar,23,True,2,0,3,0.95,2,True
+Wavelet train (Haar),Packets Haar,24,True,2,0,3,0.95,2,True
+Wavelet train (Haar),Packets Haar,25,True,2,0,3,0.95,2,True
+Wavelet train (Haar),Packets Haar,26,True,2,0,3,0.95,2,True
+Wavelet train (Haar),Packets Haar,27,False,5,3,1,1.0,3,False
+Wavelet train (Haar),Packets Haar,28,False,3,1,2,0.95,3,False
+Wavelet train (Haar),Packets Haar,29,False,6,4,1,1.0,3,False
+Wavelet train (Haar),Packets Haar,30,False,3,1,3,0.825,3,True
+Wavelet train (Haar),Packets Haar,31,False,5,3,1,1.0,3,False
+Wavelet train (Haar),Packets Haar,32,True,2,0,3,0.95,2,True
+Wavelet train (Haar),Packets Haar,33,True,2,0,3,0.95,2,True
+Wavelet train (Haar),Packets Haar,34,True,2,0,3,0.95,2,True
+Wavelet train (db4),Raw,5,False,0,0,1,1.0,-1,False
+Wavelet train (db4),Raw,6,False,3,1,2,0.825,3,False
+Wavelet train (db4),Raw,7,False,2,0,1,1.0,3,False
+Wavelet train (db4),Raw,8,False,0,0,1,1.0,-1,False
+Wavelet train (db4),Raw,9,False,1,0,1,1.0,43,False
+Wavelet train (db4),Raw,10,False,1,0,1,1.0,43,False
+Wavelet train (db4),Raw,11,False,0,0,1,1.0,-1,False
+Wavelet train (db4),Raw,12,False,1,0,1,1.0,-1,False
+Wavelet train (db4),Raw,13,False,1,0,1,1.0,43,False
+Wavelet train (db4),Raw,14,False,0,0,1,1.0,-1,False
+Wavelet train (db4),Raw,15,False,0,0,1,1.0,-1,False
+Wavelet train (db4),Raw,16,False,0,0,1,1.0,-1,False
+Wavelet train (db4),Raw,17,False,2,1,2,0.875,5,False
+Wavelet train (db4),Raw,18,False,1,0,2,0.95,42,False
+Wavelet train (db4),Raw,19,False,1,1,2,0.725,-1,False
+Wavelet train (db4),Raw,20,False,2,1,2,0.675,13,False
+Wavelet train (db4),Raw,21,False,1,0,1,1.0,43,False
+Wavelet train (db4),Raw,22,False,0,0,1,1.0,-1,False
+Wavelet train (db4),Raw,23,False,1,0,1,1.0,44,False
+Wavelet train (db4),Raw,24,False,0,0,1,1.0,-1,False
+Wavelet train (db4),Raw,25,False,1,1,2,0.875,45,False
+Wavelet train (db4),Raw,26,False,0,0,1,1.0,-1,False
+Wavelet train (db4),Raw,27,False,1,0,2,0.925,43,False
+Wavelet train (db4),Raw,28,False,1,0,2,0.9,44,False
+Wavelet train (db4),Raw,29,False,1,0,1,1.0,-1,False
+Wavelet train (db4),Raw,30,False,2,0,2,0.9,4,False
+Wavelet train (db4),Raw,31,False,1,0,1,1.0,-1,False
+Wavelet train (db4),Raw,32,False,1,1,2,0.875,45,False
+Wavelet train (db4),Raw,33,False,1,0,2,0.925,43,False
+Wavelet train (db4),Raw,34,False,2,0,2,0.9,4,False
+Wavelet train (db4),DWT Haar,5,False,4,2,2,0.575,3,False
+Wavelet train (db4),DWT Haar,6,True,2,0,3,0.95,2,True
+Wavelet train (db4),DWT Haar,7,True,2,0,3,1.0,0,True
+Wavelet train (db4),DWT Haar,8,True,2,0,3,1.0,0,True
+Wavelet train (db4),DWT Haar,9,False,3,1,4,0.525,2,True
+Wavelet train (db4),DWT Haar,10,True,2,0,3,0.975,1,True
+Wavelet train (db4),DWT Haar,11,True,2,0,3,1.0,0,True
+Wavelet train (db4),DWT Haar,12,False,5,3,2,0.725,3,False
+Wavelet train (db4),DWT Haar,13,True,2,0,3,0.975,1,True
+Wavelet train (db4),DWT Haar,14,False,4,2,2,0.675,3,False
+Wavelet train (db4),DWT Haar,15,False,4,2,5,0.675,1,True
+Wavelet train (db4),DWT Haar,16,True,2,0,3,1.0,0,True
+Wavelet train (db4),DWT Haar,17,False,5,3,3,0.525,3,False
+Wavelet train (db4),DWT Haar,18,False,2,0,2,0.95,3,False
+Wavelet train (db4),DWT Haar,19,False,4,2,5,0.725,1,True
+Wavelet train (db4),DWT Haar,20,False,3,1,4,0.675,1,True
+Wavelet train (db4),DWT Haar,21,False,5,3,2,0.65,3,False
+Wavelet train (db4),DWT Haar,22,False,4,2,2,0.65,3,False
+Wavelet train (db4),DWT Haar,23,True,2,0,3,0.975,1,True
+Wavelet train (db4),DWT Haar,24,False,3,1,4,0.725,1,True
+Wavelet train (db4),DWT Haar,25,False,4,2,2,0.825,3,False
+Wavelet train (db4),DWT Haar,26,False,3,1,4,0.625,1,True
+Wavelet train (db4),DWT Haar,27,False,2,0,2,0.925,3,False
+Wavelet train (db4),DWT Haar,28,True,2,0,3,0.975,1,True
+Wavelet train (db4),DWT Haar,29,False,5,3,2,0.725,3,False
+Wavelet train (db4),DWT Haar,30,True,2,0,3,1.0,0,True
+Wavelet train (db4),DWT Haar,31,False,3,1,4,0.7,0,True
+Wavelet train (db4),DWT Haar,32,True,2,0,3,0.975,1,True
+Wavelet train (db4),DWT Haar,33,True,2,0,3,0.975,1,True
+Wavelet train (db4),DWT Haar,34,False,5,3,2,0.55,3,False
+Wavelet train (db4),DWT db4,5,False,3,1,4,0.575,0,True
+Wavelet train (db4),DWT db4,6,True,2,0,3,1.0,0,True
+Wavelet train (db4),DWT db4,7,True,2,0,3,1.0,0,True
+Wavelet train (db4),DWT db4,8,False,3,1,4,0.625,0,True
+Wavelet train (db4),DWT db4,9,False,3,1,4,0.575,0,True
+Wavelet train (db4),DWT db4,10,True,2,0,3,1.0,0,True
+Wavelet train (db4),DWT db4,11,True,2,0,3,1.0,0,True
+Wavelet train (db4),DWT db4,12,False,3,1,4,0.725,0,True
+Wavelet train (db4),DWT db4,13,True,2,0,3,1.0,0,True
+Wavelet train (db4),DWT db4,14,False,3,1,4,0.675,0,True
+Wavelet train (db4),DWT db4,15,False,5,3,4,0.525,0,True
+Wavelet train (db4),DWT db4,16,True,2,0,3,1.0,0,True
+Wavelet train (db4),DWT db4,17,True,2,0,3,1.0,0,True
+Wavelet train (db4),DWT db4,18,True,2,0,3,1.0,0,True
+Wavelet train (db4),DWT db4,19,False,4,2,4,0.75,0,True
+Wavelet train (db4),DWT db4,20,True,2,0,3,1.0,0,True
+Wavelet train (db4),DWT db4,21,False,3,1,4,0.65,0,True
+Wavelet train (db4),DWT db4,22,False,3,1,4,0.65,0,True
+Wavelet train (db4),DWT db4,23,True,2,0,3,1.0,0,True
+Wavelet train (db4),DWT db4,24,False,3,1,4,0.75,0,True
+Wavelet train (db4),DWT db4,25,True,2,0,3,1.0,0,True
+Wavelet train (db4),DWT db4,26,False,3,1,4,0.625,0,True
+Wavelet train (db4),DWT db4,27,True,2,0,3,1.0,0,True
+Wavelet train (db4),DWT db4,28,True,2,0,3,1.0,0,True
+Wavelet train (db4),DWT db4,29,False,3,1,4,0.75,0,True
+Wavelet train (db4),DWT db4,30,True,2,0,3,1.0,0,True
+Wavelet train (db4),DWT db4,31,False,3,1,4,0.7,0,True
+Wavelet train (db4),DWT db4,32,True,2,0,3,1.0,0,True
+Wavelet train (db4),DWT db4,33,True,2,0,3,1.0,0,True
+Wavelet train (db4),DWT db4,34,True,2,0,3,1.0,0,True
+Wavelet train (db4),SWT Haar,5,False,3,1,4,0.575,1,True
+Wavelet train (db4),SWT Haar,6,True,2,0,3,0.975,1,True
+Wavelet train (db4),SWT Haar,7,True,2,0,3,1.0,0,True
+Wavelet train (db4),SWT Haar,8,True,2,0,3,1.0,0,True
+Wavelet train (db4),SWT Haar,9,False,3,1,4,0.525,1,True
+Wavelet train (db4),SWT Haar,10,True,2,0,3,0.975,1,True
+Wavelet train (db4),SWT Haar,11,True,2,0,3,1.0,0,True
+Wavelet train (db4),SWT Haar,12,False,3,1,4,0.725,1,True
+Wavelet train (db4),SWT Haar,13,True,2,0,3,0.975,1,True
+Wavelet train (db4),SWT Haar,14,False,5,3,3,0.675,1,True
+Wavelet train (db4),SWT Haar,15,False,4,2,5,0.675,1,True
+Wavelet train (db4),SWT Haar,16,True,2,0,3,1.0,0,True
+Wavelet train (db4),SWT Haar,17,False,3,1,4,0.85,1,True
+Wavelet train (db4),SWT Haar,18,True,2,0,3,0.975,1,True
+Wavelet train (db4),SWT Haar,19,False,4,2,5,0.725,1,True
+Wavelet train (db4),SWT Haar,20,False,3,1,4,0.675,1,True
+Wavelet train (db4),SWT Haar,21,False,3,1,4,0.65,1,True
+Wavelet train (db4),SWT Haar,22,False,3,1,4,0.65,1,True
+Wavelet train (db4),SWT Haar,23,True,2,0,3,0.975,1,True
+Wavelet train (db4),SWT Haar,24,False,3,1,4,0.725,1,True
+Wavelet train (db4),SWT Haar,25,True,2,0,3,0.975,1,True
+Wavelet train (db4),SWT Haar,26,False,4,2,4,0.625,0,True
+Wavelet train (db4),SWT Haar,27,False,3,1,3,0.9,0,True
+Wavelet train (db4),SWT Haar,28,True,2,0,3,0.975,1,True
+Wavelet train (db4),SWT Haar,29,False,3,1,4,0.725,1,True
+Wavelet train (db4),SWT Haar,30,False,3,1,3,0.9,0,True
+Wavelet train (db4),SWT Haar,31,False,3,1,4,0.7,0,True
+Wavelet train (db4),SWT Haar,32,True,2,0,3,0.975,1,True
+Wavelet train (db4),SWT Haar,33,True,2,0,3,0.975,1,True
+Wavelet train (db4),SWT Haar,34,False,3,1,3,0.9,0,True
+Wavelet train (db4),Packets Haar,5,True,2,0,3,0.95,2,True
+Wavelet train (db4),Packets Haar,6,True,2,0,3,0.95,2,True
+Wavelet train (db4),Packets Haar,7,True,2,0,3,0.975,1,True
+Wavelet train (db4),Packets Haar,8,True,2,0,3,1.0,0,True
+Wavelet train (db4),Packets Haar,9,True,2,0,3,0.95,2,True
+Wavelet train (db4),Packets Haar,10,True,2,0,3,0.95,2,True
+Wavelet train (db4),Packets Haar,11,True,2,0,3,0.95,2,True
+Wavelet train (db4),Packets Haar,12,True,2,0,3,0.95,2,True
+Wavelet train (db4),Packets Haar,13,True,2,0,3,0.95,2,True
+Wavelet train (db4),Packets Haar,14,True,2,0,3,0.95,2,True
+Wavelet train (db4),Packets Haar,15,False,3,1,3,0.95,2,True
+Wavelet train (db4),Packets Haar,16,True,2,0,3,0.95,2,True
+Wavelet train (db4),Packets Haar,17,True,2,0,3,0.95,2,True
+Wavelet train (db4),Packets Haar,18,True,2,0,3,0.95,2,True
+Wavelet train (db4),Packets Haar,19,False,3,1,3,0.725,3,False
+Wavelet train (db4),Packets Haar,20,True,2,0,3,0.95,2,True
+Wavelet train (db4),Packets Haar,21,True,2,0,3,0.95,2,True
+Wavelet train (db4),Packets Haar,22,True,2,0,3,0.95,2,True
+Wavelet train (db4),Packets Haar,23,True,2,0,3,0.95,2,True
+Wavelet train (db4),Packets Haar,24,False,3,1,3,0.95,2,True
+Wavelet train (db4),Packets Haar,25,True,2,0,3,0.95,2,True
+Wavelet train (db4),Packets Haar,26,True,2,0,3,0.95,2,True
+Wavelet train (db4),Packets Haar,27,True,2,0,3,0.95,2,True
+Wavelet train (db4),Packets Haar,28,True,2,0,3,0.95,2,True
+Wavelet train (db4),Packets Haar,29,False,3,1,4,0.725,2,True
+Wavelet train (db4),Packets Haar,30,True,2,0,3,1.0,0,True
+Wavelet train (db4),Packets Haar,31,True,2,0,3,0.95,2,True
+Wavelet train (db4),Packets Haar,32,True,2,0,3,0.95,2,True
+Wavelet train (db4),Packets Haar,33,True,2,0,3,0.95,2,True
+Wavelet train (db4),Packets Haar,34,True,2,0,3,0.95,2,True
+Wavelet train (Mexican hat),Raw,5,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Raw,6,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Raw,7,True,2,0,3,0.975,1,True
+Wavelet train (Mexican hat),Raw,8,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Raw,9,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Raw,10,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Raw,11,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Raw,12,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Raw,13,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Raw,14,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Raw,15,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Raw,16,True,2,0,3,0.975,1,True
+Wavelet train (Mexican hat),Raw,17,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Raw,18,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Raw,19,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Raw,20,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Raw,21,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Raw,22,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Raw,23,True,2,0,3,0.975,1,True
+Wavelet train (Mexican hat),Raw,24,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Raw,25,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Raw,26,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Raw,27,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Raw,28,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Raw,29,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Raw,30,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Raw,31,True,2,0,3,0.975,1,True
+Wavelet train (Mexican hat),Raw,32,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Raw,33,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Raw,34,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT Haar,5,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT Haar,6,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT Haar,7,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT Haar,8,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT Haar,9,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT Haar,10,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT Haar,11,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT Haar,12,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT Haar,13,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT Haar,14,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT Haar,15,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT Haar,16,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT Haar,17,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT Haar,18,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT Haar,19,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT Haar,20,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT Haar,21,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT Haar,22,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT Haar,23,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT Haar,24,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT Haar,25,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT Haar,26,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT Haar,27,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT Haar,28,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT Haar,29,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT Haar,30,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT Haar,31,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT Haar,32,False,3,1,3,1.0,0,True
+Wavelet train (Mexican hat),DWT Haar,33,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT Haar,34,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT db4,5,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT db4,6,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT db4,7,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT db4,8,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT db4,9,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT db4,10,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT db4,11,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT db4,12,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT db4,13,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT db4,14,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT db4,15,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT db4,16,True,2,0,3,0.975,1,True
+Wavelet train (Mexican hat),DWT db4,17,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT db4,18,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT db4,19,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT db4,20,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT db4,21,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT db4,22,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT db4,23,True,2,0,3,0.975,1,True
+Wavelet train (Mexican hat),DWT db4,24,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT db4,25,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT db4,26,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT db4,27,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT db4,28,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT db4,29,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT db4,30,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT db4,31,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT db4,32,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT db4,33,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),DWT db4,34,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),SWT Haar,5,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),SWT Haar,6,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),SWT Haar,7,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),SWT Haar,8,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),SWT Haar,9,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),SWT Haar,10,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),SWT Haar,11,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),SWT Haar,12,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),SWT Haar,13,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),SWT Haar,14,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),SWT Haar,15,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),SWT Haar,16,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),SWT Haar,17,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),SWT Haar,18,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),SWT Haar,19,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),SWT Haar,20,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),SWT Haar,21,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),SWT Haar,22,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),SWT Haar,23,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),SWT Haar,24,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),SWT Haar,25,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),SWT Haar,26,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),SWT Haar,27,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),SWT Haar,28,False,3,1,3,1.0,0,True
+Wavelet train (Mexican hat),SWT Haar,29,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),SWT Haar,30,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),SWT Haar,31,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),SWT Haar,32,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),SWT Haar,33,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),SWT Haar,34,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Packets Haar,5,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Packets Haar,6,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Packets Haar,7,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Packets Haar,8,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Packets Haar,9,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Packets Haar,10,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Packets Haar,11,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Packets Haar,12,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Packets Haar,13,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Packets Haar,14,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Packets Haar,15,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Packets Haar,16,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Packets Haar,17,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Packets Haar,18,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Packets Haar,19,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Packets Haar,20,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Packets Haar,21,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Packets Haar,22,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Packets Haar,23,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Packets Haar,24,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Packets Haar,25,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Packets Haar,26,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Packets Haar,27,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Packets Haar,28,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Packets Haar,29,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Packets Haar,30,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Packets Haar,31,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Packets Haar,32,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Packets Haar,33,True,2,0,3,1.0,0,True
+Wavelet train (Mexican hat),Packets Haar,34,True,2,0,3,1.0,0,True

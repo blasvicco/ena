@@ -1,0 +1,17 @@
+env_id,phase_steps,env_steps,eval_mean,eval_steps,status
+Mars-Light,5014,5014,300.4,1502,continue
+Mars-Light,10099,10099,496.0,2480,solved
+Jupiter-Heavy,5014,2505134,19.8,99,continue
+Jupiter-Heavy,10025,2510145,54.6,273,continue
+Jupiter-Heavy,15056,2515176,65.8,329,continue
+Jupiter-Heavy,20059,2520179,87.2,436,continue
+Jupiter-Heavy,25033,2525153,121.2,606,continue
+Jupiter-Heavy,30026,2530146,113.8,569,continue
+Jupiter-Heavy,35097,2535217,168.4,842,continue
+Jupiter-Heavy,40040,2540160,151.8,759,continue
+Jupiter-Heavy,45082,2545202,186.0,930,continue
+Jupiter-Heavy,50328,2550448,384.8,1924,continue
+Jupiter-Heavy,55240,2555360,446.6,2233,continue
+Jupiter-Heavy,60196,2560316,339.2,1696,continue
+Jupiter-Heavy,65496,2565616,500.0,2500,solved
+Earth-Standard,5000,5005202,500.0,2500,solved

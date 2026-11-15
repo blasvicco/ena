@@ -1,0 +1,7 @@
+Niche ID   | Env Name             | Total Gladiators
+---------------------------------------------------
+0          | Earth-Standard       | 12             
+1          | Heavy-Rough          | 12             
+2          | Mars-Slippery        | 4              
+3          | Mars-Slippery        | 9              
+4          | Mars-Slippery        | 9              

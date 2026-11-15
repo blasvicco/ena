@@ -1,0 +1,32 @@
+Environment recognition across 30 replicates (mean ± std; n = replicates with a value)
+============================================================
+For every agent with a real recognizer and every complete replicate, per contiguous environment phase:
+  - unrecognized: % of episodes whose transitions matched no known niche (detected_env_id -1);
+  - changes: confirmed changes (detect_change() firing). A phase follows a real switch, except the
+    run's very first, so at most one is a detection and the rest are false alarms;
+  - first_change: episodes into the phase of the first confirmation (none: NaN);
+  - niches (training only): niches the Hall of Fame holds for the environment (fragmentation if > 1).
+
+--- ENA-Combined-FuzzyPlasticity: Training ---
+  Mars-Light       unrecognized 0.3 ± 0.2 (n=30) | changes 1.2 ± 1.8 (n=30) | first_change 121.8 ± 143.7 (n=11) | niches 1.4 ± 0.6 (n=30)
+  Jupiter-Heavy    unrecognized 0.1 ± 0.1 (n=30) | changes 1.2 ± 0.4 (n=30) | first_change 0.9 ± 1.0 (n=30) | niches 1.2 ± 0.4 (n=30)
+  Earth-Standard   unrecognized 0.0 ± 0.0 (n=30) | changes 1.3 ± 0.5 (n=30) | first_change 0.0 ± 0.0 (n=30) | niches 1.3 ± 0.5 (n=30)
+
+--- ENA-Combined-FuzzyPlasticity: Test ---
+  Mars-Light       unrecognized 0.8 ± 1.0 (n=30) | changes 0.4 ± 0.9 (n=30) | first_change 20.0 ± 24.8 (n=5)
+  Neptune          unrecognized 0.6 ± 0.3 (n=30) | changes 1.1 ± 0.6 (n=30) | first_change 0.3 ± 0.5 (n=30)
+  Jupiter-Heavy    unrecognized 0.5 ± 0.0 (n=30) | changes 1.0 ± 0.0 (n=30) | first_change 0.3 ± 0.4 (n=30)
+  Brown-dwarf      unrecognized 89.0 ± 17.8 (n=30) | changes 15.9 ± 17.0 (n=30) | first_change 0.0 ± 0.0 (n=30)
+  Earth-Standard   unrecognized 0.3 ± 0.2 (n=30) | changes 0.0 ± 0.0 (n=30)
+
+--- ENA-Combined-QuadraticPlasticity: Training ---
+  Mars-Light       unrecognized 0.3 ± 0.2 (n=30) | changes 2.1 ± 3.7 (n=30) | first_change 181.8 ± 174.0 (n=16) | niches 1.5 ± 0.5 (n=30)
+  Jupiter-Heavy    unrecognized 0.2 ± 0.1 (n=30) | changes 1.2 ± 0.4 (n=30) | first_change 0.6 ± 0.8 (n=30) | niches 1.2 ± 0.4 (n=30)
+  Earth-Standard   unrecognized 0.0 ± 0.0 (n=30) | changes 1.3 ± 0.5 (n=30) | first_change 0.0 ± 0.2 (n=30) | niches 1.3 ± 0.5 (n=30)
+
+--- ENA-Combined-QuadraticPlasticity: Test ---
+  Mars-Light       unrecognized 0.8 ± 0.7 (n=30) | changes 0.5 ± 1.2 (n=30) | first_change 47.0 ± 43.7 (n=9)
+  Neptune          unrecognized 0.5 ± 0.0 (n=30) | changes 1.0 ± 0.0 (n=30) | first_change 0.2 ± 0.4 (n=30)
+  Jupiter-Heavy    unrecognized 0.5 ± 0.0 (n=30) | changes 1.0 ± 0.0 (n=30) | first_change 0.1 ± 0.3 (n=30)
+  Brown-dwarf      unrecognized 92.0 ± 14.4 (n=30) | changes 16.9 ± 18.1 (n=30) | first_change 0.0 ± 0.0 (n=30)
+  Earth-Standard   unrecognized 0.5 ± 0.1 (n=30) | changes 0.0 ± 0.0 (n=30)

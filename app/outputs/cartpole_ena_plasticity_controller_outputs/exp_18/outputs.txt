@@ -1,0 +1,30 @@
+Experiment 18 Log
+==============================
+
+  --- Training Performance vs Time ---
+  ENA-Combined-QuadraticPlasticity: 2692.08 seconds, 4,803,949 env-steps
+  ENA-Combined-FuzzyPlasticity: 2598.08 seconds, 5,034,279 env-steps
+
+Training:
+
+--- ACADEMIC PERFORMANCE & RELIABILITY SUMMARY ---
+                           Agent Mars-Light Avg Jupiter-Heavy Avg Earth-Standard Avg Reliability (%) Stability Gap (↓) Efficiency (Score/s)
+ENA-Combined-QuadraticPlasticity         380.40            450.24             474.40           79.5%            294.85               242.38
+    ENA-Combined-FuzzyPlasticity         454.32            459.12             474.39           84.8%            232.85               267.09
+
+--- COMPUTE-COST SUMMARY (candidate evaluation, training phase) ---
+                           Agent Avg Eval Depth Avg Candidates/Gen Total Candidate Env-Steps
+ENA-Combined-QuadraticPlasticity          102.5               18.8                 4,151,434
+    ENA-Combined-FuzzyPlasticity          105.1               19.3                 4,340,365
+
+--- ADAPTATION SUMMARY (training, early-stopped per environment) ---
+                           Agent Mars-Light:steps  Mars-Light:solved Jupiter-Heavy:steps  Jupiter-Heavy:solved Earth-Standard:steps  Earth-Standard:solved  Solved-Phases Train-Env-Steps Eval-Env-Steps
+ENA-Combined-QuadraticPlasticity        2,064,077                  0           1,251,088                     0            1,488,784                      0              0       4,803,949              0
+    ENA-Combined-FuzzyPlasticity        1,704,714                  0           1,506,951                     0            1,822,614                      0              0       5,034,279              0
+
+  --- Experiment 18 Test Results ---
+
+--- ACADEMIC PERFORMANCE & RELIABILITY SUMMARY ---
+                           Agent Mars-Light Avg Neptune Avg Jupiter-Heavy Avg Brown-dwarf Avg Earth-Standard Avg Reliability (%) Stability Gap (↓) Efficiency (Score/s)
+ENA-Combined-QuadraticPlasticity         497.72      500.00            396.24          461.42             500.00           88.7%              0.00              1599.91
+    ENA-Combined-FuzzyPlasticity         491.06      496.74            470.86          391.52             500.00           82.5%              0.75              1762.39

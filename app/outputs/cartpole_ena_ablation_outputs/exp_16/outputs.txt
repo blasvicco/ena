@@ -1,0 +1,54 @@
+Experiment 16 Log
+==============================
+
+  --- Training Performance vs Time ---
+  Random: 0.72 seconds, 32,011 env-steps
+  ENA-NoSkill: 394.39 seconds, 345,869 env-steps
+  ENA-Plasticity: 1785.67 seconds, 3,826,675 env-steps
+  ENA-HoF: 314.00 seconds, 205,415 env-steps
+  ENA-HoF+EnvDetection: 355.05 seconds, 244,717 env-steps
+  ENA-Plasticity+HoF: 2063.81 seconds, 4,636,901 env-steps
+  ENA-Combined: 2385.60 seconds, 5,105,380 env-steps
+
+Training:
+
+--- ACADEMIC PERFORMANCE & RELIABILITY SUMMARY ---
+               Agent Mars-Light Avg Jupiter-Heavy Avg Earth-Standard Avg Reliability (%) Stability Gap (↓) Efficiency (Score/s)
+              Random           8.77             32.82              22.44            0.0%            -24.05             44616.39
+         ENA-NoSkill         130.11             57.91             446.27           29.7%            148.45               804.15
+      ENA-Plasticity         466.38            476.62             481.49           93.4%             77.50               398.87
+             ENA-HoF          37.17             41.32             276.53            1.2%             24.25               565.32
+ENA-HoF+EnvDetection          37.17             37.04             359.24           12.6%             12.75               610.41
+  ENA-Plasticity+HoF         469.17            444.52             478.59           88.8%            234.70               337.31
+        ENA-Combined         469.42            468.83             475.72           93.3%            172.35               296.36
+
+--- COMPUTE-COST SUMMARY (candidate evaluation, training phase) ---
+               Agent Avg Eval Depth Avg Candidates/Gen Total Candidate Env-Steps
+         ENA-NoSkill           10.0                2.0                    28,720
+      ENA-Plasticity           81.0               14.5                 3,114,428
+             ENA-HoF           10.0                2.0                    27,905
+ENA-HoF+EnvDetection           10.0                2.0                    27,989
+  ENA-Plasticity+HoF           92.4               16.8                 3,940,761
+        ENA-Combined           93.0               16.9                 4,398,395
+
+--- ADAPTATION SUMMARY (training, early-stopped per environment) ---
+               Agent Mars-Light:steps  Mars-Light:solved Jupiter-Heavy:steps  Jupiter-Heavy:solved Earth-Standard:steps  Earth-Standard:solved  Solved-Phases Train-Env-Steps Eval-Env-Steps
+              Random            4,385                  0              16,408                     0               11,218                      0              0          32,011              0
+         ENA-NoSkill           73,893                  0              38,956                     0              233,020                      0              0         345,869              0
+      ENA-Plasticity        1,244,341                  0           1,358,202                     0            1,224,132                      0              0       3,826,675              0
+             ENA-HoF           26,694                  0              30,660                     0              148,061                      0              0         205,415              0
+ENA-HoF+EnvDetection           26,694                  0              28,520                     0              189,503                      0              0         244,717              0
+  ENA-Plasticity+HoF        1,598,111                  0           1,801,559                     0            1,237,231                      0              0       4,636,901              0
+        ENA-Combined        1,874,565                  0           1,546,332                     0            1,684,483                      0              0       5,105,380              0
+
+  --- Experiment 16 Test Results ---
+
+--- ACADEMIC PERFORMANCE & RELIABILITY SUMMARY ---
+               Agent Mars-Light Avg Neptune Avg Jupiter-Heavy Avg Brown-dwarf Avg Earth-Standard Avg Reliability (%) Stability Gap (↓) Efficiency (Score/s)
+              Random           9.20       22.24             34.66           16.04              21.47            0.0%            -12.50             41091.04
+         ENA-NoSkill         282.36      302.08            164.22          220.46             287.93           38.3%            -78.20              1951.58
+      ENA-Plasticity         411.02      429.10            390.06          385.20             421.90           79.9%            -33.00              2296.05
+             ENA-HoF         500.00      329.68             16.39           63.95             345.32           21.4%            165.05              2050.60
+ENA-HoF+EnvDetection         478.50      430.26            109.72           56.35             486.45           39.7%             69.65              1630.08
+  ENA-Plasticity+HoF         500.00      413.25            283.90          212.32             445.69           43.1%             90.70              2344.54
+        ENA-Combined         500.00      497.55            500.00          482.10             500.00           97.1%             24.50              1470.39
