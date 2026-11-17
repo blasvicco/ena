@@ -1,0 +1,60 @@
+\documentclass[10pt]{article}
+% Anonymous submission. Camera-ready: \usepackage[accepted]{tmlr}; de-anonymized preprint: \usepackage[preprint]{tmlr}.
+\usepackage{tmlr}
+
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{url}
+\usepackage{adjustbox}
+\usepackage{array}
+\usepackage{hyperref}
+
+% Draft marker: renders in red; package_tmlr.sh refuses to package while any remains.
+\newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
+
+% Generated results: \Res{key} prints a number from generated/results.tex (app/src/tools/paper_results.py --paper latex_tmlr).
+% An unknown key prints red ??key and logs "Undefined result".
+\makeatletter
+\newcommand{\resdef}[2]{\expandafter\def\csname res@#1\endcsname{#2}}
+\newcommand{\Res}[1]{\ifcsname res@#1\endcsname\csname res@#1\endcsname\else\textcolor{red}{??#1}\@latex@warning{Undefined result #1}\fi}
+% Everything that identifies the authors lives in deanonymized/, read only by the accepted and preprint versions.
+\newcommand{\IfDeanonymized}[2]{\if@accepted#1\else#2\fi}
+\makeatother
+\input{generated/results}
+
+% The research questions: bold labels, items indented by the widest label.
+\newenvironment{rqlist}{\begin{list}{}{\settowidth{\labelwidth}{\textbf{RQ1a}}\setlength{\leftmargin}{\labelwidth}\addtolength{\leftmargin}{\labelsep}}}{\end{list}}
+
+\title{Mitigating Catastrophic Forgetting with Physics-Indexed Specialist Memory: the Evolutionary Neuroplastic Agent}
+\IfDeanonymized{\input{deanonymized/authors}}{}
+
+\begin{document}
+
+\maketitle
+% tmlr.sty's \AND separates authors in the title only; algorithmic defines its own \AND inside each algorithm.
+\let\AND\relax
+
+\begin{abstract}
+\input{abstract}
+\end{abstract}
+
+\input{sections/01_introduction}
+\input{sections/02_related_work}
+\input{sections/03_methodology}
+\input{sections/04_experimental_setup}
+\input{sections/05_results}
+\input{sections/06_discussion}
+\input{sections/07_conclusion}
+\IfDeanonymized{\input{deanonymized/author_contributions}}{}
+\IfDeanonymized{\input{deanonymized/code_availability}}{\input{sections/08_code_availability}}
+
+\bibliography{references}
+\bibliographystyle{tmlr}
+
+\appendix
+\input{sections/09_appendix}
+
+\end{document}

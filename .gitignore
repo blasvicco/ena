@@ -1,6 +1,7 @@
 .DS_Store
 __pycache__
-app/latex/build/
+app/latex_ieee/build/
+app/latex_tmlr/build/
 # Cloud-run infrastructure (infra/src): dependencies, synth output, local config
 infra/src/node_modules/
 infra/src/cdk.out/

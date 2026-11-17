@@ -5,6 +5,9 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
+# Saved figures embed no creation date, so a re-run from the same outputs writes the same bytes.
+SAVE_METADATA = {"CreationDate": None}
+
 
 # pylint: disable=too-many-arguments
 def replicate_box_figure(
@@ -33,6 +36,6 @@ def replicate_box_figure(
 	for side in ("top", "right"):
 		axis.spines[side].set_visible(False)
 	figure.tight_layout()
-	figure.savefig(path)
+	figure.savefig(path, metadata=SAVE_METADATA)
 	plt.close(figure)
 	return path

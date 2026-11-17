@@ -1,0 +1,247 @@
+\section{Information Available to Each Agent}
+\label{app:information}
+A comparison across agent families is only fair if no agent learns more about the environment than the others. This appendix lists everything each agent receives.
+
+\subsection{The interface}
+Every agent, ENA and the baselines alike, interacts with an environment only through the Gymnasium interface. A reset returns an initial observation. A step returns the next observation, the reward, and whether the episode terminated or was truncated by the time limit. In CartPole, the observation is the cart's position and velocity, and the pole's angle and angular velocity. In HalfCheetah, it is the torso's height and angle, the joint angles, and all their velocities, without the forward position.
+
+The physical parameters that distinguish the environments are never part of the observation. In CartPole, these are gravity, the pole's mass and the pole's length. In HalfCheetah, they are gravity, friction, wind and the presence of air. No agent is told when the environment changes, which environment it is in, or how many environments there are. The environment names in the figures and tables are taken from the experiment logs, and are used only for analysis. ENA's niches are its own numbering.
+
+\subsection{Task constants}
+ENA reads two constants from each task's Gymnasium registration: the episode time limit, and the solved threshold $R_{\text{solved}}$. They are \Res{cfg/cartpole/maxsteps} steps and \Res{cfg/cartpole/solved} in CartPole, and \Res{cfg/cheetah/maxsteps} steps and \Res{cfg/cheetah/solved} in HalfCheetah. The time limit rescales a truncated candidate return to a full-episode equivalent~\eqref{eq:plasticity}. HalfCheetah episodes never end early, and its candidates are evaluated for at most \Res{cfg/cheetah/maxeval} steps, so every HalfCheetah candidate's return is rescaled. The solved threshold is the utility scale of the specialist selection~\eqref{eq:bpr}. The selection therefore depends on this registered constant, even on HalfCheetah, where no agent reaches it. There, the threshold sets how much one return moves the belief, since the return noise of~\eqref{eq:bpr} is \Res{cfg/ena/bpr/noise} times the threshold in return units. Until \Res{cfg/ena/signal/warmup} returns of the current regime have been seen, it is also the scale against which returns are normalized for Trust. After that, Trust normalizes against the percentiles of recent returns~\eqref{eq:trust}. Both constants are public properties of the task, not of the physics. The baselines meet the same time limit through the truncation signal.
+
+\subsection{Environment detection}
+\label{sec:appendix_detection}
+The detector's input is the sequence of transitions $(s_t, a_t, s_{t+1})$: the observation before acting, the action taken, and the observation after. This is exactly what the agent sees. The detector does not read the reward, the physical parameters or the environment's name. A change of physics changes how the observed velocities evolve, so the current niche's dynamics model~\eqref{eq:dynamics} predicts the new transitions worse. In the ablation, every switch between training environments is confirmed in every replicate, within a few episodes. False alarms also occur, mostly in the first training phase (Table~\ref{tab:detection}).
+
+At test, the detector is frozen and creates no niches. Physics close to a known niche are recognized as that niche. The detector does not need to name an environment, only to find the closest physics it knows. Neptune's physics, for instance, are recognized as Earth's in \Res{ablation/ENA-Combined/recog/Neptune/Earth-Standard} of the \Res{ablation/n} replicates. When no niche explains the transitions within the margin $m$, the episode is left unrecognized, and no niche is assigned. The selection~\eqref{eq:bpr} still weighs every niche by how well its dynamics model explains the episode, so it falls back on the niches whose models explain the episode best.
+
+Recognition is weaker in two cases:
+\begin{itemize}
+\item \textit{False alarms.} In a test phase, every confirmed change except the first one after a switch is a false alarm. In physics near the margin $m$, the detector can alternate between recognizing a niche and leaving the physics unrecognized. Each confirmation resets the selection's belief to uniform.
+\item \textit{Fragmentation.} In some replicates, one training environment is split over two niches.
+\end{itemize}
+Table~\ref{tab:detection} gives these numbers for the two ablation variants with environment detection. For each phase, it lists the share of unrecognized episodes, the confirmed changes and the episode of the first one. For each training environment, it lists the Hall of Fame niches. Every phase except the run's first follows a real switch. At most one confirmed change per phase is therefore a detection, and the rest are false alarms. The first training phase, Mars, starts with no niche at all. The detector is also reset when the test begins, so the test's Mars phase starts without a current niche, like the run's first. The Brown-dwarf phase is mostly left unrecognized. After it, the detector recognizes Earth by identification, without confirming a change, and Earth shows zero confirmed changes at test.
+
+\input{generated/table_detection}
+
+On HalfCheetah, ENA detects with its chirp (Section~\ref{sec:chirp}). The chirp's input is the agent's own fixed action sequence, and the observations it produces after a reset of the environment. These are the same observations the agent sees, so the chirp reads no reward, physical parameter or environment name either. Its steps count in ENA's step budget. The environment's random stream is restored after it, so every agent's episodes start from the same states. Table~\ref{tab:cheetah_detection} gives the same numbers for ENA-Combined in the HalfCheetah study.
+
+\input{generated/table_cheetah_detection}
+
+\subsection{Candidate evaluation}
+ENA evaluates candidate specialists in fresh instances of the current environment. The experiment's own environment factory builds them from the current environment's physical parameters. ENA passes these parameters to the factory, but uses none of them for a decision. Every candidate step counts in ENA's interaction budget. A candidate evaluation is thus equivalent to an extra episode in the current environment, with the same reset that any episodic agent has. The baselines could spend the same budget in parallel copies of the environment, as vectorized training does. What ENA does assume is a resettable copy of the current physics, in which it can run episodes other than the one being played. Such a copy is free in simulation or with a digital twin. On a physical system, it would cost real time, if it can be had at all.
+
+\subsection{Evaluation and test}
+The first-solve checks (Section~\ref{sec:forgetting_protocol}) run on a separate copy of the current environment, for every agent alike. Their steps do not count as training. At test, every agent is frozen, and Section~\ref{sec:selection} lists what still adapts in ENA. Every agent of a replicate meets the same seeded environments.
+
+\section{Hyperparameters}
+\label{app:hyperparameters}
+
+All settings are read directly from the code the studies ran, by \texttt{src/tools/paper\_config.py}. Each value is an agent's class default, unless its study script overrides it. The values here therefore cannot drift from the code.
+
+Table~\ref{tab:hparams_ena_cartpole} gives the settings of ENA-Combined, as built by \texttt{cartpole\_ena\_ablation.py}. All six ablation variants share them, with the relevant skills switched on or off. Table~\ref{tab:hparams_ena_cheetah} lists only the settings that differ on HalfCheetah, set in \texttt{half\_cheetah.py}.
+
+On HalfCheetah, PPO and SAC take the settings of RL Baselines3 Zoo~\citep{raffin2020rlzoo} (Table~\ref{tab:hparams_cheetah_baselines}). Both have a separate actor and critic. PPO normalizes observations, and scales rewards by the standard deviation of the return. PPO keeps the zoo's constant learning rate. One setting deviates from the zoo: SAC applies its gradient steps in groups of \Res{cfg/cheetahsac/gradientsteps} every \Res{cfg/cheetahsac/updatefrequency} environment steps, for speed, which preserves the zoo's ratio of one update per step.
+
+\begin{table}[htbp]
+\caption{ENA hyperparameters (CartPole)}
+\begin{center}\footnotesize
+\begin{adjustbox}{max width=\columnwidth}
+\begin{tabular}{|l|r|l|r|}
+\hline
+\textbf{Parameter} & \textbf{Value} & \textbf{Parameter} & \textbf{Value} \\
+\hline
+Network (hidden) & \Res{cfg/ena/brain} & Population size $N$ & \Res{cfg/ena/pop} \\
+Eval depth $s_{\min}$ / $s_{\max}$ & \Res{cfg/ena/smin} / \Res{cfg/ena/smax} & Min.\ candidates & \Res{cfg/ena/search/mincandidates} \\
+Return history & \Res{cfg/ena/history} & Exploration $\varepsilon$ & \Res{cfg/ena/epsilon} \\
+Trust percentiles & \Res{cfg/ena/trust/plow} / \Res{cfg/ena/trust/phigh} & Trust clip & $[\Res{cfg/ena/trust/low}, \Res{cfg/ena/trust/high}]$ \\
+Trust blend threshold & \Res{cfg/ena/trust/reset} & Signal warm-up (returns) & \Res{cfg/ena/signal/warmup} \\
+Signal percentile & \Res{cfg/ena/signal/percentile}th & Plasticity controller & linear ramp \\
+Mutation rate $p_m$ & \Res{cfg/ena/mutation/rate} & Mutation noise $\sigma_m$ / floor & \Res{cfg/ena/mutation/noise} / \Res{cfg/ena/mutation/minnoise} \\
+Crossover parent share & \Res{cfg/ena/crossover/share} & Elite (\% of pop.) & \Res{cfg/ena/search/elite} \\
+Mutants (\% of pop.) & \Res{cfg/ena/search/mutantspop} & Crossovers (\% of pop.) & \Res{cfg/ena/search/crossoverspop} \\
+HoF $K$ (max per niche) & \Res{cfg/ena/hof/K} & HoF reinject ratio & \Res{cfg/ena/hof/reinject} \\
+HoF similarity threshold & \Res{cfg/ena/hof/similarity} & HoF gate $z$ / relief & \Res{cfg/ena/hof/gatez} / \Res{cfg/ena/hof/gaterelief} \\
+HoF gate $\sigma_T$ floor & \Res{cfg/ena/hof/gatefloor} & HoF gate: sufficient Trust & \Res{cfg/ena/hof/gatetrust} \\
+Detection tolerance $\tau$ & \Res{cfg/ena/detect/tau} & Detection margin $m$ & \Res{cfg/ena/detect/margin} \\
+Detection recent window & \Res{cfg/ena/detect/recent} & Min.~samples to fit & \Res{cfg/ena/detect/minsamples} \\
+Verification samples & \Res{cfg/ena/detect/verify} & CuSum false-alarm run $\gamma$ & $10^{\Res{cfg/ena/detect/gammaexp}}$ \\
+BPR return noise & \Res{cfg/ena/bpr/noise} & BPR switch rate & \Res{cfg/ena/bpr/switch} \\
+BPR prior strength & \Res{cfg/ena/bpr/prior} & BPR prior own / other niche & \Res{cfg/ena/bpr/ownprior} / \Res{cfg/ena/bpr/crossprior} \\
+\hline
+\end{tabular}
+\end{adjustbox}
+\label{tab:hparams_ena_cartpole}
+\end{center}
+\end{table}
+
+\begin{table}[htbp]
+\caption{ENA hyperparameters that differ on HalfCheetah}
+\begin{center}\footnotesize
+\begin{adjustbox}{max width=\columnwidth}
+\begin{tabular}{|l|r|l|r|}
+\hline
+\textbf{Parameter} & \textbf{Value} & \textbf{Parameter} & \textbf{Value} \\
+\hline
+Network (hidden) & \Res{cfg/cheetahena/brain}, normc & Eval depth $s_{\max}$ & \Res{cfg/cheetahena/maxevalsteps} \\
+Mutation rate $p_m$ & \Res{cfg/cheetahena/mutationrate} & HoF $K$ (max per niche) & \Res{cfg/cheetahena/maxperniche} \\
+Hall of Fame & \Res{cfg/cheetahena/halloffamedriver} & Olympiad interval (steps) & \Res{cfg/cheetahena/olympicsinterval} \\
+Olympiad episodes & \Res{cfg/cheetahena/olympicsepisodes} & Qualifier seats per niche & \Res{cfg/cheetahena/olympicsqualifierseats} \\
+Environment detection & chirp & Chirp steps & \Res{cfg/cheetah/chirp/steps} \\
+Chirp excitation & \Res{cfg/cheetah/chirp/excitation} (\Res{cfg/cheetah/chirp/excitationwavelet}) & Chirp transform & \Res{cfg/cheetah/chirp/transform} \\
+Chirp wavelet & \Res{cfg/cheetah/chirp/featurewavelet} & Chirp level / bands & \Res{cfg/cheetah/chirp/level} / \Res{cfg/cheetah/chirp/bands} \\
+Chirp window (episodes) & \Res{cfg/cheetah/chirp/window} & Chirp min chirps & \Res{cfg/cheetah/chirp/minchirps} \\
+Chirp confirm margin & \Res{cfg/cheetah/chirp/margin} & & \\
+\hline
+\end{tabular}
+\end{adjustbox}
+\label{tab:hparams_ena_cheetah}
+\end{center}
+\end{table}
+
+\begin{table}[htbp]
+\caption{DQN hyperparameters (CartPole)}
+\begin{center}\footnotesize
+\begin{adjustbox}{max width=\columnwidth}
+\begin{tabular}{|l|r|l|r|}
+\hline
+\textbf{Parameter} & \textbf{Value} & \textbf{Parameter} & \textbf{Value} \\
+\hline
+Learning rate & \Res{cfg/dqn/learningrate} & Discount $\gamma$ & \Res{cfg/dqn/gamma} \\
+Batch size & \Res{cfg/dqn/batchsize} & Replay buffer & \Res{cfg/dqn/buffersize} \\
+$\varepsilon$ start / end & \Res{cfg/dqn/epsilonstart} / \Res{cfg/dqn/epsilonend} & $\varepsilon$ decay steps & \Res{cfg/dqn/epsilondecaysteps} \\
+Target network update (steps) & \Res{cfg/dqn/targetupdatefreq} & Learning starts (steps) & \Res{cfg/dqn/learningstarts} \\
+Update every (steps) & \Res{cfg/dqn/trainfreq} & Network & \Res{cfg/challenge/mlpnet} \\
+\hline
+\end{tabular}
+\end{adjustbox}
+\label{tab:hparams_dqn}
+\end{center}
+\end{table}
+
+\begin{table}[htbp]
+\caption{PPO hyperparameters (CartPole)}
+\begin{center}\footnotesize
+\begin{adjustbox}{max width=\columnwidth}
+\begin{tabular}{|l|r|l|r|}
+\hline
+\textbf{Parameter} & \textbf{Value} & \textbf{Parameter} & \textbf{Value} \\
+\hline
+Learning rate & \Res{cfg/ppo/learningrate} & Learning rate anneal & \Res{cfg/ppo/anneallr} \\
+Steps per update & \Res{cfg/ppo/nsteps} & Batch size & \Res{cfg/ppo/batchsize} \\
+Epochs per update & \Res{cfg/ppo/nepochs} & Discount $\gamma$ & \Res{cfg/ppo/gamma} \\
+GAE $\lambda$ & \Res{cfg/ppo/gaelambda} & Clip ratio & \Res{cfg/ppo/clipratio} \\
+Entropy coefficient & \Res{cfg/ppo/entropycoef} & Value coefficient & \Res{cfg/ppo/valuecoef} \\
+Max grad norm & \Res{cfg/ppo/maxgradnorm} & Actor / critic & \Res{cfg/challenge/pponet} \\
+Initialization & orthogonal & Normalization & none \\
+\hline
+\end{tabular}
+\end{adjustbox}
+\label{tab:hparams_ppo_cartpole}
+\end{center}
+\end{table}
+
+\begin{table}[htbp]
+\caption{SAC-Discrete hyperparameters (CartPole)}
+\begin{center}\footnotesize
+\begin{adjustbox}{max width=\columnwidth}
+\begin{tabular}{|l|r|l|r|}
+\hline
+\textbf{Parameter} & \textbf{Value} & \textbf{Parameter} & \textbf{Value} \\
+\hline
+Learning rate & \Res{cfg/sacdiscrete/learningrate} & Discount $\gamma$ & \Res{cfg/sacdiscrete/gamma} \\
+Batch size & \Res{cfg/sacdiscrete/batchsize} & Replay buffer & \Res{cfg/sacdiscrete/buffercapacity} \\
+Learning starts (steps) & \Res{cfg/sacdiscrete/learningstarts} & Update every (steps) & \Res{cfg/sacdiscrete/trainfreq} \\
+Target update $\tau$ & \Res{cfg/sacdiscrete/tau} & Target entropy & \Res{cfg/sacdiscrete/targetentropyratio}\,$\times\,\log|\mathcal{A}|$ \\
+Actor / twin critics & \Res{cfg/challenge/mlpnet} & & \\
+\hline
+\end{tabular}
+\end{adjustbox}
+\label{tab:hparams_sacd}
+\end{center}
+\end{table}
+
+\begin{table}[htbp]
+\caption{PPO and SAC hyperparameters (HalfCheetah)}
+\begin{center}\footnotesize
+\begin{adjustbox}{max width=\columnwidth}
+\begin{tabular}{|l|r|r|}
+\hline
+\textbf{Parameter} & \textbf{PPO} & \textbf{SAC} \\
+\hline
+Actor / critic & \Res{cfg/cheetah/baselinenet} & \Res{cfg/cheetah/baselinenet} \\
+Learning rate & \Res{cfg/cheetahppo/learningrate} & \Res{cfg/cheetahsac/learningrate} \\
+Discount $\gamma$ & \Res{cfg/cheetahppo/gamma} & \Res{cfg/cheetahsac/gamma} \\
+Batch size & \Res{cfg/cheetahppo/batchsize} & \Res{cfg/cheetahsac/batchsize} \\
+Steps per update / buffer & \Res{cfg/cheetahppo/nsteps} & \Res{cfg/cheetahsac/buffercapacity} \\
+Epochs / gradient steps & \Res{cfg/cheetahppo/nepochs} & \Res{cfg/cheetahsac/gradientsteps} per \Res{cfg/cheetahsac/updatefrequency} steps \\
+GAE $\lambda$ & \Res{cfg/cheetahppo/gaelambda} & --- \\
+Clip ratio & \Res{cfg/cheetahppo/clipratio} & --- \\
+Entropy coef.~/ temperature & \Res{cfg/cheetahppo/entropycoef} & auto ($-\dim\mathcal{A}$) \\
+Value coef.~/ target update $\tau$ & \Res{cfg/cheetahppo/valuecoef} & \Res{cfg/cheetahsac/tau} \\
+Max grad norm & \Res{cfg/cheetahppo/maxgradnorm} & --- \\
+Initial log std & \Res{cfg/cheetahppo/logstdinit} & --- \\
+Normalization & obs., reward & none \\
+Learning starts (steps) & --- & \Res{cfg/cheetahsac/learningstarts} \\
+\hline
+\end{tabular}
+\end{adjustbox}
+\label{tab:hparams_cheetah_baselines}
+\end{center}
+\end{table}
+
+\section{Compute Environment}
+\label{app:compute}
+
+\subsection*{CartPole experiments (all studies except HalfCheetah)}
+All CartPole studies ran inside a Docker container (\texttt{hub/python/Dockerfile}) on the host machine:
+\begin{itemize}
+  \item \textbf{Host:} Apple MacBook Pro, Apple M1~Pro chip, 8 cores (6 performance + 2 efficiency), 16\,GB RAM.
+  \item \textbf{Container OS:} Linux (ARM64, via Docker Desktop on macOS).
+  \item \textbf{Cores:} the runner used 6 of the 8 cores, running up to 6 replicates in parallel, one process each. Within a replicate, the agents trained one after another, and ENA evaluated its candidates on one thread. Wall-clock times are therefore measured under this shared load.
+  \item \textbf{Python:} \Res{cfg/software/python} (Docker image \texttt{python:\Res{cfg/software/python}-slim}).
+  \item \textbf{Key libraries (pinned):} TensorFlow \Res{cfg/software/tensorflow}, Gymnasium[MuJoCo] \Res{cfg/software/gymnasium}, MuJoCo \Res{cfg/software/mujoco}, NumPy \Res{cfg/software/numpy}, Keras \Res{cfg/software/keras}, SciPy \Res{cfg/software/scipy}, PyWavelets \Res{cfg/software/pywavelets}. Full list in \texttt{app/requirements.txt}.
+  \item \textbf{Seeds} (Section~\ref{sec:setup}): \Res{seeds/ablation/first}--\Res{seeds/ablation/last} for the ablation and for the Plasticity-controller and selection studies; \Res{seeds/challenge/first}--\Res{seeds/challenge/last} for the comparison with single-policy learners.
+\end{itemize}
+
+\subsection*{HalfCheetah experiment (cloud run)}
+The HalfCheetah comparison ran in AWS (eu-west-1), on one \textbf{c8g.xlarge} instance per replicate, \Res{cheetah/n} instances in all:\footnote{Instance type defined in \texttt{infra/src/qos/qos.json}.}
+\begin{itemize}
+  \item \textbf{Instance:} AWS c8g.xlarge (AWS Graviton4, ARM64).
+  \item \textbf{Container:} Linux aarch64 (ARM64 Docker image, \texttt{hub/cloud/Dockerfile}), built from the same base image and pinned \texttt{requirements.txt} as the CartPole environment.
+  \item \textbf{Hardware and threads, as each replicate recorded them:} \Res{cheetah/hardware}.
+  \item \textbf{Seeds} (Section~\ref{sec:setup}): \Res{seeds/cheetah/first}--\Res{seeds/cheetah/last}.
+\end{itemize}
+
+\section{Extended Evaluation and Training Dynamics}
+\label{app:dynamics}
+
+This appendix shows the episode-by-episode test curves of both domains, and HalfCheetah's training curves. The numbers they summarize are in Section~\ref{sec:results}.
+
+\subsection{Frozen Test on CartPole}
+Fig.~\ref{fig:challenge_curves} shows the frozen test of the CartPole comparison. Each agent plays \Res{cfg/cartpole/test} episodes in each of five environments: Mars-Light $\to$ Neptune $\to$ Jupiter-Heavy $\to$ Brown-dwarf $\to$ Earth-Standard. The line is the mean return over the \Res{challenge/n} replicates, and the band the middle \Res{cfg/plot/band}\% of replicates. On Jupiter-Heavy, the environment trained just before the last, the single-policy learners' returns stay low for the whole phase. ENA-Combined's return there stays close to the success threshold. On Brown-dwarf, ENA-Combined's mean return rises during the phase. The factors driving this increase were not investigated.
+
+\begin{figure*}[t]
+\centerline{\includegraphics[width=\textwidth]{images/challenge_test_curves.pdf}}
+\caption{Frozen test on CartPole: mean return per episode across \Res{challenge/n} replicates (line) and the middle \Res{cfg/plot/band}\% of replicates (band). Dashed lines mark environment switches; Neptune and Brown-dwarf were never seen in training.}
+\label{fig:challenge_curves}
+\end{figure*}
+
+\subsection{Frozen Test on HalfCheetah}
+Fig.~\ref{fig:cheetah_test_curves} shows the frozen test on HalfCheetah, over the \Res{cheetah/n} replicates. Each agent plays \Res{cfg/cheetah/test} episodes in each of five environments: Earth-Standard $\to$ Ice-Floor $\to$ Heavy-Rough $\to$ High-Wind $\to$ Mars-Slippery. On Heavy-Rough, the environment trained just before the last, PPO's and SAC's returns drop. ENA-Combined's return there is its highest. Among the unseen environments, SAC's return on Ice-Floor is far above the other agents', and ENA-Combined's lowest return is on High-Wind.
+
+\begin{figure*}[t]
+\centerline{\includegraphics[width=\textwidth]{images/cheetah_test_curves.pdf}}
+\caption{Frozen test on HalfCheetah: mean return per episode across \Res{cheetah/n} replicates (line) and the middle \Res{cfg/plot/band}\% of replicates (band). Dashed vertical lines mark environment switches; Ice-Floor and High-Wind were never seen in training.}
+\label{fig:cheetah_test_curves}
+\end{figure*}
+
+\subsection{Training Dynamics on HalfCheetah}
+Fig.~\ref{fig:cheetah_training_curves} shows the training return of the three agents against environment steps, \Res{cfg/cheetah/budget} per training environment. The returns are binned and averaged over the \Res{cheetah/n} replicates. SAC's return climbs within each phase, drops at each switch, and climbs again. It ends its three phases at \Res{cheetah/SAC/end/Earth-Standard/mean}, \Res{cheetah/SAC/end/Heavy-Rough/mean} and \Res{cheetah/SAC/end/Mars-Slippery/mean}. ENA-Combined's training return stays far lower. It ends its phases at \Res{cheetah/ENA-Combined/end/Earth-Standard/mean}, \Res{cheetah/ENA-Combined/end/Heavy-Rough/mean} and \Res{cheetah/ENA-Combined/end/Mars-Slippery/mean}.
+
+\begin{figure*}[t]
+\centerline{\includegraphics[width=\textwidth]{images/cheetah_training_curves.pdf}}
+\caption{Training return on HalfCheetah against environment steps (\Res{cheetah/n} replicates; line is the mean, band the middle \Res{cfg/plot/band}\% of replicates). Dashed vertical lines mark the switches between the three training environments (Earth-Standard $\to$ Heavy-Rough $\to$ Mars-Slippery).}
+\label{fig:cheetah_training_curves}
+\end{figure*}

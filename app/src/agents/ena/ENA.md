@@ -1,6 +1,6 @@
 # ENA — Evolutionary Neuroplastic Agent: Implementation Notes
 
-This document describes the current implementation of the ENA agent as it stands in this package (`app/src/agents/ena/`). It is a code-accurate snapshot, not the paper's algorithm description — see `app/latex/` for the formal presentation.
+This document describes the current implementation of the ENA agent as it stands in this package (`app/src/agents/ena/`). It is a code-accurate snapshot, not the paper's algorithm description — see the paper (`app/latex_tmlr/`) for the formal presentation.
 
 Specialist selection uses Bayesian Policy Reuse (`bpr`); `niche_match` and `best_trust` are simpler test-time drivers used only by the selection study (`cartpole_ena_selection.py`). Environment detection uses per-niche dynamics models (`dynamics_model`).
 

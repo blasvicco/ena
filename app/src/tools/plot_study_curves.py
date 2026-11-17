@@ -30,6 +30,7 @@ import pandas as pd  # pylint: disable=wrong-import-position
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # App imports
+from tools.paper_figures import SAVE_METADATA  # pylint: disable=wrong-import-position
 from tools.replicates import OUTPUTS_DIR  # pylint: disable=wrong-import-position
 
 DEFAULT_OUTPUT_DIR = os.path.join(OUTPUTS_DIR, "cartpole_ena_ablation_outputs")
@@ -154,7 +155,7 @@ def plot(
 	unit = "per environment step bin" if by_steps else "per episode"
 	figure.suptitle(f"{phase_title} score {unit} across environment shifts", fontsize=13, color=TEXT_PRIMARY, x=0.01, ha="left")
 	figure.tight_layout(rect=(0, 0, 1, 0.98))
-	figure.savefig(save_path, dpi=300)
+	figure.savefig(save_path, dpi=300, metadata=SAVE_METADATA)
 	plt.close(figure)
 	return save_path
 

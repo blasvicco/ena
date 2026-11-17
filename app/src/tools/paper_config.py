@@ -11,6 +11,7 @@
 import inspect
 import math
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -36,6 +37,8 @@ from tools import sac_discrete_entropy_check as sac_check
 from tools.paper_stats import signed
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Words a title-cased caption keeps lower case, unless they open the caption or follow a colon.
+CAPTION_MINOR_WORDS = frozenset({"a", "an", "and", "as", "at", "by", "for", "in", "of", "on", "or", "the", "to"})
 # The libraries the appendix names, keyed as requirements.txt pins them (lowercased, extras dropped).
 PINNED_LIBRARIES = ("tensorflow", "gymnasium", "mujoco", "numpy", "keras", "scipy", "pywavelets")
 
@@ -217,6 +220,20 @@ def latex_table(caption: str, label: str, column_spec: str, body: list, fit: str
 		opening += ["\\setlength{\\tabcolsep}{3pt}", f"\\begin{{adjustbox}}{{max width={width}}}"]
 	closing = ["\\end{tabular}"] + (["\\end{adjustbox}"] if fit else []) + [f"\\label{{{label}}}", "\\end{center}", f"\\end{{{environment}}}"]
 	return "\n".join(opening + [f"\\begin{{tabular}}{{{column_spec}}}"] + body + closing) + "\n"
+
+
+def title_case(caption: str) -> str:
+	"""Title-case a sentence-case caption, the IEEE way: every word capitalized but the minor ones."""
+	# A word already holding a capital (CartPole, IQR) is kept as written; a word's first letter is the one capitalized,
+	# so "(30" stays and "replicates)" becomes "Replicates)".
+	words = caption.split(" ")
+	cased = []
+	for index, word in enumerate(words):
+		opens = index == 0 or words[index - 1].endswith(":")
+		if word == word.lower() and (opens or word not in CAPTION_MINOR_WORDS):
+			word = re.sub("[a-z]", lambda letter: letter.group().upper(), word, count=1)
+		cased.append(word)
+	return " ".join(cased)
 
 
 def environment_table(rows: list, headers: list, caption: str, label: str) -> str:

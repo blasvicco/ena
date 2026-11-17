@@ -11,7 +11,7 @@ from helpers import step
 import cartpole_challenge
 import cartpole_ena_ablation
 from agents import SACDiscreteAgent
-from tools.paper_config import _number, agent_settings, cartpole_rows, cheetah_rows, config_entries, environment_table, chirp_entries
+from tools.paper_config import _number, agent_settings, cartpole_rows, cheetah_rows, config_entries, environment_table, chirp_entries, title_case
 from tools.paper_stats import MINUS
 
 
@@ -132,3 +132,29 @@ def test_agent_settings_read_the_class_defaults_and_the_study_overrides() -> Non
 		assert entries["cfg/sacd/targetentropyratio"] == "0.5"
 		assert entries["cfg/sacd/batchsize"] == "64" and entries["cfg/sacd/learningstarts"] == "1,000"
 		assert not any("_" in key for key in entries)
+
+
+@pytest.mark.parametrize(
+	"sentence, title",
+	[
+		("Skill ablation: frozen test (30 replicates)", "Skill Ablation: Frozen Test (30 Replicates)"),
+		(
+			"Skill ablation: retention of the environments left behind (30 replicates)",
+			"Skill Ablation: Retention of the Environments Left Behind (30 Replicates)",
+		),
+		(
+			"CartPole comparison: training steps to first solve, median (IQR) (50 replicates)",
+			"CartPole Comparison: Training Steps to First Solve, Median (IQR) (50 Replicates)",
+		),
+		("Plasticity controllers against the linear ramp (30 replicates)", "Plasticity Controllers Against the Linear Ramp (30 Replicates)"),
+		("Environment recognition in the skill ablation (30 replicates)", "Environment Recognition in the Skill Ablation (30 Replicates)"),
+		("Environment recognition on HalfCheetah (20 replicates)", "Environment Recognition on HalfCheetah (20 Replicates)"),
+		("Chirp detector ablation (30 seeds)", "Chirp Detector Ablation (30 Seeds)"),
+		("HalfCheetah environments", "HalfCheetah Environments"),
+		("The end: a summary", "The End: A Summary"),
+	],
+)
+def test_title_case_turns_the_sentence_case_captions_into_the_arxiv_ieee_ones(sentence, title) -> None:
+	"""Every word capitalized but the minor ones, which still open the caption or follow a colon; capitals kept as written."""
+	with step("Act/Assert: the IEEE caption."):
+		assert title_case(sentence) == title

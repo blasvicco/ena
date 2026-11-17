@@ -11,7 +11,8 @@ services:
   paper:
     image: texlive/texlive:latest
     volumes:
-      - ./app/latex:/workdir
+      - ./app/latex_ieee:/workdir/latex_ieee
+      - ./app/latex_tmlr:/workdir/latex_tmlr
     command: ["tail", "-f", "/dev/null"]
     container_name: ena-paper
     working_dir: /workdir
